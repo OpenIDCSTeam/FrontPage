@@ -1,0 +1,1553 @@
+/* ==========================================================================
+   Art Design 设计层（OpenIDCS 控制台）
+   --------------------------------------------------------------------------
+   设计语言参考：XiaoheiFS/adminweb（Art Design Pro：Vue3 + Element Plus + Tailwind）
+   本文件将其设计令牌与视觉规范移植到 React + Ant Design：
+     · 只使用「CSS 变量 + 语义化 class + Ant Design 组件类名」实现
+     · 不依赖 Tailwind 工具类，后续可平滑迁移到 Tailwind / CSS-in-JS
+     · 与 src/config/theme.config.ts 中的 Ant Design token 一一对应
+   ========================================================================== */
+
+/* ==========================================================================
+   1. 设计令牌（Design Tokens）
+   ========================================================================== */
+:root {
+    /* ---------- 品牌主色 ---------- */
+    --main-color: #5d87ff;
+    --art-primary: #5d87ff;
+    --art-primary-hover: #7ea1ff;
+    --art-primary-active: #4b72e8;
+    --art-primary-light-9: #eef3ff;
+    --art-primary-light-8: #dee8ff;
+
+    /* ---------- 语义色 ---------- */
+    --art-success: #13deb9;
+    --art-warning: #ffae1f;
+    --art-danger: #fa896b;
+    --art-error: #ff4d4f;
+    --art-info: #949eb7;
+
+    /* ---------- 中性灰阶 ---------- */
+    --art-gray-100: #f9fafb;
+    --art-gray-200: #f2f4f5;
+    --art-gray-300: #e6eaeb;
+    --art-gray-400: #dbdfe1;
+    --art-gray-500: #949eb7;
+    --art-gray-600: #7987a1;
+    --art-gray-700: #4d5875;
+    --art-gray-800: #383853;
+    --art-gray-900: #29343d;
+
+    /* ---------- 边框 / 背景 ---------- */
+    --art-card-border: rgba(0, 0, 0, 0.08);
+    --default-border: #e2e8ee;
+    --default-border-dashed: #dbdfe9;
+    --default-bg-color: #fafbfc;
+    --default-box-color: #ffffff;
+    --art-hover-color: #edeff0;
+    --art-active-color: #f2f4f5;
+    --art-el-active-color: #f2f4f5;
+
+    /* ---------- 圆角 / 尺寸（与 Art Design Pro 的 --custom-radius 对齐） ---------- */
+    --custom-radius: 0.75rem;
+    --art-radius-card: calc(var(--custom-radius) + 4px); /* 16px 卡片 */
+    --art-radius-sm: calc(var(--custom-radius) / 2 + 2px); /* 8px 中组件 */
+    --art-radius-base: calc(var(--custom-radius) / 3 + 2px); /* 6px 控件 */
+
+    --art-control-height: 36px;
+    --art-header-height: 60px;
+    --art-sidebar-width: 230px;
+    --art-sidebar-collapsed-width: 64px;
+
+    /* ---------- 语义化别名（供各主题模式复用） ---------- */
+    --art-box-bg: var(--default-box-color);
+    --art-content-bg: var(--default-bg-color);
+    --art-table-head-bg: var(--art-gray-100);
+    --art-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03), 0 1px 2px -1px rgba(0, 0, 0, 0.08);
+
+    /* ---------- 兼容历史代码中引用的旧变量（此前未定义，导致大量文字色失效） ---------- */
+    --text-primary: var(--art-gray-900);
+    --text-secondary: var(--art-gray-600);
+    --text-tertiary: var(--art-gray-500);
+    --bg-primary: var(--art-content-bg);
+    --bg-secondary: var(--art-gray-200);
+    --bg-card: var(--default-box-color);
+    --border-primary: var(--default-border);
+    --accent-primary: var(--main-color);
+    --border-hover: color-mix(in srgb, var(--main-color) 35%, transparent);
+    --shadow-glass: 0 6px 24px rgba(0, 0, 0, 0.06);
+    --shadow-glow: 0 6px 20px color-mix(in srgb, var(--main-color) 25%, transparent);
+    --gradient-primary: linear-gradient(135deg, var(--main-color) 0%, var(--art-primary-hover) 100%);
+    --gradient-bg: var(--art-content-bg);
+}
+
+/* 暗色主题令牌 */
+[data-theme="dark"] {
+    --art-gray-100: #17171c;
+    --art-gray-200: #1e1e24;
+    --art-gray-300: #2b2b34;
+    --art-gray-400: #3d3d49;
+    --art-gray-500: #73738c;
+    --art-gray-600: #8f8fa3;
+    --art-gray-700: #ababba;
+    --art-gray-800: #c7c7d1;
+    --art-gray-900: #e3e3e8;
+
+    --art-card-border: rgba(255, 255, 255, 0.08);
+    --default-border: rgba(255, 255, 255, 0.1);
+    --default-border-dashed: #363843;
+    --default-bg-color: #070707;
+    --default-box-color: #161618;
+    --art-hover-color: #252530;
+    --art-active-color: #202226;
+    --art-el-active-color: #2e2e38;
+
+    --art-primary-light-9: rgba(93, 135, 255, 0.14);
+    --art-primary-light-8: rgba(93, 135, 255, 0.22);
+    --art-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+
+    --text-primary: rgba(255, 255, 255, 0.88);
+    --text-secondary: rgba(255, 255, 255, 0.62);
+    --text-tertiary: rgba(255, 255, 255, 0.42);
+    --shadow-glass: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* 透明（壁纸）模式下：卡片与内容区改为半透明，让毛玻璃生效 */
+html[data-transparent="true"] {
+    --art-box-bg: rgba(255, 255, 255, 0.55);
+    --art-content-bg: transparent;
+    --default-bg-color: transparent;
+    --default-box-color: rgba(255, 255, 255, 0.55);
+    --art-table-head-bg: rgba(242, 244, 245, 0.5);
+    --art-gray-100: rgba(242, 244, 245, 0.5);
+}
+
+html[data-transparent="true"][data-theme="dark"] {
+    --art-box-bg: rgba(22, 22, 24, 0.5);
+    --art-content-bg: transparent;
+    --default-bg-color: transparent;
+    --default-box-color: rgba(22, 22, 24, 0.5);
+    --art-table-head-bg: rgba(30, 30, 36, 0.45);
+    --art-gray-100: rgba(30, 30, 36, 0.45);
+}
+
+/* ==========================================================================
+   2. 基础样式
+   ========================================================================== */
+body {
+    background-color: var(--art-content-bg);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+::selection {
+    color: var(--art-gray-900);
+    background: color-mix(in srgb, var(--main-color) 22%, transparent);
+}
+
+/* 滚动条：细、低对比（与 Art Design Pro reset.scss 一致） */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background-color: var(--art-gray-200);
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: #cccccc;
+    border-radius: 5px;
+    transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: #b0abab;
+}
+
+::-webkit-scrollbar-button {
+    width: 0;
+    height: 0;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+    background-color: var(--default-bg-color);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background-color: var(--art-gray-300);
+}
+
+/* ==========================================================================
+   3. 整体布局：左侧导航 + 顶栏 + 内容区
+   ========================================================================== */
+.art-layout.ant-layout {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+    min-height: 100vh;
+    overflow: hidden;
+    background: var(--art-content-bg);
+}
+
+.art-main.ant-layout {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--art-content-bg);
+}
+
+/* ---------- 侧边栏 ---------- */
+.art-sidebar.ant-layout-sider {
+    height: 100vh;
+    overflow: hidden;
+    background: var(--art-box-bg) !important;
+    border-right: 1px solid var(--art-card-border);
+    user-select: none;
+}
+
+html[data-transparent="true"] .art-sidebar.ant-layout-sider {
+    backdrop-filter: blur(30px) saturate(150%);
+    -webkit-backdrop-filter: blur(30px) saturate(150%);
+}
+
+.art-sidebar .ant-layout-sider-children {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.art-sidebar-toggle.ant-layout-sider-zero-width-trigger {
+    display: none;
+}
+
+/* 侧边栏品牌区 */
+.art-sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--art-header-height);
+    padding: 0 18px;
+    overflow: hidden;
+    cursor: pointer;
+    border-bottom: 1px solid var(--art-card-border);
+}
+
+.art-sidebar-header .art-logo {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, var(--main-color) 0%, var(--art-primary-hover) 100%);
+    border-radius: 8px;
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--main-color) 35%, transparent);
+}
+
+.art-sidebar-header .art-logo-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.2;
+}
+
+.art-sidebar-header .art-logo-title {
+    overflow: hidden;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--art-gray-900);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.art-sidebar-header .art-logo-desc {
+    margin-top: 2px;
+    overflow: hidden;
+    font-size: 11px;
+    color: var(--art-gray-500);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* 侧边栏滚动区 */
+.art-sidebar-body {
+    flex: 1 1 auto;
+    padding: 8px 0 12px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.art-sidebar-body::-webkit-scrollbar {
+    width: 0;
+}
+
+/* 伸缩按钮 */
+.art-sidebar-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    color: var(--art-gray-600);
+    cursor: pointer;
+    border-top: 1px solid var(--art-card-border);
+    transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.art-sidebar-footer:hover {
+    color: var(--main-color);
+    background: var(--art-hover-color);
+}
+
+/* ---------- 顶栏 ---------- */
+.art-header.ant-layout-header {
+    display: flex;
+    flex: 0 0 var(--art-header-height);
+    align-items: center;
+    justify-content: space-between;
+    height: var(--art-header-height);
+    padding: 0 16px 0 12px;
+    color: var(--text-primary);
+    background: var(--art-box-bg) !important;
+    border-bottom: 1px solid var(--art-card-border);
+}
+
+html[data-transparent="true"] .art-header.ant-layout-header {
+    backdrop-filter: blur(30px) saturate(150%);
+    -webkit-backdrop-filter: blur(30px) saturate(150%);
+}
+
+.art-header-left,
+.art-header-right {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.art-header-left {
+    gap: 6px;
+}
+
+.art-header-right {
+    gap: 4px;
+    margin-left: auto;
+}
+
+/* 顶栏文字按钮：无边框、36px 方形、hover 浅灰底 */
+.art-header-btn.ant-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--art-control-height);
+    height: var(--art-control-height);
+    padding: 0;
+    font-size: 16px;
+    color: var(--art-gray-700);
+    border: none;
+    border-radius: var(--art-radius-sm);
+    box-shadow: none;
+    transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.art-header-btn.ant-btn:hover,
+.art-header-btn.ant-btn:focus-visible {
+    color: var(--main-color);
+    background: var(--art-hover-color);
+}
+
+.art-header-btn.ant-btn.is-active {
+    color: var(--main-color);
+    background: var(--art-primary-light-9);
+}
+
+/* 顶栏面包屑 */
+.art-header .ant-breadcrumb {
+    margin-left: 6px;
+    font-size: 14px;
+}
+
+.art-header .ant-breadcrumb a,
+.art-header .ant-breadcrumb li:last-child {
+    color: var(--art-gray-700);
+}
+
+.art-header .ant-breadcrumb li:last-child {
+    font-weight: 500;
+    color: var(--art-gray-900);
+}
+
+.art-header .ant-breadcrumb-separator {
+    color: var(--art-gray-400);
+}
+
+/* 顶栏搜索 */
+.art-header-search.ant-input-affix-wrapper {
+    width: 220px;
+    height: var(--art-control-height);
+    padding-inline: 12px;
+    background: var(--art-gray-200);
+    border: 1px solid transparent;
+    border-radius: var(--art-radius-sm);
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.art-header-search.ant-input-affix-wrapper:hover {
+    background: var(--art-gray-300);
+}
+
+.art-header-search.ant-input-affix-wrapper:focus-within {
+    background: var(--art-box-bg);
+    border-color: var(--main-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--main-color) 15%, transparent);
+}
+
+.art-header-search .ant-input,
+.art-header-search .ant-input::placeholder,
+.art-header-search .anticon {
+    color: var(--art-gray-500);
+    background: transparent;
+}
+
+/* 顶栏用户信息 */
+.art-header-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--art-control-height);
+    padding: 0 10px;
+    cursor: pointer;
+    border-radius: var(--art-radius-sm);
+    transition: background-color 0.2s ease;
+}
+
+.art-header-user:hover {
+    background: var(--art-hover-color);
+}
+
+.art-header-user .ant-avatar {
+    background: linear-gradient(135deg, var(--main-color) 0%, var(--art-primary-hover) 100%);
+}
+
+.art-header-user .art-header-username {
+    max-width: 120px;
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--art-gray-800);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* ---------- 内容区 ---------- */
+.art-content.ant-layout-content {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    padding: 16px;
+    overflow: auto;
+    background: var(--art-content-bg);
+}
+
+.art-page-stage {
+    width: 100%;
+    flex: 1 0 auto;
+}
+
+/* 首页/仪表盘网格背景（仅深色非透明模式） */
+[data-theme="dark"]:not([data-transparent="true"]) .art-content.grid-background {
+    background-image: linear-gradient(rgba(93, 135, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(93, 135, 255, 0.05) 1px, transparent 1px);
+    background-size: 50px 50px;
+}
+
+.art-footer {
+    flex: 0 0 auto;
+    padding: 16px 0 4px;
+    margin-top: 20px;
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--art-gray-500);
+    text-align: center;
+    border-top: 1px solid var(--art-card-border);
+}
+
+.art-footer .art-footer-copyright {
+    opacity: 0.7;
+}
+
+/* ==========================================================================
+   4. 侧边栏菜单（Ant Design Menu）
+   ========================================================================== */
+.art-menu.ant-menu {
+    color: var(--art-gray-700);
+    background: transparent;
+    border-inline-end: 0 !important;
+}
+
+.art-menu.ant-menu .ant-menu-submenu-title,
+.art-menu.ant-menu .ant-menu-item {
+    height: 42px;
+    margin: 0 8px 4px;
+    width: calc(100% - 16px);
+    padding-inline: 12px !important;
+    font-size: 14px;
+    line-height: 42px;
+    border-radius: var(--art-radius-base);
+}
+
+.art-menu.ant-menu .ant-menu-item .anticon,
+.art-menu.ant-menu .ant-menu-submenu-title .anticon {
+    font-size: 18px;
+    color: var(--art-gray-600);
+}
+
+.art-menu.ant-menu .ant-menu-submenu-title:hover,
+.art-menu.ant-menu .ant-menu-item:not(.ant-menu-item-selected):hover {
+    color: var(--art-gray-900);
+    background: var(--art-hover-color) !important;
+}
+
+.art-menu.ant-menu .ant-menu-item:not(.ant-menu-item-selected):hover .anticon,
+.art-menu.ant-menu .ant-menu-submenu-title:hover .anticon {
+    color: var(--art-gray-800);
+}
+
+.art-menu.ant-menu .ant-menu-item-selected {
+    font-weight: 500;
+    color: var(--main-color);
+    background: var(--art-primary-light-9);
+}
+
+.art-menu.ant-menu .ant-menu-item-selected .anticon,
+.art-menu.ant-menu .ant-menu-item-selected .ant-menu-title-content {
+    color: var(--main-color);
+}
+
+.art-menu.ant-menu .ant-menu-item-selected::after {
+    display: none;
+}
+
+.art-menu.ant-menu .ant-menu-sub.ant-menu-inline {
+    background: transparent;
+}
+
+.art-menu.ant-menu .ant-menu-submenu-arrow {
+    color: var(--art-gray-500);
+}
+
+.art-menu.ant-menu .ant-menu-item-group-title {
+    padding-inline: 20px;
+    font-size: 12px;
+    color: var(--art-gray-500);
+}
+
+/* 折叠态：居中显示、隐藏文字 */
+.ant-layout-sider-collapsed .art-menu.ant-menu .ant-menu-item,
+.ant-layout-sider-collapsed .art-menu.ant-menu .ant-menu-submenu-title {
+    width: 44px;
+    margin-inline: auto;
+    padding-inline: 0 !important;
+}
+
+/* 收起时弹出的子菜单（气泡菜单） */
+.ant-menu-submenu-popup .ant-menu {
+    padding: 6px;
+    background: var(--art-box-bg);
+    border-radius: 10px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+}
+
+.ant-menu-submenu-popup .ant-menu .ant-menu-item {
+    height: 36px;
+    margin-bottom: 4px;
+    line-height: 36px;
+    border-radius: var(--art-radius-base);
+}
+
+/* ==========================================================================
+   5. Ant Design 组件视觉规范
+   ========================================================================== */
+
+/* ---------- 卡片 ---------- */
+.ant-card {
+    background: var(--art-box-bg);
+}
+
+.ant-card:not(.ant-card-borderless) {
+    border: 1px solid var(--art-card-border);
+    border-radius: var(--art-radius-card);
+    box-shadow: none;
+}
+
+.ant-card .ant-card-head {
+    min-height: 54px;
+    padding-inline: 20px;
+    border-bottom: 1px solid var(--art-card-border);
+}
+
+.ant-card .ant-card-head-title {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--art-gray-900);
+}
+
+.ant-card .ant-card-body {
+    padding: 20px;
+}
+
+.ant-card .ant-card-extra {
+    color: var(--art-gray-600);
+}
+
+/* 历史组件类：玻璃卡片统一为 Art 卡片
+   注意：此处不设置 padding / margin，保留 index.css 中 @layer components 的默认值，
+   以便页面上的 Tailwind 间距工具类（p-4 / mb-6 等）仍能正常生效。 */
+.glass-card,
+.glass-effect {
+    background: var(--art-box-bg) !important;
+    border: 1px solid var(--art-card-border) !important;
+    border-radius: var(--art-radius-card) !important;
+    box-shadow: none !important;
+    backdrop-filter: blur(30px) saturate(150%);
+    -webkit-backdrop-filter: blur(30px) saturate(150%);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.glass-card::before,
+.glass-effect::before {
+    display: none;
+}
+
+.glass-effect:hover,
+.glass-card.art-card-hover:hover {
+    border-color: color-mix(in srgb, var(--main-color) 35%, var(--art-card-border)) !important;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06) !important;
+    transform: translateY(-1px);
+}
+
+.dashboard-page .glass-card,
+.dashboard-page .glass-effect {
+    background: var(--art-box-bg) !important;
+    border: 1px solid var(--art-card-border) !important;
+    border-radius: var(--art-radius-card) !important;
+    box-shadow: none !important;
+    transform: none;
+}
+
+.dashboard-page .glass-card:hover,
+.dashboard-page .glass-effect:hover {
+    border-color: color-mix(in srgb, var(--main-color) 35%, var(--art-card-border)) !important;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06) !important;
+    transform: translateY(-2px);
+}
+
+/* ---------- 表格 ---------- */
+.ant-table-wrapper .ant-table {
+    background: transparent;
+    border-radius: var(--art-radius-sm);
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+    height: 46px;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--art-gray-600);
+    background: var(--art-table-head-bg);
+    border-bottom: 1px solid var(--art-card-border);
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th::before {
+    display: none;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr > td {
+    padding: 13px 16px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--art-card-border);
+}
+
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td {
+    background: var(--art-hover-color);
+}
+
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > td {
+    background: var(--art-primary-light-9);
+}
+
+.ant-table-wrapper .ant-table-placeholder > td {
+    background: transparent;
+}
+
+.ant-pagination .ant-pagination-item,
+.ant-pagination .ant-pagination-prev,
+.ant-pagination .ant-pagination-next {
+    border-radius: var(--art-radius-base);
+}
+
+/* ---------- 按钮 ---------- */
+.ant-btn {
+    height: var(--art-control-height);
+    font-weight: 400;
+    border-radius: var(--art-radius-base);
+    box-shadow: none;
+}
+
+.ant-btn.ant-btn-sm {
+    height: 30px;
+    border-radius: var(--art-radius-base);
+}
+
+.ant-btn.ant-btn-lg {
+    height: 42px;
+}
+
+.ant-btn.ant-btn-circle,
+.ant-btn.ant-btn-icon-only {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.ant-btn-primary {
+    background: var(--main-color);
+    box-shadow: none;
+}
+
+.ant-btn-primary:not(:disabled):hover {
+    background: var(--art-primary-hover);
+}
+
+.ant-btn-primary:not(:disabled):active {
+    background: var(--art-primary-active);
+}
+
+.ant-btn-default:not(:disabled):hover {
+    color: var(--main-color);
+    border-color: var(--main-color);
+}
+
+.ant-btn-text:not(:disabled):hover {
+    background: var(--art-hover-color);
+}
+
+/* ---------- 表单控件 ---------- */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-picker,
+.ant-select .ant-select-selector,
+.ant-cascader .ant-select-selector {
+    min-height: var(--art-control-height);
+    border-radius: var(--art-radius-base) !important;
+}
+
+.ant-select-single .ant-select-selector .ant-select-selection-item,
+.ant-select-single .ant-select-selector .ant-select-selection-placeholder {
+    line-height: calc(var(--art-control-height) - 2px);
+}
+
+.ant-input-affix-wrapper:focus-within,
+.ant-input:focus,
+.ant-picker-focused,
+.ant-select-focused .ant-select-selector {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--main-color) 15%);
+}
+
+.ant-form-item .ant-form-item-label > label {
+    font-size: 13px;
+    color: var(--art-gray-700);
+}
+
+.ant-form-item .ant-form-item-extra {
+    font-size: 12px;
+    color: var(--art-gray-500);
+}
+
+/* ---------- 弹层（下拉/气泡/选择器） ---------- */
+.ant-dropdown .ant-dropdown-menu,
+.ant-select-dropdown,
+.ant-picker-dropdown .ant-picker-panel-container,
+.ant-popover .ant-popover-inner {
+    padding: 6px;
+    border-radius: 10px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+}
+
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item,
+.ant-select-dropdown .ant-select-item {
+    padding: 6px 12px;
+    border-radius: var(--art-radius-base);
+}
+
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item:hover,
+.ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+    background: var(--art-el-active-color);
+}
+
+.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+    font-weight: 400;
+    color: var(--art-gray-900);
+    background: var(--art-el-active-color);
+}
+
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-danger:hover {
+    color: var(--art-error);
+    background: color-mix(in srgb, var(--art-error) 10%, transparent);
+}
+
+.ant-popover .ant-popover-inner {
+    padding: 14px;
+}
+
+/* ---------- 对话框 / 抽屉 ---------- */
+.ant-modal .ant-modal-content {
+    padding: 20px 24px 16px;
+    border-radius: 12px;
+}
+
+.ant-modal .ant-modal-header {
+    margin-bottom: 16px;
+}
+
+.ant-modal .ant-modal-title {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.ant-modal .ant-modal-close {
+    top: 14px;
+    inset-inline-end: 12px;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--art-radius-base);
+    transition: background-color 0.2s ease;
+}
+
+.ant-modal .ant-modal-close:hover {
+    background: var(--art-hover-color);
+}
+
+.ant-drawer .ant-drawer-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--art-card-border);
+}
+
+/* ---------- 标签 / 徽标 / 进度 ---------- */
+.ant-tag {
+    height: 24px;
+    padding-inline: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 22px;
+    border-radius: var(--art-radius-base);
+}
+
+.ant-badge .ant-badge-count {
+    box-shadow: none;
+}
+
+.ant-progress .ant-progress-bg {
+    background: var(--main-color);
+}
+
+/* ---------- 描述列表 / 统计 / 分段 ---------- */
+.ant-descriptions .ant-descriptions-item-label {
+    font-size: 13px;
+    color: var(--art-gray-600);
+    background: var(--art-gray-200) !important;
+}
+
+.ant-descriptions .ant-descriptions-item-content {
+    color: var(--text-primary);
+}
+
+.ant-statistic .ant-statistic-title {
+    font-size: 13px;
+    color: var(--art-gray-600);
+}
+
+.ant-statistic .ant-statistic-content {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--art-gray-900);
+}
+
+.ant-segmented {
+    padding: 3px;
+    border-radius: var(--art-radius-sm);
+}
+
+.ant-segmented .ant-segmented-item {
+    border-radius: var(--art-radius-base);
+}
+
+/* ---------- 标签页 ---------- */
+.ant-tabs .ant-tabs-tab {
+    font-size: 14px;
+    color: var(--art-gray-600);
+}
+
+.ant-tabs .ant-tabs-tab:hover,
+.ant-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+    color: var(--main-color);
+}
+
+.ant-tabs .ant-tabs-ink-bar {
+    background: var(--main-color);
+}
+
+.ant-tabs .ant-tabs-nav::before {
+    border-bottom-color: var(--art-card-border);
+}
+
+/* ---------- 消息提示 ---------- */
+.ant-message .ant-message-notice-content {
+    padding: 10px 16px;
+    border-radius: 10px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+}
+
+.ant-notification .ant-notification-notice {
+    border-radius: 12px;
+}
+
+.ant-tooltip .ant-tooltip-inner {
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: var(--art-radius-base);
+}
+
+/* ==========================================================================
+   6. 业务通用类（页面级复用，替代 Tailwind 工具类写法）
+   ========================================================================== */
+
+/* ---------- 页面标题 ---------- */
+.page-header-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.art-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.art-page-header-main {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 14px;
+}
+
+.art-page-header-icon {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    font-size: 22px;
+    color: var(--main-color);
+    background: var(--art-primary-light-9);
+    border: 1px solid color-mix(in srgb, var(--main-color) 20%, transparent);
+    border-radius: var(--art-radius-card);
+}
+
+.art-page-header-titles {
+    min-width: 0;
+}
+
+.art-page-header-title {
+    margin: 0;
+    overflow: hidden;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--art-gray-900);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.art-page-header-subtitle {
+    margin: 4px 0 0;
+    overflow: hidden;
+    font-size: 13px;
+    color: var(--art-gray-600);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.art-page-header-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 10px;
+}
+
+/* ---------- 卡片头部（内容型卡片标题 + 描述） ---------- */
+.art-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 4px;
+}
+
+.art-card-header .art-card-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--art-gray-900);
+}
+
+.art-card-header .art-card-desc {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--art-gray-600);
+}
+
+/* ---------- 统计卡片 ---------- */
+.art-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.art-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px;
+    background: var(--art-box-bg);
+    border: 1px solid var(--art-card-border);
+    border-radius: var(--art-radius-card);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.art-stat-card:hover {
+    border-color: color-mix(in srgb, var(--main-color) 35%, var(--art-card-border));
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+    transform: translateY(-2px);
+}
+
+.art-stat-icon {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    font-size: 20px;
+    color: var(--main-color);
+    background: var(--art-primary-light-9);
+    border-radius: var(--art-radius-card);
+}
+
+.art-stat-icon.is-success {
+    color: var(--art-success);
+    background: color-mix(in srgb, var(--art-success) 14%, transparent);
+}
+
+.art-stat-icon.is-warning {
+    color: var(--art-warning);
+    background: color-mix(in srgb, var(--art-warning) 16%, transparent);
+}
+
+.art-stat-icon.is-danger {
+    color: var(--art-danger);
+    background: color-mix(in srgb, var(--art-danger) 16%, transparent);
+}
+
+.art-stat-body {
+    min-width: 0;
+}
+
+.art-stat-label {
+    font-size: 13px;
+    color: var(--art-gray-600);
+}
+
+.art-stat-value {
+    margin-top: 4px;
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--art-gray-900);
+}
+
+/* ---------- 工具条 ---------- */
+.art-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.art-toolbar .art-toolbar-spacer {
+    flex: 1 1 auto;
+}
+
+/* ---------- 状态点 ---------- */
+.art-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--art-gray-700);
+}
+
+.art-status::before {
+    width: 6px;
+    height: 6px;
+    content: "";
+    background: var(--art-gray-400);
+    border-radius: 50%;
+}
+
+.art-status.is-success::before {
+    background: var(--art-success);
+}
+
+.art-status.is-warning::before {
+    background: var(--art-warning);
+}
+
+.art-status.is-danger::before {
+    background: var(--art-danger);
+}
+
+/* ---------- 代码 / 参数展示 ---------- */
+.art-code {
+    padding: 12px;
+    overflow: auto;
+    font-family: "MapleMonoNL-NF-CN-Regular", Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--art-gray-800);
+    background: var(--art-gray-100);
+    border: 1px solid var(--art-card-border);
+    border-radius: var(--art-radius-sm);
+}
+
+/* ---------- 文本渐变（谨慎使用） ---------- */
+.art-text-gradient {
+    color: var(--main-color);
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* ---------- 空状态 ---------- */
+.art-empty {
+    padding: 40px 20px;
+    color: var(--art-gray-500);
+    text-align: center;
+}
+
+/* ==========================================================================
+   7. 过渡动画（路由/内容区入场）
+   ========================================================================== */
+@keyframes art-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.art-page-stage > * {
+    animation: art-fade-in 0.24s ease-out;
+}
+
+/* ==========================================================================
+   8. 响应式
+   ========================================================================== */
+@media (max-width: 900px) {
+    .art-header-search.ant-input-affix-wrapper {
+        display: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .art-content.ant-layout-content {
+        padding: 12px;
+    }
+
+    .art-header.ant-layout-header {
+        padding: 0 8px;
+    }
+
+    .art-header-user .art-header-username,
+    .art-logo-desc,
+    .art-header .ant-breadcrumb {
+        display: none;
+    }
+
+    .art-page-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .art-page-header-actions {
+        width: 100%;
+    }
+
+    .art-page-header-title {
+        font-size: 18px;
+    }
+
+    .ant-card .ant-card-body {
+        padding: 16px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .art-page-stage > *,
+    .art-stat-card,
+    .glass-card {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* ==========================================================================
+   9. 历史样式桥接（Legacy Bridge）
+   --------------------------------------------------------------------------
+   index.css 中仍保留早期“深色侧边栏”规范的样式，其选择器普遍带 !important
+   且优先级较高。这里通过「html body + 语义化类名」把优先级提升到同级或更高，
+   确保最终呈现统一为 Art Design 令牌。
+   后续 index.css 清理完成后，可整体删除本节。
+   ========================================================================== */
+
+/* ---------- 侧边栏 ---------- */
+html body .art-layout .art-sidebar.ant-layout-sider {
+    background: var(--default-box-color) !important;
+    border-right: 1px solid var(--art-card-border) !important;
+}
+
+/* ---------- 侧边栏菜单 ---------- */
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-item,
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-submenu-title,
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-item-group-title {
+    color: var(--art-gray-700) !important;
+}
+
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-item .anticon,
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-submenu-title .anticon {
+    color: var(--art-gray-600) !important;
+}
+
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-submenu-title:hover,
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-item:not(.ant-menu-item-selected):hover {
+    color: var(--art-gray-900) !important;
+    background: var(--art-hover-color) !important;
+}
+
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-submenu-title:hover .anticon,
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-item:not(.ant-menu-item-selected):hover .anticon {
+    color: var(--art-gray-800) !important;
+}
+
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-item-selected,
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-item-selected .ant-menu-title-content,
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-item-selected .anticon {
+    color: var(--main-color) !important;
+    background-color: var(--art-primary-light-9) !important;
+}
+
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-submenu-arrow {
+    color: var(--art-gray-500) !important;
+}
+
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-submenu-open > .ant-menu-submenu-title .ant-menu-submenu-arrow {
+    color: var(--art-gray-700) !important;
+}
+
+html body .art-layout .art-sidebar .art-menu.ant-menu .ant-menu-sub.ant-menu-inline {
+    background: transparent !important;
+}
+
+/* ---------- 内容区 ---------- */
+html body .art-layout .art-main .art-content.ant-layout-content {
+    padding: 16px !important;
+    background: var(--art-content-bg) !important;
+}
+
+/* ---------- 卡片与玻璃容器 ---------- */
+html body .art-page-stage .ant-card,
+html body .art-page-stage .glass-card,
+html body .art-page-stage .glass-effect,
+html body .dashboard-page .glass-card,
+html body .dashboard-page .glass-effect {
+    background: var(--art-box-bg) !important;
+    border: 1px solid var(--art-card-border) !important;
+    border-radius: var(--art-radius-card) !important;
+    box-shadow: none !important;
+}
+
+html body .art-page-stage .ant-card .ant-card-head {
+    color: var(--art-gray-900) !important;
+    background: transparent !important;
+    border-bottom-color: var(--art-card-border) !important;
+}
+
+html body .art-page-stage .ant-card .ant-card-head .ant-card-head-title {
+    color: var(--art-gray-900) !important;
+}
+
+html body .art-page-stage .ant-card .ant-card-body {
+    background: transparent !important;
+}
+
+/* ---------- 表格 ---------- */
+html body .art-page-stage .ant-table-wrapper .ant-table,
+html body .art-page-stage .ant-table-wrapper .ant-table-thead,
+html body .art-page-stage .ant-table-wrapper .ant-table-thead > tr {
+    background: transparent !important;
+}
+
+html body .art-page-stage .ant-table-wrapper .ant-table-thead > tr > th {
+    color: var(--art-gray-600) !important;
+    background: var(--art-table-head-bg) !important;
+    border-bottom: 1px solid var(--art-card-border) !important;
+}
+
+html body .art-page-stage .ant-table-wrapper .ant-table-tbody > tr > td {
+    color: var(--text-primary) !important;
+    background: transparent !important;
+    border-bottom: 1px solid var(--art-card-border) !important;
+}
+
+html body .art-page-stage .ant-table-wrapper .ant-table-tbody > tr:hover > td {
+    background: var(--art-hover-color) !important;
+}
+
+html body .art-page-stage .ant-table-wrapper .ant-table-placeholder > td {
+    background: transparent !important;
+}
+
+/* ==========================================================================
+   10. 登录 / 注册 / 重置密码页（无侧边栏的独立页面）
+   ========================================================================== */
+.art-auth-page {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 48px 20px;
+    overflow: hidden;
+    background: var(--art-content-bg);
+}
+
+/* 背景装饰：两处柔和光斑，替代高饱和渐变 */
+.art-auth-page::before {
+    position: absolute;
+    inset: 0;
+    content: "";
+    background:
+        radial-gradient(620px circle at 12% 18%, color-mix(in srgb, var(--main-color) 12%, transparent), transparent 62%),
+        radial-gradient(540px circle at 88% 82%, color-mix(in srgb, var(--art-success) 10%, transparent), transparent 62%);
+    pointer-events: none;
+}
+
+.art-auth-page > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* 右上角工具按钮 */
+.art-auth-toolbar {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+    display: flex;
+    gap: 10px;
+}
+
+.art-auth-tool-btn.ant-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    color: var(--art-gray-700);
+    background: var(--art-box-bg);
+    border: 1px solid var(--art-card-border);
+    border-radius: var(--art-radius-sm);
+    box-shadow: none;
+    transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.art-auth-tool-btn.ant-btn:hover {
+    color: var(--main-color);
+    border-color: var(--main-color);
+}
+
+.art-auth-tool-btn.ant-btn.is-active {
+    color: #fff;
+    background: var(--main-color);
+    border-color: var(--main-color);
+}
+
+/* 表单卡片 */
+.art-auth-card {
+    width: 100%;
+    max-width: 430px;
+    padding: 32px;
+    background: var(--art-box-bg);
+    border: 1px solid var(--art-card-border);
+    border-radius: var(--art-radius-card);
+    box-shadow: 0 12px 40px rgba(20, 30, 60, 0.08);
+    backdrop-filter: blur(30px) saturate(150%);
+    -webkit-backdrop-filter: blur(30px) saturate(150%);
+}
+
+[data-theme="dark"] .art-auth-card {
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+.art-auth-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 16px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--main-color) 0%, var(--art-primary-hover) 100%);
+    border-radius: var(--art-radius-card);
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--main-color) 30%, transparent);
+}
+
+.art-auth-title {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--art-gray-900);
+    text-align: center;
+}
+
+.art-auth-subtitle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 8px 0 24px;
+    font-size: 13px;
+    color: var(--art-gray-600);
+    text-align: center;
+}
+
+/* 登录方式切换 */
+.art-auth-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 20px;
+    background: var(--art-gray-200);
+    border-radius: var(--art-radius-sm);
+}
+
+.art-auth-tab {
+    flex: 1 1 0;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--art-gray-700);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    border-radius: var(--art-radius-base);
+    transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.art-auth-tab:hover {
+    color: var(--art-gray-900);
+}
+
+.art-auth-tab.is-active {
+    color: #fff;
+    background: var(--main-color);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--main-color) 30%, transparent);
+}
+
+/* 底部链接 */
+.art-auth-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+}
+
+.art-auth-link {
+    color: var(--main-color);
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.art-auth-link:hover {
+    color: var(--art-primary-hover);
+}
+
+/* 提示条 */
+.art-auth-tip {
+    padding: 10px 12px;
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--art-gray-600);
+    text-align: center;
+    background: var(--art-gray-100);
+    border: 1px solid var(--art-card-border);
+    border-radius: var(--art-radius-sm);
+}
+
+/* 表单标签图标 */
+.art-auth-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    color: var(--art-gray-700);
+}
+
+.art-auth-label .anticon {
+    color: var(--main-color);
+}
+
+@media (max-width: 640px) {
+    .art-auth-card {
+        padding: 24px 20px;
+    }
+
+    .art-auth-toolbar {
+        top: 12px;
+        right: 12px;
+    }
+}

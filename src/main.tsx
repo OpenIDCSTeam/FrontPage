@@ -1,0 +1,35 @@
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { App as AntdApp } from 'antd'
+import dayjs from 'dayjs'
+import 'dayjs/locale/zh-cn'
+import App from './App'
+import './index.css'
+// Art Design 设计层（Ant Design 主题配套样式，需在 index.css 之后引入以覆盖历史样式）
+import './styles/art-design.css'
+// 导入国际化模块（会自动挂载到 window 对象）
+import { initI18n } from './utils/i18n'
+// 导入主题管理
+import { ThemeProvider } from './contexts/ThemeContext'
+
+// 设置dayjs为中文
+dayjs.locale('zh-cn')
+
+// 初始化国际化系统
+initI18n().then(() => {
+  console.log('i18n 初始化完成')
+}).catch(err => {
+  console.error('i18n 初始化失败:', err)
+})
+
+// 渲染React应用
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    {/* 主题管理 */}
+    <ThemeProvider>
+      <AntdApp>
+        <App />
+      </AntdApp>
+    </ThemeProvider>
+  </React.StrictMode>,
+)
