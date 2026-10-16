@@ -3,7 +3,13 @@ export interface ApiResponse<T = any> {
   code: number; // 状态码
   msg: string; // 响应消息
   data?: T; // 响应数据
-  timestamp?: string; // 时间戳
+  timestamp?: number; // 秒级时间戳（后端 int64）
+  /**
+   * 错误信息。仅中间件在 HTTP 非 2xx 分支返回（如 CSRF 校验失败
+   * 返回 403 {error: "CSRF token 无效或已过期"}），
+   * 拦截器依赖它在 403 时刷新 token 并重试一次。
+   */
+  error?: string;
 }
 
 // 用户相关类型
@@ -51,10 +57,12 @@ export interface User {
 
 // 登录请求
 export interface LoginRequest {
-  login_type?: 'token' | 'user';
+  // access_key：虚拟机访问密钥登录（16 位字母数字，登录后直达该虚拟机）
+  login_type?: 'token' | 'user' | 'access_key';
   token?: string;
   username?: string;
   password?: string;
+  access_key?: string;
 }
 
 // 主机相关类型
@@ -267,12 +275,16 @@ export const TAB_PERMISSION_MAP: Record<string, number> = {
 };
 
 // 权限不足时直接隐藏的Tab（用户不具有对应权限时隐藏该切页）
+// access（访问密钥）不放入 HIDDEN_TABS：它等价于该虚拟机的长期登录凭据，
+// 仅管理员/主所有者可见，可见性由 OWNER_ONLY_TABS 控制而非权限掩码。
 export const HIDDEN_TABS: Set<string> = new Set(['ip', 'hdd', 'iso', 'nat', 'proxy', 'pci', 'usb', 'backup', 'efi', 'owners']);
 
 // 权限不足时仅只读的Tab（可查看但禁止操作）- 保留定义以兼容其他引用
 export const READONLY_TABS: Set<string> = new Set([]);
 
 // owners tab 仅管理员/主所有者可见（不受普通权限控制）
+// access（访问密钥）tab 的可见性由 DockDetail 单独判定：
+// 除管理员/主所有者外，还需排除受限临时身份（临时凭据/访问密钥登录）。
 export const OWNER_ONLY_TABS: Set<string> = new Set(['owners']);
 
 // Tab key 到配额字段的映射（配额为0时隐藏对应Tab）

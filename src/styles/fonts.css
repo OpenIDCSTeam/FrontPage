@@ -1,0 +1,61 @@
+/* ==========================================================================
+   字体资源与字体预设
+   --------------------------------------------------------------------------
+   加载策略（「先不加载，后台加载」）：
+     1. 首屏默认预设是 hybrid（系统黑体正文 + 系统等宽数据），
+        零字体文件下载，不阻塞 LCP。
+     2. Maple Mono（含完整 CJK，约 6MB）不在首屏引用，由
+        src/config/fonts.config.ts 的 prefetchCustomFonts() 在页面
+        空闲时（requestIdleCallback）后台拉取并注册进 document.fonts。
+     3. 用户手动切到 maple 预设时，字体已在缓存中，切换瞬时完成；
+        即便尚未就绪，font-display: swap 也保证先渲染后替换。
+
+   预设：由 <html data-font="…"> 决定 --font-family / --font-mono。
+   新增字体只需在 fonts.config.ts 加一项 + 这里加一段。
+   ========================================================================== */
+
+@font-face {
+    font-family: 'Maple Mono';
+    src: url('/ttf/maple-mono.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* ---------- 预设 1（默认）：混排 ----------
+   正文用系统无衬线保证中文阅读舒适，数值/ID/日志用系统等宽。
+   不引用任何 WebFont，首屏零下载。 */
+html[data-font='hybrid'],
+:root {
+    --font-family: 'Segoe UI Variable Text', system-ui, -apple-system, 'PingFang SC',
+        'HarmonyOS Sans SC', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas,
+        'Liberation Mono', monospace;
+}
+
+/* ---------- 预设 2：全局等宽 ----------
+   整个界面使用 Maple Mono：数字、ID、日志天然对齐。
+   字体由后台预载提供，切换时通常无需等待。 */
+html[data-font='maple'] {
+    --font-family: 'Maple Mono', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif;
+    --font-mono: 'Maple Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+}
+
+/* ---------- 预设 3：全局无衬线 ----------
+   完全跟随操作系统的界面字体，零字体下载。 */
+html[data-font='sans'] {
+    --font-family: system-ui, -apple-system, 'Segoe UI Variable Text', 'PingFang SC',
+        'HarmonyOS Sans SC', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif;
+    --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+
+/* 等宽预设下关闭连字：界面文本里的 != / => 不该被合并成单字形 */
+html[data-font='maple'] {
+    font-variant-ligatures: none;
+}
+
+html[data-font='maple'] code,
+html[data-font='maple'] pre,
+html[data-font='maple'] .art-code {
+    font-variant-ligatures: contextual;
+}

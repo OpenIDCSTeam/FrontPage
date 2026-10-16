@@ -278,7 +278,7 @@ const PortManage: React.FC<{ userMode?: boolean }> = ({ userMode = true }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {data.map((rule, index) => (
           <div key={`${rule.hostName}-${rule.vmUuid}-${rule.rule_index}-${index}`}
-               className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-blue-400 dark:hover:border-blue-500 p-4">
+               className="glass-card p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Tag color="blue" className="m-0">{rule.hostName}</Tag>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Select, Button, Card, Statistic, Modal, message } from 'antd'
+import { Select, Button, Spin, Modal, message } from 'antd'
 import { 
   ReloadOutlined, 
   PlayCircleOutlined, 
@@ -13,6 +13,8 @@ import {
 } from '@ant-design/icons'
 import api from '@/utils/apis.ts'
 import PageHeader from '@/components/PageHeader'
+import StatCard from '@/components/StatCard'
+import EmptyState from '@/components/EmptyState'
 
 /**
  * 日志数据接口
@@ -172,40 +174,22 @@ function LogsManage() {
   }
 
   /**
-   * 获取日志级别颜色
+   * 日志级别 → 设计系统类名后缀
+   * 早期这里返回 Tailwind 色值类（bg-red-500 / text-blue-600 dark:...），
+   * 与主题令牌脱节：换强调色时日志里的红/蓝不会跟着变，深色模式下还要
+   * 额外写 dark: 变体。现在只返回语义后缀，颜色由 art-design.css 统一决定。
    */
-  const getLevelColor = (level: string) => {
-    switch (level?.toUpperCase()) {
-      case 'ERROR':
-        return 'bg-red-500'
-      case 'WARNING':
-        return 'bg-yellow-500'
-      case 'INFO':
-        return 'bg-blue-500'
-      case 'DEBUG':
-        return 'bg-gray-500'
-      default:
-        return 'bg-gray-400'
-    }
-  }
+  const levelKey = (level: string) => (level || 'INFO').toLowerCase()
 
-  /**
-   * 获取日志级别文本颜色
-   */
-  const getLevelTextColor = (level: string) => {
-    switch (level?.toUpperCase()) {
-      case 'ERROR':
-        return 'text-red-600 dark:text-red-400'
-      case 'WARNING':
-        return 'text-yellow-600 dark:text-yellow-400'
-      case 'INFO':
-        return 'text-blue-600 dark:text-blue-400'
-      case 'DEBUG':
-        return ''
-      default:
-        return ''
-    }
-  }
+  /** 单条日志的展示字段（默认值集中在这里，列表与详情共用） */
+  const readLog = (log: Log) => ({
+    level: (log.level || 'INFO').toUpperCase(),
+    host: log.host || '系统',
+    action: log.actions || '未知操作',
+    message: log.message || log.content || '无消息内容',
+    time: new Date(log.timestamp || Date.now()).toLocaleString('zh-CN'),
+    result: log.success === undefined ? null : log.success ? '成功' : '失败',
+  })
 
   // 初始化加载
   useEffect(() => {
@@ -241,287 +225,214 @@ function LogsManage() {
   }, [autoRefresh, filters])
 
   return (
-    <div className="p-6 h-screen flex flex-col">
-      {/* 页面标题 */}
+    <div className="art-stack">
       <PageHeader
         icon={<FileTextOutlined />}
-        title="系统日志管理"
-        subtitle="查看系统运行日志和事件记录"
-        className="flex-shrink-0 mb-4"
-      />
-
-      {/* 过滤器 */}
-      <div className="glass-card p-4 mb-4 flex-shrink-0" style={{ position: 'relative', zIndex: 10 }}>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">主机筛选</label>
-            <Select
-              className="w-full"
-              placeholder="全部主机"
-              allowClear
-              value={filters.host || undefined}
-              onChange={(value) => setFilters({ ...filters, host: value || '' })}
-              getPopupContainer={() => document.body}
-            >
-              {hosts.map(host => (
-                <Select.Option key={host} value={host}>{host}</Select.Option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">日志级别</label>
-            <Select
-              className="w-full"
-              placeholder="全部级别"
-              allowClear
-              value={filters.level || undefined}
-              onChange={(value) => setFilters({ ...filters, level: value || '' })}
-              getPopupContainer={() => document.body}
-            >
-              <Select.Option value="ERROR">错误</Select.Option>
-              <Select.Option value="WARNING">警告</Select.Option>
-              <Select.Option value="INFO">信息</Select.Option>
-              <Select.Option value="DEBUG">调试</Select.Option>
-            </Select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">显示条数</label>
-            <Select
-              className="w-full"
-              value={filters.limit}
-              onChange={(value) => setFilters({ ...filters, limit: value })}
-              getPopupContainer={() => document.body}
-            >
-              <Select.Option value={50}>50条</Select.Option>
-              <Select.Option value={100}>100条</Select.Option>
-              <Select.Option value={200}>200条</Select.Option>
-              <Select.Option value={500}>500条</Select.Option>
-            </Select>
-          </div>
-          <div className="flex items-end">
+        title="系统日志"
+        subtitle="查看主机运行日志与操作记录"
+        actions={
+          <>
             <Button
-              type="primary"
-              icon={<ReloadOutlined />}
-              onClick={loadLogs}
-              loading={loading}
-              className="w-full"
+              type={autoRefresh ? 'primary' : 'default'}
+              icon={autoRefresh ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+              onClick={toggleAutoRefresh}
             >
+              {autoRefresh ? '停止刷新' : '自动刷新'}
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={loadLogs} loading={loading}>
               刷新
             </Button>
-          </div>
-        </div>
+            <Button danger icon={<DeleteOutlined />} onClick={clearLogs}>
+              清空
+            </Button>
+          </>
+        }
+      />
+
+      {/* 指标：只留四个级别计数，其余信息交给列表 */}
+      <div className="art-stat-grid">
+        <StatCard icon={<AlertOutlined />} label="错误" value={statistics.ERROR} tone="danger" />
+        <StatCard icon={<AlertOutlined />} label="警告" value={statistics.WARNING} tone="warning" />
+        <StatCard icon={<InfoCircleOutlined />} label="信息" value={statistics.INFO} tone="primary" />
+        <StatCard icon={<BugOutlined />} label="调试" value={statistics.DEBUG} tone="primary" />
       </div>
 
-      {/* 统计信息 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 flex-shrink-0">
-        <Card className="glass-card shadow-sm hover:shadow-md transition-shadow">
-          <Statistic
-            title={<span>错误</span>}
-            value={statistics.ERROR}
-            prefix={<AlertOutlined className="text-red-600 dark:text-red-400" />}
-            valueStyle={{ color: 'var(--error)' }}
-          />
-        </Card>
-        <Card className="glass-card shadow-sm hover:shadow-md transition-shadow">
-          <Statistic
-            title={<span>警告</span>}
-            value={statistics.WARNING}
-            prefix={<AlertOutlined className="text-yellow-600 dark:text-yellow-400" />}
-            valueStyle={{ color: 'var(--warning)' }}
-          />
-        </Card>
-        <Card className="glass-card shadow-sm hover:shadow-md transition-shadow">
-          <Statistic
-            title={<span>信息</span>}
-            value={statistics.INFO}
-            prefix={<InfoCircleOutlined className="text-blue-600 dark:text-blue-400" />}
-            valueStyle={{ color: 'var(--info)' }}
-          />
-        </Card>
-        <Card className="glass-card shadow-sm hover:shadow-md transition-shadow">
-          <Statistic
-            title={<span>调试</span>}
-            value={statistics.DEBUG}
-            prefix={<BugOutlined />}
-            valueStyle={{ color: 'var(--text-secondary)' }}
-          />
-        </Card>
+      {/* 筛选：全部收进一行工具条 */}
+      <div className="art-toolbar">
+        <Select
+          style={{ width: 180 }}
+          placeholder="全部主机"
+          allowClear
+          value={filters.host || undefined}
+          onChange={(value) => setFilters({ ...filters, host: value || '' })}
+          getPopupContainer={() => document.body}
+        >
+          {hosts.map(host => (
+            <Select.Option key={host} value={host}>{host}</Select.Option>
+          ))}
+        </Select>
+        <Select
+          style={{ width: 150 }}
+          placeholder="全部级别"
+          allowClear
+          value={filters.level || undefined}
+          onChange={(value) => setFilters({ ...filters, level: value || '' })}
+          getPopupContainer={() => document.body}
+        >
+          <Select.Option value="ERROR">错误</Select.Option>
+          <Select.Option value="WARNING">警告</Select.Option>
+          <Select.Option value="INFO">信息</Select.Option>
+          <Select.Option value="DEBUG">调试</Select.Option>
+        </Select>
+        <Select
+          style={{ width: 120 }}
+          value={filters.limit}
+          onChange={(value) => setFilters({ ...filters, limit: value })}
+          getPopupContainer={() => document.body}
+        >
+          <Select.Option value={50}>50 条</Select.Option>
+          <Select.Option value={100}>100 条</Select.Option>
+          <Select.Option value={200}>200 条</Select.Option>
+          <Select.Option value={500}>500 条</Select.Option>
+        </Select>
+        <span className="art-toolbar-spacer" />
+        <span className="art-muted">{filteredLogs.length} 条记录</span>
       </div>
 
-      {/* 两列布局：左边日志列表，右边详情 */}
-      <div className="flex gap-4 flex-1 min-h-0">
-        {/* 左侧：日志列表 */}
-        <div className="glass-card flex-1 flex flex-col">
-          <div className="p-4 border-b flex items-center justify-between flex-shrink-0" style={{ borderColor: 'var(--border-primary, rgba(0,0,0,0.08))' }}>
-            <h2 className="text-base font-semibold flex items-center gap-2">
-              <FileTextOutlined className="text-blue-600" />
+      {/* 列表 + 详情：固定高度分栏，两侧各自内部滚动 */}
+      <div className="art-split">
+        <section className="art-panel">
+          <header className="art-panel-head">
+            <span className="art-panel-title">
+              <FileTextOutlined />
               日志记录
-            </h2>
-            <div className="flex items-center gap-2">
-              <Button
-                size="small"
-                icon={autoRefresh ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-                onClick={toggleAutoRefresh}
-                style={autoRefresh ? { background: 'rgba(34,197,94,0.15)', color: '#22c55e', borderColor: 'rgba(34,197,94,0.3)' } : {}}
-              >
-                {autoRefresh ? '停止刷新' : '自动刷新'}
-              </Button>
-              <Button
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                onClick={clearLogs}
-                loading={loading}
-              >
-                清空日志
-              </Button>
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto">
+            </span>
+          </header>
+          <div className={`art-panel-body${filteredLogs.length > 0 ? ' is-flush' : ''}`}>
             {loading && filteredLogs.length === 0 ? (
-              <div className="p-8 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
-                <ReloadOutlined spin className="text-xl" />
-                <span className="ml-2">加载日志中...</span>
+              <div className="art-loading">
+                <Spin />
+                <span>正在加载日志…</span>
               </div>
             ) : filteredLogs.length === 0 ? (
-              <div className="p-8 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
-                <FileTextOutlined className="text-xl" />
-                <span className="ml-2">暂无日志记录</span>
-              </div>
+              <EmptyState
+                icon={<FileTextOutlined />}
+                title="暂无日志记录"
+                description="当前筛选条件下没有日志。可以放宽级别筛选，或点击「刷新」重新拉取。"
+                actions={
+                  <Button icon={<ReloadOutlined />} onClick={loadLogs}>
+                    刷新
+                  </Button>
+                }
+              />
             ) : (
-              <div className="divide-y" style={{ borderColor: 'var(--border-primary, rgba(0,0,0,0.08))' }}>
+              <ul className="art-log-list">
                 {filteredLogs.map((log, index) => {
-                  const level = log.level || 'INFO'
-                  const timestamp = log.timestamp || new Date().toISOString()
-                  const time = new Date(timestamp).toLocaleString('zh-CN')
-                  const message = log.message || log.content || '无消息内容'
-                  const host = log.host || '系统'
-                  const actions = log.actions || '未知操作'
-                  const success = log.success !== undefined ? (log.success ? '成功' : '失败') : '未知'
-                  const successColor = log.success === true ? 'text-green-600' : (log.success === false ? 'text-red-600' : '')
-                  const isSelected = selectedLog === log
-
+                  const item = readLog(log)
+                  const key = levelKey(item.level)
                   return (
-                    <div 
-                      key={index} 
-                    className={`p-4 cursor-pointer transition-colors`}
-                      style={isSelected ? { borderLeft: '4px solid #6968fd', background: 'rgba(105,104,253,0.06)' } : {}}
+                    <li
+                      key={index}
+                      className={`art-log-item${selectedLog === log ? ' is-active' : ''}`}
                       onClick={() => setSelectedLog(log)}
                     >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-2 h-2 ${getLevelColor(level)} rounded-full mt-2 flex-shrink-0`}></div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-semibold">{host}</span>
-                              <span className={`text-xs ${getLevelTextColor(level)} font-medium uppercase`}>{level}</span>
-                              <span className="text-xs font-medium text-blue-600 dark:text-blue-400  px-2 py-1 rounded">{actions}</span>
-                              <span className={`text-xs ${successColor} dark:brightness-125 font-medium`}>{success}</span>
-                            </div>
-                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{time}</span>
-                          </div>
-                          <p className="text-sm break-words line-clamp-2">{message}</p>
+                      <span className={`art-log-dot is-${key}`} />
+                      <div className="art-log-main">
+                        <div className="art-log-meta">
+                          <span className={`art-log-level is-${key}`}>{item.level}</span>
+                          <span className="art-log-host">{item.host}</span>
+                          <span className="art-log-action">{item.action}</span>
+                          {item.result && (
+                            <span className={`art-log-result ${item.result === '成功' ? 'is-ok' : 'is-fail'}`}>
+                              {item.result}
+                            </span>
+                          )}
+                          <span className="art-log-time">{item.time}</span>
                         </div>
+                        <p className="art-log-message">{item.message}</p>
                       </div>
-                    </div>
+                    </li>
                   )
                 })}
-              </div>
+              </ul>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* 右侧：日志详情 */}
-        <div className="glass-card w-1/2 flex flex-col">
-          <div className="p-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border-primary, rgba(0,0,0,0.08))' }}>
-            <h2 className="text-base font-semibold flex items-center gap-2">
-              <EyeOutlined className="text-blue-600" />
+        <section className="art-panel">
+          <header className="art-panel-head">
+            <span className="art-panel-title">
+              <EyeOutlined />
               日志详情
-            </h2>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4">
+            </span>
+          </header>
+          <div className="art-panel-body">
             {selectedLog ? (
-              <div className="space-y-4">
-                {/* 基本信息 */}
-                  <div className="rounded-lg p-4" style={{ background: 'var(--bg-card, rgba(0,0,0,0.03))', border: '1px solid var(--border-primary, rgba(0,0,0,0.06))' }}>
-                  <h3 className="text-sm font-semibold mb-3">基本信息</h3>
-                  <div className="space-y-2">
-                    <div className="flex items-start">
-                      <span className="text-xs font-medium w-20 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>主机:</span>
-                      <span className="text-xs">{selectedLog.host || '系统'}</span>
+              <div className="art-detail">
+                <div className="art-info-grid">
+                  <div>
+                    <div className="art-info-label">主机</div>
+                    <div className="art-info-value">{readLog(selectedLog).host}</div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">级别</div>
+                    <div className={`art-info-value is-mono art-log-level is-${levelKey(selectedLog.level)}`}>
+                      {readLog(selectedLog).level}
                     </div>
-                    <div className="flex items-start">
-                      <span className="text-xs font-medium w-20 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>级别:</span>
-                      <span className={`text-xs ${getLevelTextColor(selectedLog.level || 'INFO')} font-medium uppercase`}>
-                        {selectedLog.level || 'INFO'}
-                      </span>
+                  </div>
+                  <div>
+                    <div className="art-info-label">操作</div>
+                    <div className="art-info-value">{readLog(selectedLog).action}</div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">状态</div>
+                    <div className={`art-info-value${selectedLog.success === true ? ' is-ok' : selectedLog.success === false ? ' is-fail' : ''}`}>
+                      {readLog(selectedLog).result || '未知'}
                     </div>
-                    <div className="flex items-start">
-                      <span className="text-xs font-medium w-20 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>操作:</span>
-                      <span className="text-xs">{selectedLog.actions || '未知操作'}</span>
-                    </div>
-                    <div className="flex items-start">
-                      <span className="text-xs font-medium w-20 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>状态:</span>
-                      <span className={`text-xs font-medium ${
-                        selectedLog.success === true ? 'text-green-600' : 
-                        selectedLog.success === false ? 'text-red-600' : ''
-                      }`}>
-                        {selectedLog.success !== undefined ? (selectedLog.success ? '成功' : '失败') : '未知'}
-                      </span>
-                    </div>
-                    <div className="flex items-start">
-                      <span className="text-xs font-medium w-20 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>时间:</span>
-                      <span className="text-xs">
-                        {new Date(selectedLog.timestamp || new Date().toISOString()).toLocaleString('zh-CN')}
-                      </span>
-                    </div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">时间</div>
+                    <div className="art-info-value is-mono">{readLog(selectedLog).time}</div>
                   </div>
                 </div>
 
-                {/* 消息内容 */}
-                  <div className="rounded-lg p-4" style={{ background: 'var(--bg-card, rgba(0,0,0,0.03))', border: '1px solid var(--border-primary, rgba(0,0,0,0.06))' }}>
-                  <h3 className="text-sm font-semibold mb-3">消息内容</h3>
-                  <p className="text-sm whitespace-pre-wrap break-words">
-                    {selectedLog.message || selectedLog.content || '无消息内容'}
-                  </p>
+                <div className="art-subpanel">
+                  <div className="art-subpanel-head">
+                    <FileTextOutlined />
+                    消息内容
+                  </div>
+                  <p className="art-log-message is-expanded">{readLog(selectedLog).message}</p>
                 </div>
 
-                {/* 操作结果 */}
                 {selectedLog.results && Object.keys(selectedLog.results).length > 0 && (
-                  <div className="rounded-lg p-4" style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)' }}>
-                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: '#8b5cf6' }}>
+                  <div className="art-subpanel">
+                    <div className="art-subpanel-head">
                       <EyeOutlined />
                       操作结果
-                    </h3>
-                    <pre className="text-xs p-3 rounded whitespace-pre-wrap break-words overflow-x-auto" style={{ background: 'var(--bg-card, rgba(255,255,255,0.8))', border: '1px solid rgba(139,92,246,0.2)' }}>
-                      {JSON.stringify(selectedLog.results, null, 2)}
-                    </pre>
+                    </div>
+                    <pre className="art-code">{JSON.stringify(selectedLog.results, null, 2)}</pre>
                   </div>
                 )}
 
-                {/* 错误堆栈 */}
                 {selectedLog.execute && selectedLog.execute !== 'None' && selectedLog.execute.trim() !== '' && (
-                  <div className="rounded-lg p-4" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: '#ef4444' }}>
+                  <div className="art-subpanel is-danger">
+                    <div className="art-subpanel-head">
                       <BugOutlined />
                       错误堆栈
-                    </h3>
-                    <pre className="text-xs p-3 rounded whitespace-pre-wrap break-words font-mono overflow-x-auto" style={{ color: '#ef4444', background: 'var(--bg-card, rgba(255,255,255,0.8))', border: '1px solid rgba(239,68,68,0.2)' }}>
-                      {selectedLog.execute}
-                    </pre>
+                    </div>
+                    <pre className="art-code is-danger">{selectedLog.execute}</pre>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
-                <div className="text-center">
-                  <InfoCircleOutlined className="text-4xl mb-2" />
-                  <p className="text-sm">请从左侧选择一条日志查看详情</p>
-                </div>
-              </div>
+              <EmptyState
+                icon={<EyeOutlined />}
+                title="未选择日志"
+                description="从左侧列表中选择一条日志，这里会显示它的完整字段、操作结果与错误堆栈。"
+              />
             )}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   )

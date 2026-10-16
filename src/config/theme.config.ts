@@ -1,227 +1,260 @@
 import { ThemeConfig, theme } from 'antd';
 
 /**
- * Art Design 风格 Ant Design 主题配置
+ * Ant Design 主题配置
  * ------------------------------------------------------------------
- * 设计令牌与 `src/styles/art-design.css` 中的 CSS 变量保持一致，
- * 视觉规范参考 XiaoheiFS/adminweb（Art Design Pro）。
+ * 与 src/styles/art-design.css 的分层令牌一一对应：
+ *   · theme.config 决定 Ant Design 组件「内部」的渲染（尺寸、内边距、色值），
+ *   · art-design.css 决定组件外框与页面级视觉。
  *
- * 说明：
- * 1. 所有颜色/圆角/尺寸均通过 Ant Design 官方 token 与组件 token 下发，
- *    页面侧只需使用 Ant Design 组件，无需编写 Tailwind 工具类。
- * 2. 后续若要切换到 Tailwind，可直接从本文件的 token 生成 Tailwind theme。
+ * 三条硬约束：
+ *   1. 单一强调色（云蓝 #006eff），此外只有成功/警告/危险三个语义色。
+ *   2. 单一圆角梯级 4 / 6 / 8 / 10 / 12。
+ *   3. 控件高度只在这里定义（controlHeight）。art-design.css 不再写
+ *      height / min-height，避免两者叠加导致输入框与选择框不等高。
  */
 
-/** 品牌主色 */
-export const ART_PRIMARY = '#5d87ff';
+/** 唯一强调色 */
+export const ART_PRIMARY = '#006eff';
+/** 暗色模式下按钮底仍用同一支蓝（保证白字对比度），文字/链接换更亮的同色 */
+export const ART_PRIMARY_DARK = '#006eff';
+/**
+ * @deprecated 早期「蓝 → 靛」渐变终点。渐变已从设计层移除，保留导出仅作兼容。
+ */
+export const ART_PRIMARY_TO = '#006eff';
 
-/** 中性色阶（亮色） */
+/** 中性色阶（亮色）—— 单一冷灰族 */
 const GRAY = {
-  100: '#f9fafb',
-  200: '#f2f4f5',
-  300: '#e6eaeb',
-  400: '#dbdfe1',
-  500: '#949eb7',
-  600: '#7987a1',
-  700: '#4d5875',
-  800: '#383853',
-  900: '#29343d',
+  100: '#f3f5f7',
+  200: '#eaedf0',
+  300: '#dfe3e8',
+  400: '#c4ccd6',
+  500: '#9099a6',
+  600: '#5d6675',
+  700: '#394150',
+  800: '#232a37',
+  900: '#12161f',
 };
 
 /** 中性色阶（暗色） */
 const GRAY_DARK = {
-  100: '#17171c',
-  200: '#1e1e24',
-  300: '#2b2b34',
-  400: '#3d3d49',
-  500: '#73738c',
-  600: '#8f8fa3',
-  700: '#ababba',
-  800: '#c7c7d1',
-  900: '#e3e3e8',
+  100: '#0f1013',
+  200: '#16181d',
+  300: '#1f2228',
+  400: '#2c3038',
+  500: '#666d7c',
+  600: '#848c9c',
+  700: '#a9b0bd',
+  800: '#ccd1da',
+  900: '#e8eaee',
 };
 
-/** 字体栈：界面使用系统无衬线字体，等宽字体仅用于代码 */
-const FONT_FAMILY =
-  "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif";
+/**
+ * 字体交给 CSS 变量，由 src/styles/fonts.css 的字体预设决定。
+ * 这样 Ant Design 组件内部的文字也跟随全局字体切换，
+ * 不需要在切换时重建 ConfigProvider。
+ */
+const FONT_FAMILY = 'var(--font-family)';
+/** 等宽：所有数值、ID、日志、端口 */
+export const FONT_FAMILY_MONO = 'var(--font-mono)';
 
-/** 主题模式 */
 interface ThemeModeOptions {
-  /** 是否暗色模式 */
+  /** 暗色模式 */
   dark: boolean;
-  /** 是否透明（毛玻璃）模式 */
+  /** 透明（毛玻璃）模式：容器背景半透明 */
   transparent: boolean;
 }
 
-/**
- * 生成一套完整的 Ant Design 主题配置
- * @param options.dark 暗色模式
- * @param options.transparent 透明（毛玻璃）模式：容器背景改为半透明/透明
- */
 export function createArtTheme({ dark, transparent }: ThemeModeOptions): ThemeConfig {
-  // 语义化取值：暗色 / 亮色
   const pick = <T,>(lightValue: T, darkValue: T): T => (dark ? darkValue : lightValue);
 
-  // 透明模式下容器背景透明，其余模式使用实色
-  const boxBg = transparent ? 'transparent' : pick('#ffffff', '#161618');
-  const layoutBg = transparent ? 'transparent' : pick('#fafbfc', '#070707');
-  const elevatedBg = transparent ? pick('rgba(255, 255, 255, 0.6)', 'rgba(22, 22, 24, 0.6)') : boxBg;
-  const borderColor = transparent ? 'rgba(0, 0, 0, 0.1)' : pick('#e2e8ee', 'rgba(255, 255, 255, 0.12)');
-  const borderSecondary = transparent ? 'rgba(0, 0, 0, 0.06)' : pick('#edeff0', 'rgba(255, 255, 255, 0.08)');
+  /* ---------- 分层表面 ---------- */
+  const boxBg = transparent ? 'rgba(255, 255, 255, 0.68)' : pick('#ffffff', '#15171c');
+  const layoutBg = transparent ? 'transparent' : pick('#f4f5f7', '#0b0c0f');
+  const elevatedBg = transparent
+    ? pick('rgba(255, 255, 255, 0.88)', 'rgba(27, 30, 36, 0.9)')
+    : pick('#ffffff', '#1b1e24');
+  const sunkenBg = transparent ? 'rgba(242, 244, 247, 0.42)' : pick('#f2f4f7', '#0f1013');
+
+  const borderColor = transparent
+    ? 'rgba(18, 24, 40, 0.1)'
+    : pick('rgba(18, 24, 40, 0.07)', 'rgba(255, 255, 255, 0.08)');
+  const borderSecondary = transparent
+    ? 'rgba(18, 24, 40, 0.06)'
+    : pick('rgba(18, 24, 40, 0.05)', 'rgba(255, 255, 255, 0.06)');
+
   const grayScale = dark ? GRAY_DARK : GRAY;
+  const hoverBg = pick('#f3f5f7', 'rgba(255, 255, 255, 0.05)');
+  const activeSoft = pick('rgba(0, 110, 255, 0.09)', 'rgba(61, 139, 255, 0.15)');
+  const accentText = pick(ART_PRIMARY, '#6ba6ff');
 
   return {
     algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
     token: {
-      /* ---------- 品牌与语义色 ---------- */
-      colorPrimary: pick(ART_PRIMARY, '#7ea1ff'),
-      colorInfo: pick(ART_PRIMARY, '#7ea1ff'),
-      colorSuccess: '#13deb9',
-      colorWarning: '#ffae1f',
-      colorError: '#ff4d4f',
-      colorLink: pick(ART_PRIMARY, '#7ea1ff'),
+      /* ---------- 强调与语义色 ---------- */
+      colorPrimary: pick(ART_PRIMARY, ART_PRIMARY_DARK),
+      colorInfo: pick(ART_PRIMARY, ART_PRIMARY_DARK),
+      colorSuccess: pick('#1a9e6f', '#3ecf94'),
+      colorWarning: pick('#c07c15', '#e0ac52'),
+      colorError: pick('#d0453b', '#ef7a70'),
+      colorLink: accentText,
 
       /* ---------- 文本 ---------- */
-      colorText: pick(GRAY[900], 'rgba(255, 255, 255, 0.88)'),
-      colorTextSecondary: pick(GRAY[700], 'rgba(255, 255, 255, 0.62)'),
-      colorTextTertiary: pick(GRAY[600], 'rgba(255, 255, 255, 0.42)'),
-      colorTextQuaternary: pick(GRAY[500], 'rgba(255, 255, 255, 0.28)'),
-      colorTextHeading: pick(GRAY[900], 'rgba(255, 255, 255, 0.92)'),
-      colorTextDescription: pick(GRAY[600], 'rgba(255, 255, 255, 0.42)'),
+      colorText: pick(GRAY[900], GRAY_DARK[900]),
+      colorTextSecondary: pick(GRAY[700], GRAY_DARK[700]),
+      colorTextTertiary: pick(GRAY[600], GRAY_DARK[600]),
+      colorTextQuaternary: pick(GRAY[500], GRAY_DARK[500]),
+      colorTextHeading: pick(GRAY[900], GRAY_DARK[900]),
+      colorTextDescription: pick(GRAY[600], GRAY_DARK[600]),
 
       /* ---------- 背景 ---------- */
       colorBgContainer: boxBg,
       colorBgElevated: elevatedBg,
       colorBgLayout: layoutBg,
-      colorBgSpotlight: pick(GRAY[800], '#2e2e38'),
+      colorBgSpotlight: pick('#232a37', '#23252b'),
+      colorBgMask: pick('rgba(16, 22, 40, 0.4)', 'rgba(0, 0, 0, 0.7)'),
       colorBorder: borderColor,
       colorBorderSecondary: borderSecondary,
       colorSplit: borderSecondary,
-      colorFillQuaternary: pick(GRAY[100], 'rgba(255, 255, 255, 0.04)'),
-      colorFillTertiary: pick(GRAY[200], 'rgba(255, 255, 255, 0.06)'),
+      colorFillQuaternary: sunkenBg,
+      colorFillTertiary: pick(GRAY[200], 'rgba(255, 255, 255, 0.05)'),
+      colorFillSecondary: pick(GRAY[300], 'rgba(255, 255, 255, 0.07)'),
 
       /* ---------- 字体 ---------- */
       fontFamily: FONT_FAMILY,
-      fontSize: 14,
-      fontSizeHeading1: 32,
-      fontSizeHeading2: 26,
-      fontSizeHeading3: 22,
-      fontSizeHeading4: 18,
-      fontSizeHeading5: 16,
+      fontFamilyCode: FONT_FAMILY_MONO,
+      fontSize: 13.5,
+      fontSizeSM: 12,
+      fontSizeLG: 15,
+      fontSizeHeading1: 26,
+      fontSizeHeading2: 22,
+      fontSizeHeading3: 18,
+      fontSizeHeading4: 16,
+      fontSizeHeading5: 14,
       lineHeight: 1.6,
 
-      /* ---------- 圆角（对齐 Art Design Pro 的 --custom-radius = 0.75rem） ---------- */
+      /* ---------- 圆角（Shape Lock：4 / 6 / 8 / 10 / 12） ---------- */
       borderRadius: 6,
       borderRadiusXS: 4,
       borderRadiusSM: 6,
-      borderRadiusLG: 12,
+      borderRadiusLG: 10,
       borderRadiusOuter: 8,
 
-      /* ---------- 控件尺寸 ---------- */
+      /* ---------- 控件高度（唯一定义处） ---------- */
       controlHeight: 36,
       controlHeightSM: 30,
       controlHeightLG: 42,
-      controlHeightXS: 26,
+      controlHeightXS: 24,
 
-      /* ---------- 阴影：统一使用极轻阴影，避免“AI 风”浮夸投影 ---------- */
+      /* ---------- 阴影：只服务浮层，中性色 ---------- */
       boxShadow: pick(
-        '0 1px 3px 0 rgba(0, 0, 0, 0.03), 0 1px 2px -1px rgba(0, 0, 0, 0.08)',
-        '0 2px 6px rgba(0, 0, 0, 0.35)',
+        '0 1px 2px rgba(16, 22, 38, 0.04)',
+        '0 1px 2px rgba(0, 0, 0, 0.4)',
       ),
-      boxShadowSecondary:
-        '0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05)',
-      boxShadowTertiary: '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
+      boxShadowSecondary: pick(
+        '0 2px 6px -2px rgba(16, 22, 38, 0.08), 0 16px 40px -12px rgba(16, 22, 38, 0.16)',
+        '0 2px 8px -2px rgba(0, 0, 0, 0.55), 0 16px 40px -12px rgba(0, 0, 0, 0.7)',
+      ),
+      boxShadowTertiary: pick('0 1px 2px rgba(16, 22, 38, 0.04)', '0 1px 3px rgba(0, 0, 0, 0.4)'),
 
-      /* ---------- 动效 ---------- */
-      motionDurationMid: '0.2s',
-      motionDurationSlow: '0.3s',
+      /* ---------- 动效（统一曲线） ---------- */
+      motionDurationFast: '0.12s',
+      motionDurationMid: '0.16s',
+      motionDurationSlow: '0.24s',
+      motionEaseInOut: 'cubic-bezier(0.32, 0.72, 0, 1)',
+      motionEaseOut: 'cubic-bezier(0.16, 1, 0.3, 1)',
 
-      /* ---------- 内容区留白 ---------- */
+      /* ---------- 间距 ---------- */
       padding: 16,
       paddingLG: 20,
       paddingXL: 24,
       margin: 16,
       marginLG: 20,
+
+      lineWidth: 1,
+      wireframe: false,
     },
     components: {
-      /* ---------- 布局 ---------- */
       Layout: {
-        headerBg: boxBg,
-        headerHeight: 60,
-        headerPadding: '0 16px 0 12px',
-        siderBg: boxBg,
+        headerBg: '#101216',
+        headerHeight: 52,
+        headerPadding: '0 14px 0 8px',
+        siderBg: pick('#ffffff', '#121317'),
         bodyBg: layoutBg,
       },
-      /* ---------- 菜单：42px 高、6px 圆角、选中浅主色底 ---------- */
       Menu: {
         itemBg: 'transparent',
         subMenuItemBg: 'transparent',
-        itemColor: grayScale[700],
-        itemHoverBg: pick(GRAY[200], '#252530'),
+        itemColor: grayScale[600],
+        itemHoverBg: hoverBg,
         itemHoverColor: grayScale[900],
-        itemSelectedBg: pick('#eef3ff', 'rgba(93, 135, 255, 0.14)'),
-        itemSelectedColor: pick(ART_PRIMARY, '#7ea1ff'),
-        itemActiveBg: pick('#eef3ff', 'rgba(93, 135, 255, 0.14)'),
-        itemHeight: 42,
+        itemSelectedBg: activeSoft,
+        itemSelectedColor: accentText,
+        itemActiveBg: activeSoft,
+        itemHeight: 34,
         itemMarginInline: 8,
-        itemMarginBlock: 4,
+        itemMarginBlock: 2,
         itemBorderRadius: 6,
         subMenuItemBorderRadius: 6,
-        iconSize: 18,
-        collapsedIconSize: 18,
+        iconSize: 15,
+        collapsedIconSize: 16,
+        /* 折叠态菜单根宽度，必须与 MainLayout 的 collapsedWidth 一致，
+           否则 80px 的菜单会被 56px 的侧栏裁掉一半，图标偏出可视区 */
+        collapsedWidth: 56,
         groupTitleColor: GRAY[500],
-        groupTitleFontSize: 12,
+        groupTitleFontSize: 10,
         activeBarWidth: 0,
         activeBarBorderWidth: 0,
         horizontalItemSelectedColor: ART_PRIMARY,
       },
-      /* ---------- 卡片 ---------- */
       Card: {
         colorBorderSecondary: borderColor,
         headerBg: 'transparent',
-        headerHeight: 54,
-        headerFontSize: 16,
-        headerPadding: 20,
-        bodyPadding: 20,
-        bodyPaddingSM: 16,
+        headerHeight: 48,
+        headerFontSize: 14,
+        headerPadding: 18,
+        bodyPadding: 18,
+        bodyPaddingSM: 14,
         actionsBg: 'transparent',
         extraColor: grayScale[600],
         boxShadowTertiary: 'none',
       },
-      /* ---------- 表格 ---------- */
       Table: {
-        headerBg: pick(GRAY[100], '#17171c'),
-        headerColor: grayScale[600],
+        headerBg: pick('#f7f8fa', 'rgba(255, 255, 255, 0.03)'),
+        headerColor: grayScale[500],
         headerSplitColor: 'transparent',
-        headerBorderRadius: 0,
+        headerBorderRadius: 8,
         borderColor: borderSecondary,
-        rowHoverBg: pick(GRAY[200], '#252530'),
-        rowSelectedBg: pick('#eef3ff', 'rgba(93, 135, 255, 0.14)'),
-        rowSelectedHoverBg: pick('#e2ebff', 'rgba(93, 135, 255, 0.2)'),
-        cellPaddingBlock: 13,
-        cellPaddingInline: 16,
+        rowHoverBg: hoverBg,
+        rowSelectedBg: pick('rgba(0, 110, 255, 0.06)', 'rgba(61, 139, 255, 0.12)'),
+        rowSelectedHoverBg: pick('rgba(0, 110, 255, 0.1)', 'rgba(61, 139, 255, 0.16)'),
+        cellPaddingBlock: 11,
+        cellPaddingInline: 14,
+        fontSize: 12.5,
         footerBg: 'transparent',
         footerColor: grayScale[600],
       },
-      /* ---------- 按钮 ---------- */
       Button: {
         controlHeight: 36,
         controlHeightSM: 30,
         controlHeightLG: 42,
-        fontWeight: 400,
+        fontWeight: 500,
         primaryShadow: 'none',
         defaultShadow: 'none',
         dangerShadow: 'none',
         defaultBorderColor: borderColor,
         defaultColor: grayScale[800],
-        paddingInline: 16,
+        paddingInline: 14,
+        contentFontSize: 13,
+        borderRadius: 6,
+        borderRadiusSM: 6,
+        borderRadiusLG: 8,
       },
-      /* ---------- 表单控件 ---------- */
       Input: {
         controlHeight: 36,
         paddingInline: 12,
         activeShadow: 'none',
-        hoverBorderColor: ART_PRIMARY,
+        hoverBorderColor: borderColor,
         activeBorderColor: ART_PRIMARY,
       },
       InputNumber: {
@@ -230,116 +263,117 @@ export function createArtTheme({ dark, transparent }: ThemeModeOptions): ThemeCo
       },
       Select: {
         controlHeight: 36,
-        optionPadding: '6px 12px',
-        optionSelectedBg: pick(GRAY[200], '#2e2e38'),
+        optionPadding: '6px 10px',
+        optionSelectedBg: hoverBg,
         optionSelectedColor: grayScale[900],
-        optionSelectedFontWeight: 400,
+        optionSelectedFontWeight: 500,
         borderRadiusSM: 6,
+        borderRadiusLG: 8,
       },
       DatePicker: {
         controlHeight: 36,
         activeShadow: 'none',
+        borderRadiusSM: 6,
       },
       Form: {
-        itemMarginBottom: 20,
+        itemMarginBottom: 18,
         labelColor: grayScale[700],
-        labelFontSize: 13,
+        labelFontSize: 12.5,
         verticalLabelPadding: '0 0 6px',
       },
-      /* ---------- 反馈与弹层 ---------- */
       Modal: {
         borderRadiusLG: 12,
-        titleFontSize: 16,
-        headerBg: boxBg,
-        contentBg: boxBg,
-        paddingContentHorizontalLG: 24,
-        paddingMD: 20,
+        titleFontSize: 15,
+        headerBg: 'transparent',
+        contentBg: elevatedBg,
+        paddingContentHorizontalLG: 22,
+        paddingMD: 18,
       },
       Drawer: {
-        paddingLG: 20,
+        paddingLG: 18,
         colorBgElevated: boxBg,
       },
       Dropdown: {
-        borderRadiusLG: 10,
-        paddingBlock: 6,
-        controlItemBgHover: pick(GRAY[200], '#2e2e38'),
-        controlItemBgActive: pick(GRAY[200], '#2e2e38'),
+        borderRadiusLG: 8,
+        paddingBlock: 4,
+        controlItemBgHover: hoverBg,
+        controlItemBgActive: hoverBg,
       },
       Popover: {
-        borderRadiusLG: 10,
-        paddingContentVertical: 14,
+        borderRadiusLG: 8,
+        paddingContentVertical: 12,
       },
       Tooltip: {
         borderRadius: 6,
-        colorBgSpotlight: pick(GRAY[800], '#2e2e38'),
+        colorBgSpotlight: pick('rgba(18, 22, 31, 0.95)', 'rgba(35, 37, 43, 0.96)'),
       },
       Message: {
         contentBg: elevatedBg,
-        borderRadiusLG: 10,
+        borderRadiusLG: 8,
       },
       Notification: {
         colorBgElevated: elevatedBg,
-        borderRadiusLG: 12,
+        borderRadiusLG: 8,
       },
-      /* ---------- 数据展示 ---------- */
       Tag: {
-        borderRadiusSM: 6,
-        defaultBg: pick(GRAY[200], 'rgba(255, 255, 255, 0.08)'),
+        borderRadiusSM: 4,
+        defaultBg: pick(GRAY[100], 'rgba(255, 255, 255, 0.05)'),
         defaultColor: grayScale[700],
       },
       Tabs: {
         itemColor: grayScale[600],
-        itemHoverColor: ART_PRIMARY,
-        itemSelectedColor: pick(ART_PRIMARY, '#7ea1ff'),
-        inkBarColor: pick(ART_PRIMARY, '#7ea1ff'),
-        horizontalItemGutter: 24,
-        titleFontSize: 14,
-        cardBg: pick(GRAY[100], '#17171c'),
+        itemHoverColor: grayScale[900],
+        itemSelectedColor: accentText,
+        inkBarColor: ART_PRIMARY,
+        horizontalItemGutter: 20,
+        titleFontSize: 12.5,
+        cardBg: sunkenBg,
       },
       Descriptions: {
-        labelBg: pick(GRAY[200], 'rgba(255, 255, 255, 0.04)'),
+        labelBg: 'transparent',
         titleMarginBottom: 12,
         itemPaddingBottom: 12,
       },
       Statistic: {
-        titleFontSize: 13,
-        contentFontSize: 24,
+        titleFontSize: 12,
+        contentFontSize: 22,
       },
       Badge: {
         dotSize: 6,
         textFontSizeSM: 11,
       },
       Progress: {
-        defaultColor: pick(ART_PRIMARY, '#7ea1ff'),
+        defaultColor: pick(ART_PRIMARY, '#2b8bff'),
       },
       Segmented: {
         itemSelectedBg: boxBg,
-        trackBg: pick(GRAY[200], 'rgba(255, 255, 255, 0.06)'),
+        trackBg: sunkenBg,
         itemColor: grayScale[600],
         itemSelectedColor: grayScale[900],
+        borderRadius: 999,
       },
       Pagination: {
-        itemSize: 32,
+        itemSize: 30,
         itemActiveBg: 'transparent',
-        colorPrimary: pick(ART_PRIMARY, '#7ea1ff'),
+        colorPrimary: ART_PRIMARY,
       },
       Steps: {
-        iconSize: 28,
-        titleLineHeight: 28,
+        iconSize: 26,
+        titleLineHeight: 26,
       },
       Tree: {
-        nodeHoverBg: pick(GRAY[200], '#252530'),
-        nodeSelectedBg: pick('#eef3ff', 'rgba(93, 135, 255, 0.14)'),
-        titleHeight: 34,
+        nodeHoverBg: hoverBg,
+        nodeSelectedBg: activeSoft,
+        titleHeight: 30,
       },
       Collapse: {
         headerBg: 'transparent',
-        headerPadding: '12px 16px',
-        contentPadding: '4px 16px 16px',
+        headerPadding: '12px 14px',
+        contentPadding: '4px 14px 14px',
       },
       Alert: {
         borderRadiusLG: 8,
-        paddingContentVerticalSM: 10,
+        paddingContentVerticalSM: 9,
       },
       Empty: {
         colorTextDescription: grayScale[500],
@@ -352,7 +386,8 @@ export function createArtTheme({ dark, transparent }: ThemeModeOptions): ThemeCo
         lastItemColor: grayScale[900],
         linkColor: grayScale[600],
         separatorColor: GRAY[400],
-        fontSize: 14,
+        fontSize: 12.5,
+        separatorMargin: 6,
       },
       Divider: {
         colorSplit: borderSecondary,
@@ -369,23 +404,17 @@ export function createArtTheme({ dark, transparent }: ThemeModeOptions): ThemeCo
         dotSize: 6,
       },
       Upload: {
-        colorFillAlter: pick(GRAY[100], 'rgba(255, 255, 255, 0.04)'),
+        colorFillAlter: sunkenBg,
       },
       Spin: {
-        colorPrimary: pick(ART_PRIMARY, '#7ea1ff'),
+        colorPrimary: pick(ART_PRIMARY, '#2b8bff'),
       },
     } as ThemeConfig['components'],
   };
 }
 
-/** 亮色主题 */
-export const lightTheme: ThemeConfig = createArtTheme({ dark: false, transparent: false });
-
-/** 暗色主题 */
-export const darkTheme: ThemeConfig = createArtTheme({ dark: true, transparent: false });
-
-/** 透明（毛玻璃）模式 - 亮色 */
-export const lightTransparentTheme: ThemeConfig = createArtTheme({ dark: false, transparent: true });
-
-/** 透明（毛玻璃）模式 - 暗色 */
-export const darkTransparentTheme: ThemeConfig = createArtTheme({ dark: true, transparent: true });
+/** 四套预设：由 ThemeContext 按当前模式选用 */
+export const lightTheme = createArtTheme({ dark: false, transparent: false });
+export const darkTheme = createArtTheme({ dark: true, transparent: false });
+export const lightTransparentTheme = createArtTheme({ dark: false, transparent: true });
+export const darkTransparentTheme = createArtTheme({ dark: true, transparent: true });

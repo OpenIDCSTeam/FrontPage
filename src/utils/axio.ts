@@ -30,8 +30,12 @@ const fetchCSRFToken = async (): Promise<string> => {
       withCredentials: true,
       timeout: 5000 
     });
-    csrfToken = response.data.csrf_token;
-    return csrfToken;
+    const token: string | undefined = response.data?.csrf_token;
+    if (!token) {
+      throw new Error('CSRF token 响应为空');
+    }
+    csrfToken = token;
+    return token;
   } catch (error) {
     console.error('获取 CSRF Token 失败:', error);
     throw error;

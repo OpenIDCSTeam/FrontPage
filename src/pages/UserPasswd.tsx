@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { Form, Input, Button, message, Progress } from 'antd'
-import { LockOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons'
+import { LockOutlined, EyeOutlined, EyeInvisibleOutlined, SafetyOutlined } from '@ant-design/icons'
 import api from '@/utils/apis.ts'
+import AuthLayout from '@/components/AuthLayout'
 
 /**
  * 重置密码页面组件
@@ -121,15 +122,18 @@ function UserPasswd() {
   }
 
   return (
-    <div className="art-auth-page">
+    <AuthLayout>
       <div className="art-auth-card">
         {/* 顶部图标和标题 */}
         <div>
           <div className="art-auth-logo">
-            <LockOutlined style={{ color: 'white', fontSize: 26 }} />
+            <SafetyOutlined style={{ fontSize: 26 }} />
           </div>
           <h2 className="art-auth-title">重置密码</h2>
-          <p className="art-auth-subtitle">请输入您的新密码</p>
+          <p className="art-auth-subtitle">
+            <LockOutlined />
+            请输入您的新密码
+          </p>
         </div>
           <Form
             form={form}
@@ -243,7 +247,7 @@ function UserPasswd() {
           {/* 底部提示信息 */}
           <p className="art-auth-tip">如果您遇到问题，请联系管理员</p>
       </div>
-    </div>
+    </AuthLayout>
   )
 }
 

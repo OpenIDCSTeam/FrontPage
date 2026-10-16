@@ -7,7 +7,6 @@ import {
     Select,
     InputNumber,
     message,
-    Card,
     Row,
     Col,
     Tabs,
@@ -15,8 +14,10 @@ import {
     Tag,
     Tooltip,
     Progress,
-    Table
+    Table,
+    Spin
 } from 'antd'
+import EmptyState from '@/components/EmptyState'
 import {
     PlusOutlined,
     ReloadOutlined,
@@ -31,12 +32,13 @@ import {
     SettingOutlined,
     FolderOutlined,
     DatabaseOutlined,
-    CopyOutlined,
     ExclamationCircleOutlined,
     AppstoreOutlined,
     UnorderedListOutlined,
     EyeOutlined,
     EyeInvisibleOutlined,
+    ClearOutlined,
+    MergeCellsOutlined,
 } from '@ant-design/icons'
 import {useNavigate} from 'react-router-dom'
 import api from '@/utils/apis.ts'
@@ -969,6 +971,111 @@ function HostManage() {
         }
     }
 
+    // 清理不匹配「过滤器名称」前缀的历史纳管记录（仅本机记录，不删除平台虚拟机）
+    const handleCleanupRecords = async (name: string) => {
+        try {
+            const preview = await api.cleanupVMRecords(name, true)
+            if (preview.code !== 200) {
+                message.error(preview.msg || '清理预览失败')
+                return
+            }
+            const data: any = preview.data || {}
+            const count: number = data.count || 0
+            const prefix: string = data.prefix_filter || ''
+            if (!count) {
+                message.success(`没有需要清理的记录（过滤器名称：${prefix}）`)
+                return
+            }
+            const items: string[] = data.items || []
+            const shown = items.slice(0, 10).join('、')
+            Modal.confirm({
+                title: '清理不匹配前缀的虚拟机记录',
+                icon: <DeleteOutlined style={{color: '#faad14'}}/>,
+                content: (
+                    <div>
+                        <p>将移除 <strong style={{color: '#faad14'}}>{count}</strong> 条不匹配过滤器名称「<strong>{prefix}</strong>」的记录：</p>
+                        <p style={{color: 'var(--text-secondary)', wordBreak: 'break-all'}}>
+                            {shown}{items.length > 10 ? ` 等共 ${items.length} 条` : ''}
+                        </p>
+                        <p style={{color: '#faad14'}}>仅移除本机纳管记录，不会删除平台上的虚拟机。</p>
+                    </div>
+                ),
+                okText: '确认清理',
+                okType: 'danger',
+                cancelText: '取消',
+                mask: false,
+                onOk: async () => {
+                    try {
+                        const result: any = await api.cleanupVMRecords(name, false)
+                        if (result.code === 200) {
+                            message.success(`已清理 ${result.data?.removed ?? 0} 条记录`)
+                            loadHosts()
+                        } else {
+                            message.error(result.msg || '清理失败')
+                        }
+                    } catch (error) {
+                        message.error('清理失败')
+                    }
+                }
+            })
+        } catch (error) {
+            message.error('清理预览失败')
+        }
+    }
+
+    // 合并 Proxmox 命名变体（"-"/"_"）造成的重复记录（仅本机记录，不删除平台虚拟机）
+    const handleDedupeRecords = async (name: string) => {
+        try {
+            const preview = await api.dedupeVMRecords(name, true)
+            if (preview.code !== 200) {
+                message.error(preview.msg || '重复记录检查失败')
+                return
+            }
+            const data: any = preview.data || {}
+            const groups: any[] = data.groups || []
+            if (!groups.length) {
+                message.success('没有发现重复记录')
+                return
+            }
+            const detail = groups
+                .slice(0, 10)
+                .map((g: any) => `${g.keep} ← ${(g.remove || []).join('、')}`)
+                .join('；')
+            Modal.confirm({
+                title: '合并重复虚拟机记录',
+                icon: <MergeCellsOutlined style={{color: '#faad14'}}/>,
+                content: (
+                    <div>
+                        <p>发现 <strong style={{color: '#faad14'}}>{groups.length}</strong> 组重复记录（同一台虚拟机因 "-"/"_" 形式不同被重复纳管）：</p>
+                        <p style={{color: 'var(--text-secondary)', wordBreak: 'break-all'}}>
+                            {detail}{groups.length > 10 ? ` 等共 ${groups.length} 组` : ''}
+                        </p>
+                        <p style={{color: '#faad14'}}>将保留数据更完整的一条并补齐缺失字段，仅移除本机记录，不会删除平台上的虚拟机。</p>
+                    </div>
+                ),
+                okText: '确认合并',
+                okType: 'danger',
+                cancelText: '取消',
+                mask: false,
+                onOk: async () => {
+                    try {
+                        const result: any = await api.dedupeVMRecords(name, false)
+                        if (result.code === 200) {
+                            message.success(`已合并 ${result.data?.merged ?? 0} 组，移除 ${result.data?.removed ?? 0} 条多余记录`)
+                            loadHosts()
+                        } else {
+                            message.error(result.msg || '合并失败')
+                        }
+                    } catch (error) {
+                        message.error('合并失败')
+                    }
+                }
+            })
+        } catch (error) {
+            message.error('重复记录检查失败')
+        }
+    }
+
     // 扫描备份
     const handleScanBackups = async (name: string) => {
         try {
@@ -978,14 +1085,6 @@ function HostManage() {
         } catch (error) {
             message.error('扫描失败')
         }
-    }
-
-    // 获取进度条颜色
-    const getProgressColor = (percent: number) => {
-        if (percent >= 90) return '#ef4444'
-        if (percent >= 75) return '#f97316'
-        if (percent >= 50) return '#eab308'
-        return '#22c55e'
     }
 
     // 渲染主机卡片
@@ -1039,242 +1138,126 @@ function HostManage() {
         // const cpuPower = status?.cpu_power || 0  // 暂未使用
         // const cpuTempPercent = Math.min((cpuTemp / 100 * 100), 100)  // 暂未使用
 
+        const isActive = host.status === 'active'
+        const serverPort = host.config?.server_port
+        const portRange = host.config?.ports_start && host.config?.ports_close
+            ? `${host.config.ports_start}-${host.config.ports_close}`
+            : '未配置'
+
+        // 资源用量条：常态单强调色，越阈值才切换警告/危险
+        const usageStroke = (pct: number) =>
+            pct > 80 ? 'var(--art-danger)' : pct > 60 ? 'var(--art-warning)' : 'var(--main-color)'
+
+        const metric = (label: string, value: string, pct: number, title?: string) => (
+            <div className="art-metric" title={title}>
+                <div className="art-metric-head">
+                    <span className="art-metric-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                    <span className="art-metric-value">{value}</span>
+                </div>
+                <Progress percent={Math.min(pct, 100)} size="small" showInfo={false} strokeColor={usageStroke(pct)} />
+            </div>
+        )
+
         return (
-            <Card
-                key={name}
-                className="glass-card mb-4 hover:shadow-lg transition-shadow"
-                title={
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div
-                                className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-                                <CloudServerOutlined className="text-white text-2xl"/>
-                            </div>
-                            <div>
-                                <div className="font-semibold">{name}</div>
-                                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>{typeInfo.description || host.type}</div>
-                            </div>
+            <div className="art-panel" key={name} style={{ marginBottom: 16 }}>
+                {/* 头部：图标块 + 名称/类型 + 状态 + 主操作 */}
+                <div className="art-dockcard-head">
+                    <span className={`art-icon-tile${isActive ? ' is-accent' : ''}`}>
+                        <CloudServerOutlined />
+                    </span>
+                    <div className="art-dockcard-titles">
+                        <div className="art-dockcard-name-row">
+                            <h3 className="art-dockcard-name">{name}</h3>
+                            <span className={`art-sem art-sem-pill${isActive ? ' is-success' : ' is-danger'}`}>
+                                {isActive ? '已启用' : '已禁用'}
+                            </span>
                         </div>
-                        <Tag color={host.status === 'active' ? 'success' : 'error'}>
-                            {host.status === 'active' ? '已启用' : '已禁用'}
-                        </Tag>
+                        <div className="art-dockcard-sub">
+                            <span>{typeInfo.description || host.type}</span>
+                            <span className="art-dockcard-uuid">{host.addr || '未配置连接地址'}</span>
+                        </div>
                     </div>
-                }
-                extra={
-                    <Space>
-                        <Button
-                            icon={<EditOutlined/>}
-                            onClick={() => handleEdit(name)}
-                            disabled={host.status !== 'active'}
-                        >
+                    <div className="art-row-actions">
+                        <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(name)} disabled={!isActive}>
                             编辑
                         </Button>
-                        <Button
-                            type="primary"
-                            onClick={() => navigate(`/hosts/${name}/vms`)}
-                            title="虚拟机管理"
-                            disabled={host.status !== 'active'}
-                        >
+                        <Button size="small" type="primary" onClick={() => navigate(`/hosts/${name}/vms`)} disabled={!isActive}>
                             管理
                         </Button>
-                    </Space>
-                }
-            >
-                <Row gutter={16} style={{display: 'flex', flexWrap: 'nowrap'}}>
-                    {/* 左侧：基本信息 */}
-                    <Col span={8} style={{minWidth: '240px', flexShrink: 0, flexGrow: 0}}>
-                        <div className="space-y-1 text-xs">
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>主机连接IP:</span>
-                                <span className="truncate ">{host.addr || '未配置'}</span>
-                            </div>
-                            <div className="flex justify-between items-start">
-                                <span style={{ color: 'var(--text-secondary)' }}>公共公共IP:</span>
-                                <div className="text-right max-w-[60%]">
-                                    {host.config?.public_addr && host.config.public_addr.length > 0 ? (
-                                        host.config.public_addr.map((ip, idx) => (
-                                            <div key={idx} className="flex items-center justify-end gap-1 mb-1">
-                                                <span className="truncate ">{ip}</span>
-                                                <Tooltip title="复制">
-                                                    <CopyOutlined
-                                                        className="hover:text-blue-600 cursor-pointer text-xs"
-                                                        onClick={() => copyToClipboard(ip)}/>
-                                                </Tooltip>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <span>未配置</span>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>访问端口:</span>
-                                <span className="">{host.config?.server_port && host.config.server_port > 0 ? host.config.server_port : '未配置'}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>桌面端口:</span>
-                                <span className="">{host.config?.remote_port || '未配置'}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>虚拟机前缀:</span>
-                                <span className="truncate ">{host.config?.filter_name || '未配置'}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>虚拟机数量:</span>
-                                <span className=""
-                                >{host.vm_count || 0} / {host.config?.limits_nums || 0} 台</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>内网网桥:</span>
-                                <span className="">{host.config?.network_nat || '未配置'}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>公网网桥:</span>
-                                <span className="">{host.config?.network_pub || '未配置'}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>端口范围:</span>
-                                <span className=""
-                                >{host.config?.ports_start && host.config?.ports_close ? `${host.config.ports_start}-${host.config.ports_close}` : '未配置'}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>爱快地址:</span>
-                                <span className="truncate ">{host.config?.i_kuai_addr || '未配置'}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span style={{ color: 'var(--text-secondary)' }}>模板数:</span>
-                                <span className=""
-                                >系统盘 {Array.isArray(host.config?.system_maps) ? host.config.system_maps.length : 0} / 光盘 {Array.isArray(host.config?.images_maps) ? host.config.images_maps.length : 0} 个</span>
-                            </div>
-
-                        </div>
-                    </Col>
-
-                    {/* 右侧：资源状态 */}
-                    <Col span={16} style={{overflow: 'hidden', flexGrow: 1, flexShrink: 1, minWidth: 0}}>
-                        {status ? (
-                            <div className="space-y-5" style={{width: '100%'}}>
-                                {/* CPU */}
-                                <div style={{minWidth: 0}}>
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span style={{ color: 'var(--text-secondary)' }} className="truncate"
-                                              title={status.cpu_model || '核心使用率'}>{status.cpu_model || '核心使用率'}</span>
-                                        <span
-                                            className="font-bold whitespace-nowrap">{status.cpu_total || 0}核 {cpuPercent.toFixed(1)}%</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                                        <div className="h-2 transition-all"
-                                             style={{width: `${cpuPercent}%`, backgroundColor: getProgressColor(cpuPercent)}}></div>
-                                    </div>
-                                </div>
-
-                                {/* 内存 */}
-                                <div style={{minWidth: 0}}>
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span style={{ color: 'var(--text-secondary)' }} className="truncate">内存使用率</span>
-                                        <span
-                                            className="font-bold whitespace-nowrap">{memUsageGB}GB/{memTotalGB}GB {memPercent.toFixed(1)}%</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                                        <div className="h-2 transition-all"
-                                             style={{width: `${memPercent}%`, backgroundColor: getProgressColor(memPercent)}}></div>
-                                    </div>
-                                </div>
-
-                                {/* 磁盘 */}
-                                <div style={{minWidth: 0}}>
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span style={{ color: 'var(--text-secondary)' }} className="truncate">硬盘使用率</span>
-                                        <span
-                                            className="font-bold whitespace-nowrap">{diskUsageGB.toFixed(1)}GB/{diskTotalGB.toFixed(1)}GB {diskPercent.toFixed(1)}%</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                                        <div className="h-2 transition-all"
-                                             style={{width: `${diskPercent}%`, backgroundColor: getProgressColor(diskPercent)}}></div>
-                                    </div>
-                                </div>
-
-                                {/* 网络 */}
-                                <div style={{minWidth: 0}}>
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span style={{ color: 'var(--text-secondary)' }} className="truncate">网络使用率</span>
-                                        <span className="font-bold whitespace-nowrap">↑{(networkU / 1024).toFixed(1)}MB/s ↓{(networkD / 1024).toFixed(1)}MB/s</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2 flex gap-0.5 overflow-hidden">
-                                        <div className="bg-blue-500 h-2 transition-all"
-                                             style={{width: `${networkUPercent / 2}%`}}></div>
-                                        <div className="bg-green-500 h-2 transition-all"
-                                             style={{width: `${networkDPercent / 2}%`}}></div>
-                                    </div>
-                                </div>
-
-                                {/* GPU */}
-                                <div style={{minWidth: 0}}>
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span style={{ color: 'var(--text-secondary)' }} className="truncate">显卡使用率</span>
-                                        <span
-                                            className="font-bold whitespace-nowrap">{status.gpu_total || 0}个 {gpuPercent.toFixed(1)}%</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                                        <div className="h-2 transition-all"
-                                             style={{width: `${gpuPercent}%`, backgroundColor: getProgressColor(gpuPercent)}}></div>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="text-center py-8 text-xs" style={{ color: 'var(--text-tertiary)' }}>暂无状态数据</div>
-                        )}
-                    </Col>
-                </Row>
-
-                {/* 底部操作栏 */}
-                <div style={{borderTop: '1px solid var(--border-color, #f0f0f0)', marginTop: 16, paddingTop: 12, display: 'flex', justifyContent: 'flex-end'}}>
-                    <Space>
-                        <Button
-                            icon={<CloudSyncOutlined/>}
-                            onClick={() => handleScanBackups(name)}
-                            disabled={host.status !== 'active'}
-                            style={{backgroundColor: '#d9d9d9', borderColor: '#d9d9d9', color: '#333'}}
-                        >
-                            扫描备份
-                        </Button>
-                        <Button
-                            icon={<ScanOutlined/>}
-                            onClick={() => handleScanVMs(name)}
-                            disabled={host.status !== 'active'}
-                            style={{backgroundColor: '#d9d9d9', borderColor: '#d9d9d9', color: '#333'}}
-                        >
-                            扫描虚拟机
-                        </Button>
-                        <Button
-                            icon={host.status === 'active' ? <StopOutlined/> : <PlayCircleOutlined/>}
-                            onClick={() => handleToggle(name, host.status !== 'active')}
-                            style={host.status === 'active' ? {backgroundColor: '#faad14', borderColor: '#faad14', color: '#fff'} : {backgroundColor: '#52c41a', borderColor: '#52c41a', color: '#fff'}}
-                        >
-                            {host.status === 'active' ? '禁用' : '启用'}
-                        </Button>
-                        <Button
-                            danger
-                            type="primary"
-                            icon={<DeleteOutlined/>}
-                            onClick={() => {
-                                Modal.confirm({
-                                    title: '确认删除',
-                                    icon: <DeleteOutlined style={{color: 'red'}}/>,
-                                    content: `确定要删除主机 "${name}" 吗？此操作不可恢复。`,
-                                    okText: '确认删除',
-                                    okType: 'danger',
-                                    cancelText: '取消',
-                                    mask: false,
-                                    onOk: () => handleDelete(name)
-                                })
-                            }}
-                        >
-                            删除
-                        </Button>
-                    </Space>
+                    </div>
                 </div>
-            </Card>
+
+                {/* 主体：连接信息一行 + 资源指标网格 */}
+                <div className="art-dockcard-body">
+                    <div className="art-quota-line">
+                        <span>连接 {host.addr || '-'}:{serverPort && serverPort > 0 ? serverPort : '-'}</span>
+                        <span>桌面端口 {host.config?.remote_port || '-'}</span>
+                        <span>前缀 {host.config?.filter_name || '-'}</span>
+                        <span>虚拟机 {host.vm_count || 0}/{host.config?.limits_nums || 0}</span>
+                        <span>网桥 {host.config?.network_nat || '-'} / {host.config?.network_pub || '-'}</span>
+                        <span>端口 {portRange}</span>
+                        {host.config?.i_kuai_addr ? <span>爱快 {host.config.i_kuai_addr}</span> : null}
+                    </div>
+                    {host.config?.public_addr && host.config.public_addr.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {host.config.public_addr.map((ip, idx) => (
+                                <Tooltip title="点击复制" key={idx}>
+                                    <span className="art-chip" style={{ cursor: 'pointer' }} onClick={() => copyToClipboard(ip)}>{ip}</span>
+                                </Tooltip>
+                            ))}
+                        </div>
+                    )}
+                    {status ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+                            {metric(status.cpu_model || 'CPU', `${status.cpu_total || 0}核 ${cpuPercent.toFixed(1)}%`, cpuPercent, status.cpu_model)}
+                            {metric('内存', `${memUsageGB}GB/${memTotalGB}GB ${memPercent.toFixed(1)}%`, memPercent)}
+                            {metric('硬盘', `${diskUsageGB.toFixed(1)}GB/${diskTotalGB.toFixed(1)}GB ${diskPercent.toFixed(1)}%`, diskPercent)}
+                            {metric('网络', `↑${(networkU / 1024).toFixed(1)} ↓${(networkD / 1024).toFixed(1)} MB/s`, Math.max(networkUPercent, networkDPercent))}
+                            {metric('显卡', `${status.gpu_total || 0}个 ${gpuPercent.toFixed(1)}%`, gpuPercent)}
+                        </div>
+                    ) : (
+                        <div className="art-muted" style={{ padding: '8px 0', textAlign: 'center' }}>暂无状态数据</div>
+                    )}
+                </div>
+
+                {/* 尾部操作：全部中性按钮，语义只靠 danger */}
+                <div className="art-card-actions">
+                    <span className="art-card-actions-spacer" />
+                    <Button size="small" icon={<CloudSyncOutlined />} onClick={() => handleScanBackups(name)} disabled={!isActive}>
+                        扫描备份
+                    </Button>
+                    <Button size="small" icon={<ScanOutlined />} onClick={() => handleScanVMs(name)} disabled={!isActive}>
+                        扫描虚拟机
+                    </Button>
+                    <Tooltip title="清理无效记录（仅移除不匹配前缀的纳管记录，不删除平台虚拟机）">
+                        <Button size="small" type="text" icon={<ClearOutlined />} onClick={() => handleCleanupRecords(name)} />
+                    </Tooltip>
+                    <Tooltip title="合并重复记录（同一虚拟机因 -/_ 命名差异被重复纳管，仅移除本机记录）">
+                        <Button size="small" type="text" icon={<MergeCellsOutlined />} onClick={() => handleDedupeRecords(name)} />
+                    </Tooltip>
+                    <Button size="small" icon={isActive ? <StopOutlined /> : <PlayCircleOutlined />} onClick={() => handleToggle(name, !isActive)}>
+                        {isActive ? '禁用' : '启用'}
+                    </Button>
+                    <Button
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => {
+                            Modal.confirm({
+                                title: '确认删除',
+                                content: `确定要删除主机 "${name}" 吗？此操作不可恢复。`,
+                                okText: '确认删除',
+                                okType: 'danger',
+                                cancelText: '取消',
+                                mask: false,
+                                onOk: () => handleDelete(name)
+                            })
+                        }}
+                    >
+                        删除
+                    </Button>
+                </div>
+            </div>
         )
     }
 
@@ -1315,16 +1298,17 @@ function HostManage() {
 
             {/* 主机列表 */}
             {loading ? (
-                <div className="text-center py-16">
-                    <div className=" text-4xl mb-4">⏳</div>
-                    <p className=" ">加载中...</p>
+                <div className="art-loading">
+                    <Spin size="large" />
+                    <span>正在加载主机列表…</span>
                 </div>
             ) : Object.keys(hosts).length === 0 ? (
-                <div className="text-center py-16">
-                    <div className=" text-6xl mb-4">📦</div>
-                    <p className=" mb-4">暂无主机</p>
-                    <Button type="primary" onClick={handleAdd}>添加第一个主机</Button>
-                </div>
+                <EmptyState
+                    icon={<CloudServerOutlined />}
+                    title="暂无主机"
+                    description="还没有纳管任何虚拟化主机。添加主机后即可在此查看资源占用并管理其实例。"
+                    actions={<Button type="primary" onClick={handleAdd}>添加第一个主机</Button>}
+                />
             ) : viewMode === 'card' ? (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(500px,1fr))] gap-4">
                     {Object.entries(hosts).map(([name, host]) => (

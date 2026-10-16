@@ -1,10 +1,30 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light" data-font="hybrid">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0c0f" media="(prefers-color-scheme: dark)" />
     <title>OpenIDCS 虚拟化管理平台</title>
+    <script>
+      /* 首屏前置：在样式计算前恢复主题 / 字体 / 显示开关，避免刷新闪烁。
+         键名与 src/contexts/ThemeContext.tsx、src/config/fonts.config.ts 保持一致。 */
+      (function () {
+        try {
+          var root = document.documentElement;
+          root.setAttribute('data-theme', localStorage.getItem('theme') || 'light');
+          var font = localStorage.getItem('fontId');
+          if (font === 'maple' || font === 'hybrid' || font === 'sans') root.setAttribute('data-font', font);
+          if (localStorage.getItem('transparentMode') === 'true') root.setAttribute('data-transparent', 'true');
+          if (localStorage.getItem('roundedMode') === 'true') root.setAttribute('data-rounded', 'true');
+          if (localStorage.getItem('liquidMode') === 'true') root.setAttribute('data-liquid', 'true');
+          if (localStorage.getItem('animeBlurMode') === 'true') root.setAttribute('data-anime-blur', 'true');
+        } catch (e) {
+          /* localStorage 不可用时静默降级为默认设置 */
+        }
+      })();
+    </script>
   </head>
   <body>
     <!-- React应用挂载点 -->

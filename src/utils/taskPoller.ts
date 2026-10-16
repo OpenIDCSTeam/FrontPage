@@ -31,6 +31,32 @@ export interface TaskListResponse {
   items: AsyncTask[];
 }
 
+/**
+ * 构造「同步接口」场景下的合成任务对象。
+ *
+ * 后端部分接口（数据盘/ISO/备份/直通等）是同步实现的，成功时只返回
+ * code=200 而没有 task_id。此时仍需要触发 onCompleted/onFailed 回调，
+ * 否则调用方（如 DockDetail.submitAsyncTask）没有机会解除操作锁定，
+ * 页面按钮会被永久禁用。这里提供一个字段完整的占位对象以满足类型。
+ */
+function syntheticTask(status: TaskStatus, errorMessage = ''): AsyncTask {
+  return {
+    id: 0,
+    task_id: '',
+    hs_name: '',
+    vm_uuid: '',
+    task_type: '',
+    status,
+    params: {},
+    result: {},
+    error_message: errorMessage,
+    username: '',
+    created_at: '',
+    started_at: null,
+    finished_at: null,
+  };
+}
+
 /** 任务统计 */
 export interface TaskStats {
   pending: number;
@@ -289,11 +315,7 @@ export function startTaskWithNotification(
     message.error(response.msg || `${taskLabel}失败`);
     // 失败也要回调，调用方通常在这里解锁操作按钮；
     // 只弹提示不回调会导致页面被永久锁定。
-    options.onFailed?.({
-      task_id: '',
-      status: 'failed',
-      error_message: response.msg || `${taskLabel}失败`,
-    } as AsyncTask);
+    options.onFailed?.(syntheticTask('failed', response.msg || `${taskLabel}失败`));
     return false;
   }
 
@@ -302,11 +324,7 @@ export function startTaskWithNotification(
   // 但必须按“已完成”回调，否则调用方不会有解锁机会。
   if (!response.data?.task_id) {
     message.success(`${taskLabel}完成`);
-    options.onCompleted?.({
-      task_id: '',
-      status: 'completed',
-      progress: 100,
-    } as AsyncTask);
+    options.onCompleted?.(syntheticTask('completed'));
     return true;
   }
 

@@ -1,11 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Form, Input, Button, Alert, Dropdown } from 'antd'
-import { UserOutlined, LockOutlined, MailOutlined, UserAddOutlined, CheckCircleOutlined, CloseCircleOutlined, BulbOutlined, BulbFilled, BgColorsOutlined, TranslationOutlined, SwapOutlined } from '@ant-design/icons'
+import { Form, Input, Button, Alert } from 'antd'
+import { UserOutlined, LockOutlined, MailOutlined, UserAddOutlined, CheckCircleOutlined, CloseCircleOutlined, GlobalOutlined } from '@ant-design/icons'
 import api from '@/utils/apis.ts'
-import { useTheme } from '@/contexts/ThemeContext'
-import { changeLanguage, getAvailableLanguages, getCurrentLanguage } from '@/utils/i18n.ts'
-import type { MenuProps } from 'antd'
+import AuthLayout from '@/components/AuthLayout'
 
 /**
  * 注册表单数据接口
@@ -23,12 +21,9 @@ interface RegisterForm {
  */
 function UserPostin() {
   const navigate = useNavigate()
-  const { theme, toggleTheme, transparentMode, toggleTransparentMode } = useTheme()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
   const [success, setSuccess] = useState<string>('')
-  const [currentLang, setCurrentLang] = useState('zh-cn') // 当前语言
-  const [languages, setLanguages] = useState<any[]>([]) // 可用语言列表
   // Turnstile验证码状态
   const [turnstileEnabled, setTurnstileEnabled] = useState(false)
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('')
@@ -91,37 +86,6 @@ function UserPostin() {
     }
   }
 
-  // 初始化语言状态
-  useEffect(() => {
-    setCurrentLang(getCurrentLanguage())
-    setLanguages(getAvailableLanguages())
-
-    // 监听语言变更事件
-    const handleLangChange = (e: any) => {
-      setCurrentLang(e.detail.language)
-    }
-    window.addEventListener('languageChanged', handleLangChange)
-    
-    // 监听语言列表加载完成事件（替代轮询）
-    const handleLangsLoaded = (e: any) => {
-      setLanguages(e.detail.languages)
-      setCurrentLang(getCurrentLanguage())
-    }
-    window.addEventListener('languagesLoaded', handleLangsLoaded)
-    
-    return () => {
-      window.removeEventListener('languageChanged', handleLangChange)
-      window.removeEventListener('languagesLoaded', handleLangsLoaded)
-    }
-  }, [])
-
-  // 语言菜单项
-  const languageMenuItems: MenuProps['items'] = languages.map(lang => ({
-    key: lang.code,
-    label: lang.native || lang.name,
-    icon: lang.code === currentLang ? <SwapOutlined /> : undefined,
-  }))
-
   /**
    * 处理注册提交
    * 对应静态页面的表单提交逻辑
@@ -164,56 +128,17 @@ function UserPostin() {
   }
 
   return (
-    <div className="art-auth-page">
-      {/* 主题切换按钮组 - 右上角 */}
-      <div className="art-auth-toolbar">
-        {/* 语言切换按钮 */}
-        <Dropdown
-          menu={{
-            items: languageMenuItems,
-            onClick: ({key}) => changeLanguage(key)
-          }}
-          placement="bottomRight"
-          overlayStyle={{
-            zIndex: 20000,
-            maxHeight: '400px',
-            overflow: 'auto'
-          }}
-          getPopupContainer={(trigger) => trigger.parentElement || document.body}
-        >
-          <Button
-            className="art-auth-tool-btn"
-            icon={<TranslationOutlined />}
-            title="切换语言"
-          />
-        </Dropdown>
-
-        {/* 透明模式切换按钮 */}
-        <Button
-          className={`art-auth-tool-btn${transparentMode ? ' is-active' : ''}`}
-          onClick={toggleTransparentMode}
-          icon={<BgColorsOutlined />}
-          title={transparentMode ? '关闭透明模式' : '开启透明模式'}
-        />
-        
-        {/* 暗黑模式切换按钮 */}
-        <Button
-          className={`art-auth-tool-btn${theme === 'dark' ? ' is-active' : ''}`}
-          onClick={toggleTheme}
-          icon={theme === 'dark' ? <BulbFilled /> : <BulbOutlined />}
-          title={theme === 'dark' ? '切换到浅色模式' : '切换到暗黑模式'}
-        />
-      </div>
+    <AuthLayout>
       {/* 注册卡片容器 */}
       <div className="art-auth-card">
         {/* 头部图标和标题 */}
         <div>
           <div className="art-auth-logo">
-            <UserAddOutlined style={{ color: 'white', fontSize: 26 }} />
+            <UserAddOutlined style={{ fontSize: 26 }} />
           </div>
           <h1 className="art-auth-title">用户注册</h1>
           <p className="art-auth-subtitle">
-            <span className="iconify" data-icon="mdi:server-network"></span>
+            <GlobalOutlined />
             OpenIDCS 虚拟化管理平台
           </p>
         </div>
@@ -365,7 +290,7 @@ function UserPostin() {
           </div>
         </Form>
       </div>
-    </div>
+    </AuthLayout>
   )
 }
 

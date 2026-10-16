@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Form, Input, Button, Modal, message, Alert, Dropdown } from 'antd'
-import { UserOutlined, LockOutlined, KeyOutlined, LoginOutlined, MailOutlined, BulbOutlined, BulbFilled, BgColorsOutlined, TranslationOutlined, SwapOutlined } from '@ant-design/icons'
+import { Form, Input, Button, Modal, message, Alert } from 'antd'
+import { UserOutlined, LockOutlined, KeyOutlined, LoginOutlined, MailOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { useUserStore } from '@/utils/data.ts'
 import api from '@/utils/apis.ts'
-import { useTheme } from '@/contexts/ThemeContext'
-import { changeLanguage, getAvailableLanguages, getCurrentLanguage } from '@/utils/i18n.ts'
-import type { MenuProps } from 'antd'
+import AuthLayout from '@/components/AuthLayout'
 
 /**
  * 登录表单数据接口
@@ -24,6 +22,18 @@ interface TokenLoginForm {
 }
 
 /**
+ * 访问密钥登录表单数据接口
+ */
+interface AccessKeyLoginForm {
+  access_key: string
+}
+
+/** 访问密钥长度（与后端 service.AccessKeyLength 保持一致） */
+const ACCESS_KEY_LENGTH = 16
+/** 访问密钥字符集：大小写字母 + 数字 */
+const ACCESS_KEY_PATTERN = /^[A-Za-z0-9]+$/
+
+/**
  * 找回密码表单数据接口
  */
 interface ForgotPasswordForm {
@@ -36,17 +46,15 @@ interface ForgotPasswordForm {
 function UserLogins() {
   const navigate = useNavigate()
   const { setUser, setToken } = useUserStore()
-  const { theme, toggleTheme, transparentMode, toggleTransparentMode } = useTheme()
   const [loading, setLoading] = useState(false)
-  const [loginType, setLoginType] = useState<'user' | 'token'>('user') // 登录方式：用户登录或Token登录
+  const [loginType, setLoginType] = useState<'user' | 'token' | 'access'>('user') // 登录方式：用户登录、Token登录或访问密钥登录
   const [errorMsg, setErrorMsg] = useState('') // 错误提示信息
   const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false) // 找回密码模态框显示状态
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false) // 找回密码加载状态
   const [userForm] = Form.useForm() // 用户登录表单实例
   const [tokenForm] = Form.useForm() // Token登录表单实例
+  const [accessKeyForm] = Form.useForm() // 访问密钥登录表单实例
   const [forgotPasswordForm] = Form.useForm() // 找回密码表单实例
-  const [currentLang, setCurrentLang] = useState('zh-cn') // 当前语言
-  const [languages, setLanguages] = useState<any[]>([]) // 可用语言列表
   // Turnstile验证码状态
   const [turnstileEnabled, setTurnstileEnabled] = useState(false)
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('')
@@ -135,37 +143,6 @@ function UserLogins() {
     }
   }
 
-  // 初始化语言状态
-  useEffect(() => {
-    setCurrentLang(getCurrentLanguage())
-    setLanguages(getAvailableLanguages())
-
-    // 监听语言变更事件
-    const handleLangChange = (e: any) => {
-      setCurrentLang(e.detail.language)
-    }
-    window.addEventListener('languageChanged', handleLangChange)
-    
-    // 监听语言列表加载完成事件（替代轮询）
-    const handleLangsLoaded = (e: any) => {
-      setLanguages(e.detail.languages)
-      setCurrentLang(getCurrentLanguage())
-    }
-    window.addEventListener('languagesLoaded', handleLangsLoaded)
-    
-    return () => {
-      window.removeEventListener('languageChanged', handleLangChange)
-      window.removeEventListener('languagesLoaded', handleLangsLoaded)
-    }
-  }, [])
-
-  // 语言菜单项
-  const languageMenuItems: MenuProps['items'] = languages.map(lang => ({
-    key: lang.code,
-    label: lang.native || lang.name,
-    icon: lang.code === currentLang ? <SwapOutlined /> : undefined,
-  }))
-
   /**
    * 处理用户名密码登录提交
    */
@@ -251,9 +228,57 @@ function UserLogins() {
   }
 
   /**
+   * 处理访问密钥登录提交
+   *
+   * 访问密钥直接绑定虚拟机，登录成功后后端返回 redirect（该虚拟机的管理页面路由），
+   * 前端借此一步直达，无需再选择主机/虚拟机。
+   */
+  const handleAccessKeyLogin = async (values: AccessKeyLoginForm) => {
+    try {
+      // Turnstile验证检查
+      if (turnstileEnabled && !turnstileToken) {
+        setErrorMsg('请完成验证码验证')
+        return
+      }
+      setLoading(true)
+      setErrorMsg('')
+
+      const accessKey = (values.access_key || '').trim()
+      const response = await api.login({
+        login_type: 'access_key',
+        access_key: accessKey,
+        turnstile_token: turnstileToken,
+      } as any)
+
+      const data: any = response.data || {}
+      // 受限身份（虚拟用户）同样写入用户状态，才能通过前端登录态校验
+      const userInfo = data.user_info || {
+        username: data.hs_name || accessKey,
+        is_admin: false,
+        temp_login: true,
+        temp_hs_name: data.hs_name,
+        temp_vm_uuid: data.vm_uuid,
+      }
+      setUser(userInfo as any)
+
+      message.success('登录成功')
+      const redirectTo = data.redirect
+        || (data.hs_name && data.vm_uuid ? `/hosts/${data.hs_name}/vms/${data.vm_uuid}` : '/')
+      navigate(redirectTo)
+    } catch (error: any) {
+      const errMsg = error?.response?.data?.msg || '访问密钥登录失败，请检查密钥是否正确'
+      setErrorMsg(errMsg)
+      resetTurnstile()
+      // 4秒后自动隐藏错误提示
+      setTimeout(() => setErrorMsg(''), 4000)
+      setLoading(false)
+    }
+  }
+
+  /**
    * 切换登录方式
    */
-  const switchLoginType = (type: 'user' | 'token') => {
+  const switchLoginType = (type: 'user' | 'token' | 'access') => {
     setLoginType(type)
     setErrorMsg('')
   }
@@ -304,66 +329,14 @@ function UserLogins() {
   }
 
   return (
-    <div className="art-auth-page">
-      {/* 主题切换按钮组 - 右上角 */}
-      <div className="art-auth-toolbar">
-        {/* 语言切换按钮 */}
-        <Dropdown
-          menu={{
-            items: languageMenuItems,
-            onClick: ({key}) => changeLanguage(key)
-          }}
-          placement="bottomRight"
-          overlayStyle={{
-            zIndex: 20000,
-            maxHeight: '400px',
-            overflow: 'auto'
-          }}
-          getPopupContainer={(trigger) => trigger.parentElement || document.body}
-        >
-          <Button
-            className="art-auth-tool-btn"
-            icon={<TranslationOutlined />}
-            title="切换语言"
-          />
-        </Dropdown>
-
-        {/* 透明模式切换按钮 */}
-        <Button
-          className={`art-auth-tool-btn${transparentMode ? ' is-active' : ''}`}
-          onClick={toggleTransparentMode}
-          icon={<BgColorsOutlined />}
-          title={transparentMode ? '关闭透明模式' : '开启透明模式'}
-        />
-        
-        {/* 暗黑模式切换按钮 */}
-        <Button
-          className={`art-auth-tool-btn${theme === 'dark' ? ' is-active' : ''}`}
-          onClick={toggleTheme}
-          icon={theme === 'dark' ? <BulbFilled /> : <BulbOutlined />}
-          title={theme === 'dark' ? '切换到浅色模式' : '切换到暗黑模式'}
-        />
-      </div>
-
+    <AuthLayout>
       {/* 登录卡片 */}
       <div className="art-auth-card">
         {/* 标题区域 */}
         <div>
           {/* Logo图标 */}
           <div className="art-auth-logo">
-            <svg
-              style={{ width: 28, height: 28, color: 'white' }}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
-              />
-            </svg>
+            <SafetyCertificateOutlined style={{ fontSize: 26 }} />
           </div>
           <h1 className="art-auth-title">
             OpenIDCS 受控端
@@ -392,6 +365,15 @@ function UserLogins() {
             <KeyOutlined style={{ marginRight: 4 }} />
             Token登录
           </button>
+          <button
+            type="button"
+            className={`art-auth-tab${loginType === 'access' ? ' is-active' : ''}`}
+            title="虚拟机访问密钥登录"
+            onClick={() => switchLoginType('access')}
+          >
+            <SafetyCertificateOutlined style={{ marginRight: 4 }} />
+            密钥登录
+          </button>
         </div>
 
         {/* 用户名密码登录表单 */}
@@ -418,11 +400,6 @@ function UserLogins() {
                 size="large"
                 placeholder="请输入用户名"
                 autoComplete="username"
-                style={{
-                  borderRadius: '8px',
-                  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-                  ...(transparentMode ? { background: 'transparent', borderColor: 'rgba(255,255,255,0.3)' } : {}),
-                }}
               />
             </Form.Item>
 
@@ -441,11 +418,6 @@ function UserLogins() {
                 size="large"
                 placeholder="请输入密码"
                 autoComplete="current-password"
-                style={{
-                  borderRadius: '8px',
-                  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-                  ...(transparentMode ? { background: 'transparent', borderColor: 'rgba(255,255,255,0.3)' } : {}),
-                }}
               />
             </Form.Item>
 
@@ -516,11 +488,6 @@ function UserLogins() {
               <Input.Password
                 size="large"
                 placeholder="请输入访问Token"
-                style={{
-                  borderRadius: '8px',
-                  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-                  ...(transparentMode ? { background: 'transparent', borderColor: 'rgba(255,255,255,0.3)' } : {}),
-                }}
               />
             </Form.Item>
 
@@ -559,6 +526,88 @@ function UserLogins() {
             {/* 提示信息 */}
             <div className="art-auth-tip">
               启动服务时会在控制台显示访问 Token
+            </div>
+          </Form>
+        )}
+
+        {/* 访问密钥登录表单 */}
+        {loginType === 'access' && (
+          <Form
+            form={accessKeyForm}
+            name="accessKeyLogin"
+            onFinish={handleAccessKeyLogin}
+            autoComplete="off"
+            layout="vertical"
+          >
+            {/* 访问密钥输入框 */}
+            <Form.Item
+              label={
+                <span className="art-auth-label">
+                  <SafetyCertificateOutlined />
+                  访问密钥
+                </span>
+              }
+              name="access_key"
+              rules={[
+                { required: true, message: '请输入访问密钥' },
+                {
+                  validator: (_, value) => {
+                    const key = (value || '').trim()
+                    if (!key) return Promise.resolve()
+                    if (key.length !== ACCESS_KEY_LENGTH) {
+                      return Promise.reject(new Error(`访问密钥为 ${ACCESS_KEY_LENGTH} 位字符`))
+                    }
+                    if (!ACCESS_KEY_PATTERN.test(key)) {
+                      return Promise.reject(new Error('访问密钥只能包含大小写字母和数字'))
+                    }
+                    return Promise.resolve()
+                  },
+                },
+              ]}
+            >
+              <Input
+                size="large"
+                placeholder={`请输入 ${ACCESS_KEY_LENGTH} 位访问密钥`}
+                maxLength={ACCESS_KEY_LENGTH}
+                style={{ fontFamily: 'monospace', letterSpacing: 2 }}
+              />
+            </Form.Item>
+
+            {/* 错误提示 */}
+            {errorMsg && (
+              <Alert
+                message={errorMsg}
+                type="error"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: '8px' }}
+              />
+            )}
+
+            {/* Turnstile验证码 */}
+            {turnstileEnabled && turnstileSiteKey && (
+              <div className="turnstile-container" style={{ marginBottom: 16, width: '100%' }}>
+                <div ref={turnstileRef} style={{ width: '100%' }} />
+              </div>
+            )}
+
+            {/* 登录按钮 */}
+            <Form.Item>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={loading}
+                block
+                size="large"
+                icon={<LoginOutlined />}
+                style={{ height: 44, fontWeight: 500 }}
+              >
+                登 录
+              </Button>
+            </Form.Item>
+
+            {/* 提示信息 */}
+            <div className="art-auth-tip">
+              访问密钥由虚拟机所有者或管理员在「实例详情 - 访问密钥」中生成，登录后直接进入该虚拟机
             </div>
           </Form>
         )}
@@ -648,7 +697,7 @@ function UserLogins() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </AuthLayout>
   )
 }
 

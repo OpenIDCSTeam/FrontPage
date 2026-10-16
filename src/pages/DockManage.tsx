@@ -4,10 +4,10 @@ import {
     Button,
     message,
     Spin,
-    Empty,
     Row,
     Col,
     Modal,
+    Checkbox,
     Input,
     Select,
     Table,
@@ -42,6 +42,7 @@ import DockCard from '@/components/dock/DockCard'
 import DockCreateModal from '@/components/dock/DockCreateModal'
 import DockPowerModal from '@/components/dock/DockPowerModal'
 import PageHeader from '@/components/PageHeader'
+import EmptyState from '@/components/EmptyState'
 import { openVNCConsole } from '@/utils/vncHelper'
 
 function DockManage() {
@@ -78,6 +79,8 @@ function DockManage() {
     const [deleteConfirmInput, setDeleteConfirmInput] = useState<string>('')
     const [deleteRequireOwner, setDeleteRequireOwner] = useState<boolean>(false)
     const [deletePrimaryOwner, setDeletePrimaryOwner] = useState<string>('')
+    // 仅移除纳管记录（不删除平台上的虚拟机），用于清理错前缀纳入的历史记录
+    const [deleteRecordOnly, setDeleteRecordOnly] = useState<boolean>(false)
 
     // 筛选后的虚拟机列表
     const filteredVMs = Object.entries(vms).reduce((acc, [key, vm]) => {
@@ -288,6 +291,7 @@ function DockManage() {
         setDeleteConfirmInput('')
         setDeleteRequireOwner(!!needOwnerConfirm)
         setDeletePrimaryOwner(needOwnerConfirm ? primaryOwner : '')
+        setDeleteRecordOnly(false)
         setDeleteModalOpen(true)
     }
 
@@ -297,7 +301,7 @@ function DockManage() {
                 message.error('输入的用户名不匹配')
                 return
             }
-        } else {
+        } else if (!deleteRecordOnly) {
             if (deleteConfirmInput !== deleteVmUuid) {
                 message.error('输入的虚拟机名称不匹配')
                 return
@@ -306,13 +310,29 @@ function DockManage() {
         
         setDeleteModalOpen(false)
         try {
-            const result = await api.deleteVM(deleteHostName, deleteVmUuid, false, deleteRequireOwner ? deleteConfirmInput : undefined)
+            const result = await api.deleteVM(
+                deleteHostName,
+                deleteVmUuid,
+                false,
+                deleteRequireOwner ? deleteConfirmInput : undefined,
+                deleteRecordOnly,
+            )
+            if (deleteRecordOnly) {
+                // 仅移除记录：后端同步返回结果，无需轮询任务
+                if (result.code === 200) {
+                    message.success('已移除纳管记录（平台虚拟机未删除）')
+                } else {
+                    message.error(result.msg || '移除记录失败')
+                }
+                loadVMs()
+                return
+            }
             startTaskWithNotification(result, '删除虚拟机', {
                 onCompleted: () => loadVMs(),
                 onFailed: () => loadVMs(),
             })
         } catch (error) {
-            message.error('删除失败')
+            message.error(deleteRecordOnly ? '移除记录失败' : '删除失败')
         }
     }
 
@@ -425,11 +445,11 @@ function DockManage() {
     }
 
     return (
-        <div className="p-6">
+        <div className="art-stack">
             <PageHeader
                 icon={<RadarChartOutlined />}
-                title={hostName ? `虚拟机管理 - ${hostName}` : '所有虚拟机'}
-                subtitle="管理和监控虚拟机实例"
+                title={hostName ? `虚拟机管理 · ${hostName}` : '所有虚拟机'}
+                subtitle="管理与监控虚拟机实例的运行状态、资源占用与网络配置"
                 actions={
                     <>
                         <Button.Group>
@@ -518,11 +538,25 @@ function DockManage() {
             />
 
             {loading ? (
-                <div className="flex justify-center items-center h-64">
+                <div className="art-loading">
                     <Spin size="large" />
+                    <span>正在加载实例列表…</span>
                 </div>
             ) : Object.keys(filteredVMs).length === 0 ? (
-                <Empty description="暂无虚拟机" />
+                <EmptyState
+                    icon={<DesktopOutlined />}
+                    title={hostName ? `主机 ${hostName} 下暂无实例` : '暂无虚拟机实例'}
+                    actions={
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            onClick={handleCreate}
+                            disabled={hostName ? availableHosts[hostName]?.enabled === false : false}
+                        >
+                            创建虚拟机
+                        </Button>
+                    }
+                />
             ) : viewMode === 'card' ? (
                 <Row gutter={[16, 16]}>
                     {Object.entries(filteredVMs).map(([key, vm]) => {
@@ -857,18 +891,33 @@ function DockManage() {
             />
 
             <Modal
-                title="确认删除"
+                title={deleteRecordOnly ? '确认移除记录' : '确认删除'}
                 open={deleteModalOpen}
                 onCancel={() => setDeleteModalOpen(false)}
                 onOk={executeDelete}
-                okText="确认删除"
+                okText={deleteRecordOnly ? '移除记录' : '确认删除'}
                 okType="danger"
                 cancelText="取消"
                 mask={false}
-                okButtonProps={{ disabled: deleteRequireOwner ? deleteConfirmInput !== deletePrimaryOwner : deleteConfirmInput !== deleteVmUuid }}
+                okButtonProps={{
+                    disabled: deleteRequireOwner
+                        ? deleteConfirmInput !== deletePrimaryOwner
+                        : (!deleteRecordOnly && deleteConfirmInput !== deleteVmUuid),
+                }}
             >
                 <div>
-                    <p>此操作将永久删除虚拟机 "<strong style={{ color: '#ef4444' }}>{deleteVmUuid}</strong>" 且不可恢复</p>
+                    {deleteRecordOnly ? (
+                        <p>将移除虚拟机 "<strong style={{ color: '#faad14' }}>{deleteVmUuid}</strong>" 的纳管记录，<strong>不会删除平台上的虚拟机</strong>。</p>
+                    ) : (
+                        <p>此操作将永久删除虚拟机 "<strong style={{ color: '#ef4444' }}>{deleteVmUuid}</strong>" 且不可恢复</p>
+                    )}
+                    <Checkbox
+                        className="mt-2"
+                        checked={deleteRecordOnly}
+                        onChange={(e) => setDeleteRecordOnly(e.target.checked)}
+                    >
+                        仅移除纳管记录（不删除平台虚拟机）
+                    </Checkbox>
                     {deleteRequireOwner ? (
                         <>
                             <p className="mt-2 mb-2 text-xs">该虚拟机属于用户 "<strong>{deletePrimaryOwner}</strong>"，请输入主所有者用户名以确认删除：</p>
@@ -878,7 +927,7 @@ function DockManage() {
                                 onChange={(e) => setDeleteConfirmInput(e.target.value)}
                             />
                         </>
-                    ) : (
+                    ) : deleteRecordOnly ? null : (
                         <>
                             <p className="mt-2 mb-2 text-xs">请输入虚拟机名称以确认删除：</p>
                             <Input
@@ -895,3 +944,4 @@ function DockManage() {
 }
 
 export default DockManage
+

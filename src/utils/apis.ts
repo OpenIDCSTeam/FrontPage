@@ -138,10 +138,17 @@ export const deleteHost = (hsName: string): Promise<ApiResponse> => {
 };
 
 /**
- * 主机电源控制
+ * 主机电源控制（启用/禁用）
+ *
+ * 注意：后端只认 {enable: boolean}，缺省视为 true。
+ * 该封装此前发送 {action: string}，后端读不到 enable 会走默认分支，
+ * 传入任何字符串都无法表达「禁用」意图，属于误用陷阱。
  */
-export const hostPower = (hsName: string, action: string): Promise<ApiResponse> => {
-  return http.post(`/api/server/powers/${hsName}`, { action });
+export const hostPower = (hsName: string, action: boolean | string): Promise<ApiResponse> => {
+  const enable = typeof action === 'boolean'
+    ? action
+    : !['disable', 'off', 'stop', 'false', '0'].includes(String(action).toLowerCase());
+  return http.post(`/api/server/powers/${hsName}`, { enable });
 };
 
 /**
@@ -245,12 +252,39 @@ export const updateVM = (hsName: string, vmUuid: string, data: Partial<CreateVMR
 
 /**
  * 删除虚拟机
+ *
+ * recordOnly=true 时只移除本机纳管记录（不删除平台上的虚拟机），
+ * 用于清理扫描时被错前缀纳入的历史记录。
  */
-export const deleteVM = (hsName: string, vmUuid: string, force = false, confirmOwner?: string): Promise<ApiResponse> => {
+export const deleteVM = (hsName: string, vmUuid: string, force = false, confirmOwner?: string, recordOnly = false): Promise<ApiResponse> => {
+  const query = `?force=${force}&record_only=${recordOnly}`;
   if (confirmOwner) {
-    return http.delete(`/api/client/delete/${hsName}/${vmUuid}?force=${force}`, { data: { confirm_owner: confirmOwner } });
+    return http.delete(`/api/client/delete/${hsName}/${vmUuid}${query}`, { data: { confirm_owner: confirmOwner } });
   }
-  return http.delete(`/api/client/delete/${hsName}/${vmUuid}?force=${force}`);
+  return http.delete(`/api/client/delete/${hsName}/${vmUuid}${query}`);
+};
+
+/**
+ * 清理不匹配主机「过滤器名称」前缀的历史纳管记录
+ *
+ * dryRun=true 时只预览将删除的记录，不执行删除。
+ * 该操作只移除本机记录，不会删除平台上的虚拟机。
+ */
+export const cleanupVMRecords = (hsName: string, dryRun = false): Promise<ApiResponse> => {
+  return http.post(`/api/client/scaner/${hsName}/cleanup?dry_run=${dryRun}`);
+};
+
+/**
+ * 合并同一主机下的重复虚拟机记录
+ *
+ * Proxmox 平台名称使用连字符，而早期驱动扫描时用下划线保存 vm_uuid，
+ * 导致同一台虚拟机出现 pve-xxx 与 pve_xxx 两条记录。
+ * 该操作只合并本机记录（保留数据更完整的一条），不会删除平台上的虚拟机。
+ *
+ * dryRun=true 时只预览将合并的分组。
+ */
+export const dedupeVMRecords = (hsName: string, dryRun = false): Promise<ApiResponse> => {
+  return http.post(`/api/client/scaner/${hsName}/dedupe?dry_run=${dryRun}`);
 };
 
 /**
@@ -471,6 +505,41 @@ export const deleteVMOwner = (hsName: string, vmUuid: string, username: string):
  */
 export const updateVMOwnerPermission = (hsName: string, vmUuid: string, username: string, permission: number): Promise<ApiResponse> => {
   return http.put(`/api/client/owners/${hsName}/${vmUuid}/permission`, { username, permission });
+};
+
+// ============================================================================
+// 虚拟机访问密钥API（16 位字母数字长期凭据）
+// ============================================================================
+
+export interface VMAccessKeyInfo {
+  hs_name: string;
+  vm_uuid: string;
+  enabled: boolean;
+  access_key: string;
+  login_url: string;
+  length: number;
+}
+
+/**
+ * 查询虚拟机访问密钥（未生成时 enabled=false）
+ */
+export const getVMAccessKey = (hsName: string, vmUuid: string): Promise<ApiResponse<VMAccessKeyInfo>> => {
+  // 受限身份（临时凭据/访问密钥登录）无权读取，静默处理避免打扰用户
+  return http.get(`/api/client/access-key/${hsName}/${vmUuid}`, { silent: true });
+};
+
+/**
+ * 生成（或重置）虚拟机访问密钥，旧密钥立即失效
+ */
+export const generateVMAccessKey = (hsName: string, vmUuid: string): Promise<ApiResponse<VMAccessKeyInfo>> => {
+  return http.post(`/api/client/access-key/${hsName}/${vmUuid}`);
+};
+
+/**
+ * 撤销虚拟机访问密钥
+ */
+export const deleteVMAccessKey = (hsName: string, vmUuid: string): Promise<ApiResponse<VMAccessKeyInfo>> => {
+  return http.delete(`/api/client/access-key/${hsName}/${vmUuid}`);
 };
 
 // ============================================================================
@@ -765,6 +834,8 @@ export default {
   vmPower,
   getVMStatus,
   scanVMs,
+  cleanupVMRecords,
+  dedupeVMRecords,
   getVMConsole,
   changeVMPassword,
   reinstallVM,
@@ -789,6 +860,11 @@ export default {
   addVMOwner,
   deleteVMOwner,
   updateVMOwnerPermission,
+
+  // 访问密钥管理
+  getVMAccessKey,
+  generateVMAccessKey,
+  deleteVMAccessKey,
   
   // EFI启动项管理
   getEFIList,

@@ -845,10 +845,9 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                             </Col>
                             <Col span={12}>
                                 <Form.Item name="os_name" label="操作系统" rules={[{ required: !isEditMode || canEditSys }]}>
-                                    <Select 
+                                    <Select
                                         placeholder={isEditMode && !canEditSys ? '无权限修改' : '选择系统镜像'}
                                         disabled={isEditMode && !canEditSys}
-                                        getPopupContainer={triggerNode => triggerNode.parentNode}
                                         onChange={(val) => {
                                             if (hostImages && hostImages.length > 0) {
                                                 const matched = hostImages.find(it => it.sys_file === val)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Table, Button, Space, Tag, Modal, Form, Input, Checkbox, InputNumber, message, Popconfirm, Divider, Row, Col, Tooltip } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, Checkbox, InputNumber, message, Popconfirm, Divider, Row, Col, Tooltip } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import PageHeader from '@/components/PageHeader'
 import api from '@/utils/apis.ts'
@@ -154,144 +154,64 @@ function UserManage() {
 
   /**
    * 表格列配置
+   * 原则：主行只回答「这是谁 / 什么角色 / 是否启用 / 用得怎么样」，
+   * 完整的 12 项配额放进展开行（.art-info-grid）。
+   * 早期把 CPU/RAM/SSD/GPU 四项塞进一个格子，表格被迫 1500px 宽且无法扫读。
    */
   const columns: ColumnsType<User> = [
     {
-      title: '用户名',
-      dataIndex: 'username',
-      key: 'username',
-      width: 80,
-    },
-    {
-      title: '邮箱',
-      dataIndex: 'email',
-      key: 'email',
-      width: 160,
+      title: '用户',
+      key: 'user',
+      width: 220,
+      render: (_, record) => (
+        <div className="art-cell-stack">
+          <span className="art-cell-title">{record.username}</span>
+          <span className="art-cell-sub">{record.email || '—'}</span>
+        </div>
+      ),
     },
     {
       title: '角色',
       dataIndex: 'is_admin',
       key: 'is_admin',
-      width: 60,
+      width: 100,
       render: (is_admin: boolean) => (
-        <Tag color={is_admin ? 'purple' : 'default'}>
+        <span className={`art-sem ${is_admin ? 'is-accent' : ''} art-sem-pill`}>
           {is_admin ? '管理员' : '普通用户'}
-        </Tag>
+        </span>
       ),
     },
     {
       title: '状态',
       dataIndex: 'is_active',
       key: 'is_active',
-      width: 60,
+      width: 90,
       render: (is_active: boolean) => (
-        <Tag color={is_active ? 'success' : 'error'}>
+        <span className={`art-sem ${is_active ? 'is-success' : 'is-danger'} art-sem-pill`}>
           {is_active ? '启用' : '禁用'}
-        </Tag>
+        </span>
       ),
     },
     {
-      title: '基础配额',
-      key: 'basic_quota',
-      width: 180,
+      title: '配额概览',
+      key: 'quota',
       render: (_, record) => (
-<div className="space-y-1 text-xs">
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>CPU:</span>
-            <span className="font-mono">{record.used_cpu || 0}/{record.quota_cpu}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>RAM:</span>
-            <span className="font-mono">{Math.round((record.used_ram || 0) / 1024)}/{Math.round(record.quota_ram / 1024)}GB</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>SSD:</span>
-            <span className="font-mono">{Math.round((record.used_ssd || 0) / 1024)}/{Math.round(record.quota_ssd / 1024)}GB</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>GPU ID:</span>
-            <span className="font-mono">{record.gpu_ids || '0'}</span>
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: 'GPU显存',
-      key: 'gpu_quota',
-      width: 120,
-      render: (_, record) => (
-        <div className="text-xs">
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>GPU显存:</span>
-            <span className="font-mono">{Math.round((record.used_gpu || 0) / 1024)}/{Math.round(record.quota_gpu / 1024)}GB</span>
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: '带宽/流量',
-      key: 'bandwidth_quota',
-      width: 150,
-      render: (_, record) => (
-        <div className="space-y-1 text-xs">
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>上行:</span>
-            <span className="font-mono">{record.used_bandwidth_up || 0}/{record.quota_bandwidth_up}M</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>下行:</span>
-            <span className="font-mono">{record.used_bandwidth_down || 0}/{record.quota_bandwidth_down}M</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>流量:</span>
-            <span className="font-mono">{Math.round((record.used_traffic || 0) / 1024)}/{Math.round(record.quota_traffic / 1024)}GB</span>
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: '网络服务',
-      key: 'network_quota',
-      width: 120,
-      render: (_, record) => (
-        <div className="space-y-1 text-xs">
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>NAT:</span>
-            <span className="font-mono">{record.used_nat_ports || 0}/{record.quota_nat_ports}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>WEB:</span>
-            <span className="font-mono">{record.used_web_proxy || 0}/{record.quota_web_proxy}</span>
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: 'IP配额',
-      key: 'ip_quota',
-      width: 120,
-      render: (_, record) => (
-        <div className="space-y-1 text-xs">
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>内网IP:</span>
-            <span className="font-mono">{record.used_nat_ips || 0}/{record.quota_nat_ips || 0}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span style={{ color: 'var(--text-secondary)' }}>公网IP:</span>
-            <span className="font-mono">{record.used_pub_ips || 0}/{record.quota_pub_ips || 0}</span>
-          </div>
-        </div>
+        <span className="art-quota-line">
+          <span>CPU {record.used_cpu || 0}/{record.quota_cpu}</span>
+          <span>内存 {Math.round((record.used_ram || 0) / 1024)}/{Math.round(record.quota_ram / 1024)}G</span>
+          <span>磁盘 {Math.round((record.used_ssd || 0) / 1024)}/{Math.round(record.quota_ssd / 1024)}G</span>
+          <span>NAT {record.used_nat_ports || 0}/{record.quota_nat_ports}</span>
+        </span>
       ),
     },
     {
       title: '操作',
       key: 'action',
-      width: 120,
-      fixed: 'right',
+      width: 140,
       render: (_, record) => (
-        <Space size="small">
+        <Space size={2}>
           <Button
-            type="link"
+            type="text"
             size="small"
             icon={<EditOutlined />}
             onClick={() => handleEdit(record.id)}
@@ -306,7 +226,7 @@ function UserManage() {
             cancelText="取消"
             getPopupContainer={() => document.body}
           >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+            <Button type="text" size="small" danger icon={<DeleteOutlined />}>
               删除
             </Button>
           </Popconfirm>
@@ -315,13 +235,40 @@ function UserManage() {
     },
   ]
 
+  /** 展开行：完整配额，一格一字段 */
+  const expandedRowRender = (record: User) => {
+    const gb = (mb?: number) => `${Math.round((mb || 0) / 1024)} GB`
+    const items: { label: string; value: string }[] = [
+      { label: 'CPU 核心', value: `${record.used_cpu || 0} / ${record.quota_cpu}` },
+      { label: '内存', value: `${gb(record.used_ram)} / ${gb(record.quota_ram)}` },
+      { label: '存储', value: `${gb(record.used_ssd)} / ${gb(record.quota_ssd)}` },
+      { label: 'GPU 显存', value: `${gb(record.used_gpu)} / ${gb(record.quota_gpu)}` },
+      { label: 'GPU ID', value: record.gpu_ids || '—' },
+      { label: '上行带宽', value: `${record.used_bandwidth_up || 0} / ${record.quota_bandwidth_up} Mbps` },
+      { label: '下行带宽', value: `${record.used_bandwidth_down || 0} / ${record.quota_bandwidth_down} Mbps` },
+      { label: '流量', value: `${gb(record.used_traffic)} / ${gb(record.quota_traffic)}` },
+      { label: 'NAT 端口', value: `${record.used_nat_ports || 0} / ${record.quota_nat_ports}` },
+      { label: 'Web 代理', value: `${record.used_web_proxy || 0} / ${record.quota_web_proxy}` },
+      { label: '内网 IP', value: `${record.used_nat_ips || 0} / ${record.quota_nat_ips || 0}` },
+      { label: '公网 IP', value: `${record.used_pub_ips || 0} / ${record.quota_pub_ips || 0}` },
+    ]
+    return (
+      <div className="art-info-grid">
+        {items.map((item) => (
+          <div key={item.label}>
+            <div className="art-info-label">{item.label}</div>
+            <div className="art-info-value is-mono">{item.value}</div>
+          </div>
+        ))}
+      </div>
+    )
+  }
   return (
-    <div className="p-6">
-      {/* 页面标题 */}
+    <div className="art-stack">
       <PageHeader
         icon={<UserOutlined />}
         title="平台用户管理"
-        subtitle="管理系统用户、权限和资源配额"
+        subtitle="管理系统用户、权限与资源配额"
         actions={
           <Button
             type="primary"
@@ -329,7 +276,6 @@ function UserManage() {
             onClick={() => {
               setEditingUser(null)
               form.resetFields()
-              // 设置默认值
               form.setFieldsValue({
                 is_active: true,
                 can_create_vm: true,
@@ -355,26 +301,21 @@ function UserManage() {
         }
       />
 
-      {/* 用户列表 */}
-      <div className="glass-card" style={{
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(10px)'
-      }}>
-
-        
-        <Table
-          columns={columns}
-          dataSource={users}
-          rowKey="id"
-          loading={loading}
-          scroll={{ x: 1500 }}
-          pagination={{
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 条`,
-          }}
-        />
+      <div className="art-panel">
+        <div className="art-panel-body is-flush">
+          <Table
+            columns={columns}
+            dataSource={users}
+            rowKey="id"
+            loading={loading}
+            expandable={{ expandedRowRender }}
+            pagination={{
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 条`,
+            }}
+          />
+        </div>
       </div>
-
       {/* 创建/编辑用户对话框 */}
       <Modal
         title={editingUser ? '编辑用户' : '添加用户'}

@@ -48,6 +48,29 @@ const formatDisk = (mb?: number): string => {
     return `${mb} MB`
 }
 
+/** 资源指标：标签 + 用量 + 细进度条 */
+const Metric: React.FC<{ name: string; value: string; percent: number; color: string }> = ({
+    name,
+    value,
+    percent,
+    color,
+}) => (
+    <div className="art-metric">
+        <div className="art-metric-head">
+            <span className="art-metric-name">{name}</span>
+            <span className="art-metric-value">{value}</span>
+        </div>
+        <Progress
+            percent={Math.max(0, Math.min(100, percent))}
+            size="small"
+            strokeWidth={5}
+            strokeColor={color}
+            trailColor="var(--art-card-border)"
+            showInfo={false}
+        />
+    </div>
+)
+
 const DockCard: React.FC<DockCardProps> = ({
     uuid,
     vm,
@@ -79,26 +102,26 @@ const DockCard: React.FC<DockCardProps> = ({
     const macAddr = firstNic.mac_addr || '-'
 
     const isRunning = powerStatus === 'STARTED'
-    
+
     // 从status中获取实际资源使用率
     const cpuTotal = firstStatus.cpu_total || config.cpu_num || 0
     const cpuUsage = firstStatus.cpu_usage || 0
     const cpuPercent = cpuTotal > 0 ? Math.round((cpuUsage / cpuTotal) * 100) : 0
-    
+
     const memTotal = firstStatus.mem_total || config.mem_num || 0
     const memUsage = firstStatus.mem_usage || 0
     const memPercent = memTotal > 0 ? Math.round((memUsage / memTotal) * 100) : 0
-    
+
     const hddTotal = firstStatus.hdd_total || config.hdd_num || 0
     const hddUsage = firstStatus.hdd_usage || 0
     const diskUsage = hddTotal > 0 ? Math.round((hddUsage / hddTotal) * 100) : 0
-    
+
     // GPU使用率（如果有的话）
     const gpuTotal = firstStatus.gpu_total || 0
     const gpuUsageObj = firstStatus.gpu_usage || {}
     const gpuUsageValue = Object.values(gpuUsageObj)[0] || 0
     const gpuPercent = gpuTotal > 0 ? Math.round((Number(gpuUsageValue) / gpuTotal) * 100) : 0
-    
+
     // 根据电源状态获取图标和颜色
     const getStatusIcon = () => {
         switch (powerStatus) {
@@ -121,184 +144,140 @@ const DockCard: React.FC<DockCardProps> = ({
     return (
         <Card
             hoverable
-            className="glass-effect h-full flex flex-col"
+            className="glass-card h-full flex flex-col"
             style={style}
             styles={{
-                body: { 
+                body: {
                     padding: 0,
-                    flex: 1, 
-                    display: 'flex', 
+                    flex: 1,
+                    display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden'
-                } 
+                }
             }}
         >
             {/* 头部区域 */}
-            <div className="relative p-4 border-b border-gray-200/50 dark:border-gray-700/50">
-                <div className="flex justify-between items-start">
-                    <div className="flex gap-3 items-center flex-1 min-w-0">
-                        <div className="w-12 h-12 rounded-xl flex items-center justify-center border border-purple-600/50 dark:border-purple-400/50 flex-shrink-0">
-                            <DesktopOutlined className="text-2xl text-purple-600 dark:text-purple-400" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                                <Tooltip title={uuid}>
-                                    <h3 className="m-0 text-base font-bold  truncate">
-                                        {uuid}
-                                    </h3>
+            <div className="art-dockcard-head">
+                <div className="art-icon-tile">
+                    <DesktopOutlined />
+                </div>
+                <div className="art-dockcard-titles">
+                    <div className="art-dockcard-name-row">
+                        <Tooltip title={uuid}>
+                            <h3 className="art-dockcard-name">{vm.display_name || uuid}</h3>
+                        </Tooltip>
+                        <Tag color={statusInfo.color} className={statusInfo.className} icon={getStatusIcon()}>
+                            {statusInfo.text}
+                        </Tag>
+                    </div>
+                    <div className="art-dockcard-sub">
+                        <span className="art-dockcard-uuid">{uuid}</span>
+                        <span>{config.os_name || '未知系统'}</span>
+                        {hostName && (
+                            <Tag icon={<CloudServerOutlined />} className="m-0" color="blue">{hostName}</Tag>
+                        )}
+                        {(() => {
+                            const ownAll = config.own_all || {}
+                            const ownerNames = Object.keys(ownAll)
+                            if (ownerNames.length === 0) return null
+                            return (
+                                <Tooltip title={ownerNames.length > 1 ? `共享: ${ownerNames.join(', ')}` : undefined}>
+                                    <Tag icon={<UserOutlined />} className="m-0" color="default">{ownerNames[0]}</Tag>
                                 </Tooltip>
-                                {hostName && (
-                                    <Tag icon={<CloudServerOutlined />} color="blue" className="m-0 flex-shrink-0">
-                                        {hostName}
-                                    </Tag>
-                                )}
-                                <Tag color={statusInfo.color} className={statusInfo.className} icon={getStatusIcon()}>
-                                    {statusInfo.text}
-                                </Tag>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs ">
-                                    {config.os_name || '未知系统'}
-                                </span>
-                                {(() => {
-                                    const ownAll = config.own_all || {}
-                                    const ownerNames = Object.keys(ownAll)
-                                    if (ownerNames.length > 0) {
-                                        return (
-                                            <Tooltip title={ownerNames.length > 1 ? `共享: ${ownerNames.join(', ')}` : undefined}>
-                                                <Tag icon={<UserOutlined />} className="m-0 text-xs" color="default">
-                                                    {ownerNames[0]}
-                                                </Tag>
-                                            </Tooltip>
-                                        )
-                                    }
-                                    return null
-                                })()}
-                            </div>
-                        </div>
+                            )
+                        })()}
                     </div>
                 </div>
             </div>
 
             {/* 主体内容区域 */}
-            <div className="flex-1 p-4 space-y-3 overflow-y-auto">
+            <div className="art-dockcard-body">
                 {/* 资源配置 */}
                 <div className="space-y-2">
-                    <div className="text-xs font-semibold  flex items-center gap-1">
-                        <DatabaseOutlined className="text-blue-500" />
+                    <div className="art-subpanel-head">
+                        <DatabaseOutlined />
                         资源配置
                     </div>
                     <Row gutter={[8, 8]}>
                         <Col span={12}>
-                            <div className="p-2 rounded-lg border border-white/20 dark:border-gray-700/30">
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="text-xs ">CPU</span>
-                                    <span className="text-xs font-bold ">
-                                        {cpuTotal} 核 {cpuPercent}%
-                                    </span>
-                                </div>
-                                <Progress
-                                    percent={cpuPercent}
-                                    size="small"
-                                    strokeColor={{ '0%': '#3b82f6', '100%': '#8b5cf6' }}
-                                    showInfo={false}
-                                />
-                            </div>
+                            <Metric
+                                name="CPU"
+                                value={`${cpuTotal} 核 · ${cpuPercent}%`}
+                                percent={cpuPercent}
+                                color="#5d87ff"
+                            />
                         </Col>
                         <Col span={12}>
-                            <div className="p-2 rounded-lg border border-white/20 dark:border-gray-700/30">
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="text-xs ">内存</span>
-                                    <span className="text-xs font-bold ">
-                                        {formatMemory(memUsage)} / {formatMemory(memTotal)}
-                                    </span>
-                                </div>
-                                <Progress
-                                    percent={memPercent}
-                                    size="small"
-                                    strokeColor={{ '0%': '#8b5cf6', '100%': '#ec4899' }}
-                                    showInfo={false}
-                                />
-                            </div>
+                            <Metric
+                                name="内存"
+                                value={`${formatMemory(memUsage)} / ${formatMemory(memTotal)}`}
+                                percent={memPercent}
+                                color="#12c48b"
+                            />
                         </Col>
                         <Col span={12}>
-                            <div className="p-2 rounded-lg border border-white/20 dark:border-gray-700/30">
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="text-xs ">硬盘</span>
-                                    <span className="text-xs font-bold ">
-                                        {formatMemory(hddUsage)} / {formatMemory(hddTotal)}
-                                    </span>
-                                </div>
-                                <Progress
-                                    percent={diskUsage}
-                                    size="small"
-                                    strokeColor={{ '0%': '#10b981', '100%': '#059669' }}
-                                    showInfo={false}
-                                />
-                            </div>
+                            <Metric
+                                name="硬盘"
+                                value={`${formatMemory(hddUsage)} / ${formatMemory(hddTotal)}`}
+                                percent={diskUsage}
+                                color="#7b6cff"
+                            />
                         </Col>
                         <Col span={12}>
-                            <div className="p-2 rounded-lg border border-white/20 dark:border-gray-700/30">
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="text-xs ">显存</span>
-                                    <span className="text-xs font-bold ">
-                                        {formatMemory(Number(gpuUsageValue) || 0)} / {formatMemory(config.gpu_mem || gpuTotal)}
-                                    </span>
-                                </div>
-                                <Progress
-                                    percent={gpuPercent}
-                                    size="small"
-                                    strokeColor={{ '0%': '#f59e0b', '100%': '#ef4444' }}
-                                    showInfo={false}
-                                />
-                            </div>
+                            <Metric
+                                name="显存"
+                                value={`${formatMemory(Number(gpuUsageValue) || 0)} / ${formatMemory(config.gpu_mem || gpuTotal)}`}
+                                percent={gpuPercent}
+                                color="#f5a623"
+                            />
                         </Col>
                     </Row>
                 </div>
 
                 {/* 流量 */}
-                <div className="p-3 rounded-lg border border-white/20 dark:border-gray-700/30">
-                    <div className="text-xs font-semibold mb-2 flex items-center gap-1">
-                        <ThunderboltOutlined className="text-green-600 dark:text-green-400" />
+                <div className="art-subpanel">
+                    <div className="art-subpanel-head">
+                        <ThunderboltOutlined />
                         流量
                     </div>
-                    <div className="flex items-center justify-between mb-1 text-xs">
-                            <span>
-                                <span className="ml-2 text-green-600 dark:text-green-400">↑ {formatDisk(firstStatus.bindbindwidth_up_usage || 0)} / {formatDisk(firstStatus.bindwidth_up_total || 0)}</span>
-                                <span className="ml-2 text-blue-600 dark:text-blue-400">↓ {formatDisk(firstStatus.bindwidth_down_usage || 0)} / {formatDisk(firstStatus.bindwidth_down_total || 0)}</span>
-                            </span>
-                            <span className="text-xs font-bold">
-                                {formatDisk(firstStatus.flu_usage || 0)} / {formatDisk(firstStatus.flu_total || 0)}
-                            </span>
+                    <div className="art-subpanel-row">
+                        <span>
+                            <span className="text-green-600 dark:text-green-400">↑ {formatDisk(firstStatus.bindbindwidth_up_usage || 0)}</span>
+                            <span className="ml-2 text-blue-600 dark:text-blue-400">↓ {formatDisk(firstStatus.bindwidth_down_usage || 0)}</span>
+                        </span>
+                        <span className="art-subpanel-value">
+                            {formatDisk(firstStatus.flu_usage || 0)} / {formatDisk(firstStatus.flu_total || 0)}
+                        </span>
                     </div>
                     <Progress
-                            percent={firstStatus.flu_total > 0 ? Math.round((firstStatus.flu_usage || 0) / firstStatus.flu_total * 100) : 0}
-                            size="small"
-                            strokeColor={{ '0%': '#10b981', '100%': '#3b82f6' }}
-                            showInfo={false}
+                        percent={firstStatus.flu_total > 0 ? Math.round((firstStatus.flu_usage || 0) / firstStatus.flu_total * 100) : 0}
+                        size="small"
+                        strokeWidth={5}
+                        strokeColor="#5d87ff"
+                        trailColor="var(--art-card-border)"
+                        showInfo={false}
                     />
-
                 </div>
 
                 {/* 网络端口 */}
-                <div className="p-3 rounded-lg border border-white/20 dark:border-gray-700/30">
-                    <div className="text-xs font-semibold  mb-2 flex items-center gap-1">
-                        <ApiOutlined className="text-cyan-600 dark:text-cyan-400" />
+                <div className="art-subpanel">
+                    <div className="art-subpanel-head">
+                        <ApiOutlined />
                         网络端口
                     </div>
-                    <Row gutter={[8, 8]}>
+                    <Row gutter={[8, 4]}>
                         <Col span={12}>
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs ">NAT端口</span>
-                                <span className="text-xs font-mono text-cyan-600 dark:text-cyan-400">
+                            <div className="art-subpanel-row">
+                                <span>NAT 端口</span>
+                                <span className="art-subpanel-value">
                                     {(config.nat_all || []).length} / {config.nat_num || 100}
                                 </span>
                             </div>
                         </Col>
                         <Col span={12}>
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs ">Web代理</span>
-                                <span className="text-xs font-mono text-purple-600 dark:text-purple-400">
+                            <div className="art-subpanel-row">
+                                <span>Web 代理</span>
+                                <span className="art-subpanel-value">
                                     {(config.web_all || []).length} / {config.web_num || 100}
                                 </span>
                             </div>
@@ -307,72 +286,66 @@ const DockCard: React.FC<DockCardProps> = ({
                 </div>
 
                 {/* 网卡信息 */}
-                <div className="p-3 rounded-lg border border-white/20 dark:border-gray-700/30">
-                    <div className="text-xs font-semibold  mb-2 flex items-center gap-1">
-                        <GlobalOutlined className="text-indigo-600 dark:text-indigo-400" />
+                <div className="art-subpanel">
+                    <div className="art-subpanel-head">
+                        <GlobalOutlined />
                         网卡信息
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs  shrink-0">IP/MAC:</span>
-                        <Tooltip title={`IPv4: ${ipv4} | IPv6: ${ipv6 !== '-' ? ipv6 : '未配置'} | MAC: ${macAddr}`}>
-                            <span className="text-xs font-mono  truncate flex-1">
-                                {ipv4} / {ipv6 !== '-' ? ipv6 : '未配置'} | {macAddr}
-                            </span>
-                        </Tooltip>
-                    </div>
+                    <Tooltip title={`IPv4: ${ipv4} | IPv6: ${ipv6 !== '-' ? ipv6 : '未配置'} | MAC: ${macAddr}`}>
+                        <div className="art-subpanel-value art-dockcard-nic">
+                            {ipv4} / {ipv6 !== '-' ? ipv6 : '未配置'}
+                            <span className="art-dockcard-nic-mac">{macAddr}</span>
+                        </div>
+                    </Tooltip>
                 </div>
             </div>
 
             {/* 底部操作栏 */}
-            <div className="flex justify-end gap-2 p-3 border-t border-white/20 dark:border-gray-700/30">
-                <Button 
-                    type="link" 
+            <div className="art-card-actions">
+                <Button
+                    type="text"
                     size="small"
-                    icon={<EyeOutlined />} 
+                    icon={<EyeOutlined />}
                     onClick={() => onDetail(uuid)}
-                    className="flex items-center gap-1 whitespace-nowrap"
                 >
                     查看详情
                 </Button>
+                <span className="art-card-actions-spacer" />
                 <Tooltip title={hostDisabled ? '主机已禁用' : !hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS) ? '无VNC权限' : 'VNC控制台'}>
-                    <Button 
-                        type="text" 
+                    <Button
+                        type="text"
                         size="small"
-                        icon={<DesktopOutlined />} 
+                        icon={<DesktopOutlined />}
                         onClick={() => onVnc(uuid)}
                         disabled={!isRunning || hostDisabled || !hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS)}
-                        className="hover:bg-purple-50 dark:hover:bg-purple-900/30"
                     />
                 </Tooltip>
                 <Tooltip title={hostDisabled ? '主机已禁用' : !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS) ? '无电源权限' : '电源操作'}>
-                    <Button 
-                        type="text" 
+                    <Button
+                        type="text"
                         size="small"
-                icon={<PoweroffOutlined className={isRunning ? 'text-green-500' : ''} />}
+                        icon={<PoweroffOutlined className={isRunning ? 'text-green-500' : ''} />}
                         onClick={() => onPower(uuid)}
                         disabled={hostDisabled || !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS)}
-                        className="hover:bg-green-50 dark:hover:bg-green-900/30"
                     />
                 </Tooltip>
                 <Tooltip title={hostDisabled ? '主机已禁用' : !canModify ? '无修改虚拟机权限' : !hasPermission(userPermissions, VM_PERMISSION.VM_MODIFY) ? '无编辑权限' : '编辑配置'}>
-                    <Button 
-                        type="text" 
+                    <Button
+                        type="text"
                         size="small"
-                        icon={<EditOutlined />} 
+                        icon={<EditOutlined />}
                         onClick={() => onEdit(uuid)}
                         disabled={hostDisabled || !canModify || !hasPermission(userPermissions, VM_PERMISSION.VM_MODIFY)}
-                        className="hover:bg-orange-50 dark:hover:bg-orange-900/30"
                     />
                 </Tooltip>
                 <Tooltip title={hostDisabled ? '主机已禁用' : !canDelete ? '无删除虚拟机权限' : !hasPermission(userPermissions, VM_PERMISSION.VM_DELETE) ? '无删除权限' : '删除虚拟机'}>
-                    <Button 
-                        type="text" 
+                    <Button
+                        type="text"
                         size="small"
                         danger
-                        icon={<DeleteOutlined />} 
+                        icon={<DeleteOutlined />}
                         onClick={() => onDelete(uuid)}
                         disabled={hostDisabled || !canDelete || !hasPermission(userPermissions, VM_PERMISSION.VM_DELETE)}
-                        className="hover:bg-red-50 dark:hover:bg-red-900/30"
                     />
                 </Tooltip>
             </div>

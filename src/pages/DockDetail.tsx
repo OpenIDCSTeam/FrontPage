@@ -303,6 +303,13 @@ function VMDetail() {
     const [backups, setBackups] = useState<BackupInfo[]>([])
     const [owners, setOwners] = useState<OwnerInfo[]>([])
 
+    // 访问密钥（16 位字母数字长期凭据，登录/URL 跳转后权限与临时凭据一致）
+    const [accessKeyInfo, setAccessKeyInfo] = useState<{enabled: boolean; access_key: string; login_url: string}>(
+        {enabled: false, access_key: '', login_url: ''}
+    )
+    const [accessKeyLoading, setAccessKeyLoading] = useState(false)
+    const [accessKeyVisible, setAccessKeyVisible] = useState(false)
+
     const [form] = Form.useForm()
     const [ipForm] = Form.useForm()
     const [proxyForm] = Form.useForm()
@@ -977,13 +984,18 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             if (response.data && (response.data as any).config) {
                 const data = response.data as any
                 const hddAll = data.config.hdd_all || {}
+                // 注意展开顺序：hdd_all 的 **map key 才是磁盘标识**（挂载/卸载/删除都按它定位），
+                // 因此必须放在 ...value 之后，否则会被 value.hdd_path（Go 侧存的镜像绝对路径 /
+                // 文件名）覆盖 —— 表现为「磁盘名称」显示成 vm-xxx.qcow2，
+                // 且卸载/删除会拿这个路径去查 hdd_all 导致找不到磁盘。
+                // Python 版没有 hdd_path 字段，此处行为与 Python 一致。
                 const hddList = Object.entries(hddAll).map(([key, value]: [string, any]) => ({
+                    ...value,
                     hdd_path: key,
                     hdd_size: value.hdd_size || 0,
                     hdd_type: value.hdd_type || 0,
                     hdd_flag: value.hdd_flag || 0,
-                    hdd_num: value.hdd_size || 0,
-                    ...value
+                    hdd_num: value.hdd_size || 0
                 }))
                 setHdds(hddList)
             }
@@ -1000,11 +1012,12 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             if (response.data && (response.data as any).config) {
                 const data = response.data as any
                 const isoAll = data.config.iso_all || {}
+                // 同上：iso_name 以 map key 为准（卸载接口按 iso_name 定位）
                 const isoList = Object.entries(isoAll).map(([key, value]: [string, any]) => ({
+                    ...value,
                     iso_name: key,
                     iso_file: value.iso_file || '',
-                    iso_hint: value.iso_hint || '',
-                    ...value
+                    iso_hint: value.iso_hint || ''
                 }))
                 setIsos(isoList)
             }
@@ -1071,6 +1084,91 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         }
     }
 
+    // 加载访问密钥（仅管理员/主所有者有权读取，非授权身份静默忽略）
+    const loadAccessKey = async () => {
+        if (!hostName || !uuid) return
+        try {
+            const response = await api.getVMAccessKey(hostName, uuid)
+            const data: any = response.data || {}
+            setAccessKeyInfo({
+                enabled: !!data.enabled,
+                access_key: data.access_key || '',
+                login_url: data.login_url || '',
+            })
+        } catch (error: any) {
+            // 403（非主所有者）等场景不打扰用户，保持「未启用」展示
+            setAccessKeyInfo({enabled: false, access_key: '', login_url: ''})
+        }
+    }
+
+    // 生成（重置）访问密钥：旧密钥立即失效，需二次确认
+    const handleGenerateAccessKey = async () => {
+        if (!hostEnabled) { message.error('该主机已被禁用，无法操作'); return }
+        const hasKey = accessKeyInfo.enabled
+        showConfirmAction(
+            hasKey ? '重置访问密钥确认' : '生成访问密钥确认',
+            hasKey
+                ? '重置后旧密钥将立即失效，使用旧密钥的链接与登录将无法再访问该虚拟机。确定要重置吗？'
+                : '将为该虚拟机生成一个 16 位访问密钥，持有该密钥的用户可直接登录并管理此虚拟机。确定要生成吗？',
+            async () => {
+                setAccessKeyLoading(true)
+                try {
+                    const response = await api.generateVMAccessKey(hostName!, uuid!)
+                    const data: any = response.data || {}
+                    setAccessKeyInfo({
+                        enabled: !!data.enabled,
+                        access_key: data.access_key || '',
+                        login_url: data.login_url || '',
+                    })
+                    setAccessKeyVisible(true)
+                    message.success(hasKey ? '访问密钥已重置' : '访问密钥生成成功')
+                } catch (error: any) {
+                    message.error(error?.message || '生成访问密钥失败')
+                } finally {
+                    setAccessKeyLoading(false)
+                }
+            },
+        )
+    }
+
+    // 撤销访问密钥
+    const handleDeleteAccessKey = async () => {
+        if (!hostEnabled) { message.error('该主机已被禁用，无法操作'); return }
+        showConfirmAction(
+            '撤销访问密钥确认',
+            '撤销后该密钥立即失效，使用该密钥的登录与跳转链接将无法再访问该虚拟机。确定要撤销吗？',
+            async () => {
+                setAccessKeyLoading(true)
+                try {
+                    await api.deleteVMAccessKey(hostName!, uuid!)
+                    setAccessKeyInfo({enabled: false, access_key: '', login_url: ''})
+                    setAccessKeyVisible(false)
+                    message.success('访问密钥已撤销')
+                } catch (error: any) {
+                    message.error(error?.message || '撤销访问密钥失败')
+                } finally {
+                    setAccessKeyLoading(false)
+                }
+            },
+        )
+    }
+
+    // 复制访问密钥 / 登录链接
+    const handleCopyText = async (text: string, tip: string) => {
+        if (!text) return
+        try {
+            await navigator.clipboard.writeText(text)
+            message.success(tip)
+        } catch (e) {
+            message.error('复制失败，请手动选择复制')
+        }
+    }
+
+    // 完整登录链接（用于分享给他人直接跳转）
+    const accessKeyLoginURL = accessKeyInfo.access_key
+        ? `${window.location.origin}/api/client/keylogin?key=${accessKeyInfo.access_key}`
+        : ''
+
     useEffect(() => {
         loadHostInfo();
         loadVMDetail();
@@ -1134,6 +1232,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         loadISOs()
         loadBackups()
         loadOwners()
+        loadAccessKey()
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
@@ -1146,6 +1245,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         else if (activeTab === 'iso') loadISOs()
         else if (activeTab === 'backup') loadBackups()
         else if (activeTab === 'owners') loadOwners()
+        else if (activeTab === 'access') loadAccessKey()
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab])
 
@@ -2226,18 +2326,12 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
     };
 
     const ResourceCard = ({title, icon, value, percent, color}: any) => (
-                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded-lg p-3 border border-white/20 dark:border-gray-700/30 h-full flex flex-col justify-between">
-            <div className="flex items-center gap-2 mb-[15px]">
-                {icon}
-                <span className="text-base">{title}</span>
+        <div className="art-metric">
+            <div className="art-metric-head">
+                <span className="art-metric-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{title}</span>
+                <span className="art-metric-value">{value} · {percent}%</span>
             </div>
-            <div>
-                <div className="flex justify-between text-sm mb-1">
-                                    <span className="font-mediu">{value}</span>
-                    <span>{percent}%</span>
-                </div>
-                <Progress percent={Math.min(percent, 100)} size="small" showInfo={false} strokeColor={color}/>
-            </div>
+            <Progress percent={Math.min(percent, 100)} size="small" showInfo={false} strokeColor={color}/>
         </div>
     )
 
@@ -2682,6 +2776,10 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
         </Row>
     );
 
+    // 访问密钥等价于该虚拟机的长期登录凭据：仅管理员与主所有者可管理，
+    // 且受限临时身份（临时凭据/访问密钥登录）一律不可见，避免被再次转授。
+    const canManageAccessKey = isAdminUser || (isOwnerOrAdmin && !(user as any)?.temp_login)
+
     const tabItems = [
         {key: 'overview', label: '实例概览', children: overviewTab},
         {
@@ -2706,7 +2804,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     nicViewMode === 'card' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {Object.entries(vm.config.nic_all).map(([nicName, nicConfig]: [string, any]) => (
-                            <div key={nicName} className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-blue-400 dark:hover:border-blue-500">
+                            <div key={nicName} className="glass-card">
                                 <div className="flex items-center justify-between mb-3">
                                     <div className="flex items-center gap-2">
                                         <span className="px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 rounded">
@@ -2793,7 +2891,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                             const typeText = hdd.hdd_type === 1 ? 'SSD' : 'HDD'
                             return (
                                 <div key={hddName}
-                                     className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-purple-400 dark:hover:border-purple-500">
+                                     className="glass-card">
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex gap-2">
                                             <span
@@ -2907,7 +3005,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {isos.map((iso, index) => (
                             <div key={iso.iso_name || `iso-${index}`}
-                                 className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-purple-400 dark:hover:border-purple-500">
+                                 className="glass-card">
                                 <div className="flex items-center justify-between mb-3">
                                     <span
                                         className="px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 rounded">
@@ -2992,7 +3090,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {natRules.map((rule, index) => (
                             <div key={`nat-${index}`}
-                                 className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-blue-400 dark:hover:border-blue-500">
+                                 className="glass-card">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 rounded">
                                         端口转发
@@ -3108,7 +3206,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {proxyRules.map((proxy, index) => (
                             <div key={proxy.id || `proxy-${index}`}
-                                 className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-pink-400 dark:hover:border-pink-500">
+                                 className="glass-card">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className={`px-2 py-0.5 text-xs font-medium rounded ${
                                         proxy.ssl_enabled
@@ -3210,7 +3308,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     pciViewMode === 'card' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {Object.entries(vm.config.pci_all).map(([gpuKey, gpuConfig]: [string, any]) => (
-                            <div key={gpuKey} className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-orange-400 dark:hover:border-orange-500">
+                            <div key={gpuKey} className="glass-card">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="px-2 py-0.5 text-xs font-medium text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/40 rounded">
                                         PCI设备
@@ -3290,7 +3388,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {usbList.map((usb, index) => (
                             <div key={usb.key || `usb-${index}`}
-                                 className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-blue-400 dark:hover:border-blue-500">
+                                 className="glass-card">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 rounded">
                                         USB设备
@@ -3379,7 +3477,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                             const backupHint = backup.backup_hint || ''
                             return (
                                 <div key={backup.backup_name || `backup-${index}`}
-                                     className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-purple-400 dark:hover:border-purple-500">
+                                     className="glass-card">
                                     <div className="flex items-center justify-between mb-3">
                                         <span
                       className="px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 rounded">
@@ -3512,7 +3610,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     <div className="space-y-2">
                         {(efiEditing ? efiEditList : efiList).map((item, index) => (
                             <div key={`efi-${index}`}
-                                 className="glass-card flex items-center justify-between px-4 py-3 hover:shadow-md transition-all duration-200">
+                                 className="glass-card flex items-center justify-between px-4 py-3">
                                 <div className="flex items-center gap-3">
                                     <span className="text-lg font-bold text-blue-500 w-8 text-center">#{index + 1}</span>
                                     <span className="iconify text-xl" data-icon={item.efi_type ? 'mdi:disc' : 'mdi:harddisk'} style={{color: item.efi_type ? '#f59e0b' : '#3b82f6'}}></span>
@@ -3618,7 +3716,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                             const ownerMask = typeof owner.permission === 'number' ? owner.permission : VM_PERMISSION.FULL_MASK
                             return (
                                 <div key={owner.username || `owner-${index}`}
-                                     className="glass-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-blue-400 dark:hover:border-blue-500">
+                                     className="glass-card">
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-2">
                                             <span className="iconify text-blue-600" data-icon="mdi:account"
@@ -3730,6 +3828,69 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     )
                 ) : (
                     <div className="text-center  py-8">暂无使用者</div>
+                )}
+            </Card>
+        },
+        {
+            key: 'access',
+            label: '访问密钥',
+            children: <Card
+                title="虚拟机访问密钥"
+                extra={
+                    <Space>
+                        <Button type="primary" icon={<KeyOutlined/>}
+                                loading={accessKeyLoading}
+                                disabled={operationLocked}
+                                onClick={handleGenerateAccessKey}>
+                            {accessKeyInfo.enabled ? '重置密钥' : '生成密钥'}
+                        </Button>
+                        {accessKeyInfo.enabled && (
+                            <Button danger
+                                    loading={accessKeyLoading}
+                                    onClick={handleDeleteAccessKey}>撤销密钥</Button>
+                        )}
+                    </Space>
+                }
+                variant="borderless">
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{marginBottom: 16}}
+                    message="访问密钥用于免账号登录该虚拟机"
+                    description="持有 16 位访问密钥的用户可直接登录并在权限范围内管理此虚拟机（权限与临时凭据一致，且仅限本虚拟机）；也可以通过带密钥的链接直接跳转。密钥等同于登录凭据，请妥善保管，泄露后请立即重置。"
+                />
+                {accessKeyInfo.enabled && accessKeyInfo.access_key ? (
+                    <Descriptions column={1} bordered size="small">
+                        <Descriptions.Item label="访问密钥">
+                            <Space>
+                                <span className="font-mono" style={{letterSpacing: 2}}>
+                                    {accessKeyVisible ? accessKeyInfo.access_key : '••••••••••••••••'}
+                                </span>
+                                <Button size="small" icon={<EyeOutlined/>}
+                                        onClick={() => setAccessKeyVisible(v => !v)}>
+                                    {accessKeyVisible ? '隐藏' : '显示'}
+                                </Button>
+                                <Button size="small" icon={<CopyOutlined/>}
+                                        onClick={() => handleCopyText(accessKeyInfo.access_key, '访问密钥已复制')}>复制</Button>
+                            </Space>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="跳转链接">
+                            <Space>
+                                <span className="font-mono text-xs break-all">{accessKeyLoginURL}</span>
+                                <Button size="small" icon={<CopyOutlined/>}
+                                        onClick={() => handleCopyText(accessKeyLoginURL, '跳转链接已复制')}>复制</Button>
+                            </Space>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="使用方式">
+                            <span className="text-xs">
+                                登录页选择「访问密钥登录」并输入密钥，或直接访问上方跳转链接（跳转链接仅用于浏览器直接打开，请勿公开分享）
+                            </span>
+                        </Descriptions.Item>
+                    </Descriptions>
+                ) : (
+                    <div className="text-center py-8" style={{color: 'var(--text-secondary)'}}>
+                        尚未生成访问密钥，点击右上角「生成密钥」即可获得一串 16 位密钥用于登录本虚拟机
+                    </div>
                 )}
             </Card>
         },
@@ -3849,7 +4010,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                             </div>
                         </div>
                         <Space>
-                            <Button type="primary" style={{background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none'}} onClick={() => navigate(`/hosts/${hostName}/vms/${uuid}/v2`)}>新版面板</Button>
+                            <Button type="primary" onClick={() => navigate(`/hosts/${hostName}/vms/${uuid}/v2`)}>新版面板</Button>
             <Button type="primary" className="bg-blue-600" onClick={() => setRemoteModalVisible(true)} 
                 disabled={!hostEnabled || operationLocked || isIntermediateState() || isSuspendedState() || 
                          !hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS)}>远程桌面</Button>
@@ -3880,6 +4041,8 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                           items={tabItems.filter(i => {
                               const requiredPerm = TAB_PERMISSION_MAP[i.key];
                               // owners tab 仅管理员/主所有者可见
+                              // access（访问密钥）tab 另需排除受限临时身份
+                              if (i.key === 'access') return canManageAccessKey;
                               if (OWNER_ONLY_TABS.has(i.key)) return isOwnerOrAdmin;
                               if (!requiredPerm) return true; // overview等无需权限的Tab始终显示
                               // 仅管理员跳过配额和权限限制（主所有者仍受user_permission约束）
@@ -3897,6 +4060,8 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                 {tabItems.filter(i => {
                     const requiredPerm = TAB_PERMISSION_MAP[i.key];
                     // owners tab 仅管理员/主所有者可见
+                    // access（访问密钥）tab 另需排除受限临时身份
+                    if (i.key === 'access') return canManageAccessKey;
                     if (OWNER_ONLY_TABS.has(i.key)) return isOwnerOrAdmin;
                     if (!requiredPerm) return true;
                     // 仅管理员跳过配额和权限限制

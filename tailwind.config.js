@@ -4,104 +4,31 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+
+  /**
+   * `dark:` 变体跟随应用的深浅色开关，而不是操作系统的 prefers-color-scheme。
+   * 早期版本没设这一项，导致「系统是深色 + 应用是浅色」时页面里
+   * `dark:xxx` 的工具类会错误生效，是配色不一致的主要来源之一。
+   */
+  darkMode: ['class', '[data-theme="dark"]'],
+
   theme: {
     extend: {
-      // 自定义颜色
-      colors: {
-        // 浅色主题色
-        'light-primary': '#ffffff',
-        'light-secondary': '#f8f9fa',
-        'light-accent': '#0ea5e9',
-        'light-accent-secondary': '#10b981',
-        
-        // 深色主题色
-        'dark-primary': '#0f1419',
-        'dark-secondary': '#1a1f2e',
-        'dark-tertiary': '#252b3b',
-        'dark-accent': '#00d4ff',
-        'dark-accent-secondary': '#00ff88',
-        
-        // 状态色
-        'status-success': '#10b981',
-        'status-warning': '#f59e0b',
-        'status-error': '#ef4444',
-        'status-info': '#3b82f6',
-      },
-      
-      // 自定义圆角
-      borderRadius: {
-        'card': '16px',
-        'button': '12px',
-        'input': '8px',
-        'badge': '6px',
-      },
-      
-      // 自定义阴影
-      boxShadow: {
-        'glass': '0 8px 32px rgba(0, 0, 0, 0.1)',
-        'glass-dark': '0 8px 32px rgba(0, 0, 0, 0.3)',
-        'glow': '0 0 20px rgba(14, 165, 233, 0.3)',
-        'glow-dark': '0 0 20px rgba(0, 212, 255, 0.3)',
-        'card': '0 4px 6px rgba(0, 0, 0, 0.07)',
-        'card-hover': '0 10px 15px rgba(0, 0, 0, 0.1)',
-      },
-      
-      // 自定义动画
-      animation: {
-        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'fade-in': 'fadeIn 0.5s ease-out',
-        'slide-in': 'slideIn 0.4s ease-out',
-      },
-      
-      // 自定义关键帧
-      keyframes: {
-        fadeIn: {
-          '0%': { opacity: '0', transform: 'translateY(10px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        slideIn: {
-          '0%': { opacity: '0', transform: 'translateX(-20px)' },
-          '100%': { opacity: '1', transform: 'translateX(0)' },
-        },
-      },
-      
-      // 自定义过渡
-      transitionProperty: {
-        'height': 'height',
-        'spacing': 'margin, padding',
-      },
-      
-      // 自定义背景模糊
-      backdropBlur: {
-        'glass': '20px',
+      /**
+       * 字体交给 CSS 变量，由 src/styles/fonts.css 的字体预设决定，
+       * 这样 Tailwind 的 font-sans / font-mono 与全局字体切换保持一致。
+       */
+      fontFamily: {
+        sans: ['var(--font-family)'],
+        mono: ['var(--font-mono)'],
       },
     },
   },
-  plugins: [
-    require('daisyui'),
-  ],
-  // DaisyUI配置
-  daisyui: {
-    themes: [
-      {
-        light: {
-          ...require("daisyui/src/theming/themes")["light"],
-          primary: "#0ea5e9",
-          secondary: "#10b981",
-          accent: "#3b82f6",
-          neutral: "#374151",
-          "base-100": "#ffffff",
-          info: "#0ea5e9",
-          success: "#22c55e",
-          warning: "#f59e0b",
-          error: "#ef4444",
-        },
-      },
-    ],
-    darkTheme: false, // 禁用DaisyUI暗色主题（使用自定义主题系统）
-    base: true,
-    styled: true,
-    utils: true,
-    logs: false,
-  },
+
+  /**
+   * 已移除 daisyui：
+   * 全项目零引用它的语义色类（btn / card / badge / bg-primary / text-base-content 等），
+   * 但它会在 base 层注入一套自己的按钮与卡片底色，与 Ant Design 抢同一批元素。
+   */
+  plugins: [],
 }

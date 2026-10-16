@@ -1,6 +1,22 @@
 import { useEffect, useState, useCallback } from 'react'
-import { message, Modal, Select, Popconfirm, Pagination } from 'antd'
+import { message, Modal, Select, Popconfirm, Pagination, Button, Spin } from 'antd'
+import {
+  ScheduleOutlined,
+  PlayCircleOutlined,
+  PauseCircleOutlined,
+  ReloadOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  StopOutlined,
+  UnorderedListOutlined,
+  RedoOutlined,
+  InfoCircleOutlined,
+  SettingOutlined,
+} from '@ant-design/icons'
 import PageHeader from '@/components/PageHeader'
+import StatCard from '@/components/StatCard'
+import EmptyState from '@/components/EmptyState'
 import {
   getTaskList,
   getTaskStats,
@@ -140,19 +156,21 @@ function TaskManage() {
   }
 
   /**
-   * 获取状态信息
+   * 任务状态 → 展示信息
+   * 只返回语义 tone，颜色由 art-design.css 的 .art-sem.* 决定。
+   * 早期这里硬编码了 5 组 hex（#ca8a04 / rgba(234,179,8,.15) …），
+   * 换主题时改不动，也是页面间配色不一致的来源。
    */
   const getStatusInfo = (status: string) => {
-    const statusMap: Record<string, { text: string; icon: string; bgColor: string; textColor: string }> = {
-      pending: { text: '等待中', icon: 'mdi:clock-outline', bgColor: 'rgba(234,179,8,0.15)', textColor: '#ca8a04' },
-      running: { text: '执行中', icon: 'mdi:play-circle', bgColor: 'rgba(59,130,246,0.15)', textColor: '#3b82f6' },
-      completed: { text: '已完成', icon: 'mdi:check-circle', bgColor: 'rgba(34,197,94,0.15)', textColor: '#22c55e' },
-      failed: { text: '已失败', icon: 'mdi:close-circle', bgColor: 'rgba(239,68,68,0.15)', textColor: '#ef4444' },
-      stopped: { text: '已停止', icon: 'mdi:stop-circle', bgColor: 'rgba(249,115,22,0.15)', textColor: '#f97316' },
+    const statusMap: Record<string, { text: string; tone: string }> = {
+      pending: { text: '等待中', tone: 'is-warning' },
+      running: { text: '执行中', tone: 'is-accent' },
+      completed: { text: '已完成', tone: 'is-success' },
+      failed: { text: '已失败', tone: 'is-danger' },
+      stopped: { text: '已停止', tone: '' },
     }
-    return statusMap[status?.toLowerCase()] || { text: '未知', icon: 'mdi:help-circle', bgColor: 'rgba(107,114,128,0.15)', textColor: '#6b7280' }
+    return statusMap[(status || '').toLowerCase()] || { text: '未知', tone: '' }
   }
-
   /**
    * 格式化时间
    */
@@ -173,230 +191,157 @@ function TaskManage() {
   const taskTypeOptions = Object.entries(TASK_TYPE_LABELS).map(([value, label]) => ({ label, value }))
 
   return (
-    <div className="p-6">
-      {/* 页面标题 */}
+    <div className="art-stack">
       <PageHeader
-        icon={<span className="iconify" data-icon="mdi:playlist-check" style={{ width: '24px', height: '24px' }}></span>}
+        icon={<ScheduleOutlined />}
         title="任务管理"
-        subtitle="查看和管理异步任务执行情况"
+        subtitle="查看与管理异步任务的执行情况"
+        actions={
+          <>
+            <Button
+              type={autoRefresh ? 'primary' : 'default'}
+              icon={autoRefresh ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+              onClick={() => setAutoRefresh(!autoRefresh)}
+            >
+              {autoRefresh ? '停止刷新' : '自动刷新'}
+            </Button>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => { loadTasks(); loadStats() }}>
+              刷新
+            </Button>
+          </>
+        }
       />
 
-      {/* 过滤器 */}
-      <div className="glass-card p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>主机筛选</label>
-            <Select
-              className="w-full"
-              placeholder="全部主机"
-              value={selectedHost || undefined}
-              onChange={(v) => { setSelectedHost(v || ''); setPage(1) }}
-              allowClear
-              options={[{ label: '全部主机', value: '' }, ...hosts.map(host => ({ label: host, value: host }))]}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>任务状态</label>
-            <Select
-              className="w-full"
-              placeholder="全部状态"
-              value={selectedStatus || undefined}
-              onChange={(v) => { setSelectedStatus(v || ''); setPage(1) }}
-              allowClear
-              options={[
-                { label: '全部状态', value: '' },
-                { label: '等待中', value: 'pending' },
-                { label: '执行中', value: 'running' },
-                { label: '已完成', value: 'completed' },
-                { label: '已失败', value: 'failed' },
-                { label: '已停止', value: 'stopped' },
-              ]}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>任务类型</label>
-            <Select
-              className="w-full"
-              placeholder="全部类型"
-              value={selectedType || undefined}
-              onChange={(v) => { setSelectedType(v || ''); setPage(1) }}
-              allowClear
-              options={[{ label: '全部类型', value: '' }, ...taskTypeOptions]}
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              onClick={() => { loadTasks(); loadStats() }}
-              className="w-full text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
-              style={{ background: 'linear-gradient(135deg, #6968fd, #8b8aff)' }}
-            >
-              <span className="iconify" data-icon="mdi:refresh" style={{ width: '18px', height: '18px' }}></span>
-              刷新
-            </button>
-          </div>
-        </div>
+      {/* 指标：只保留 5 个状态计数，其余信息交给列表 */}
+      <div className="art-stat-grid">
+        <StatCard icon={<ClockCircleOutlined />} label="等待中" value={stats.pending} tone="warning" />
+        <StatCard icon={<PlayCircleOutlined />} label="执行中" value={stats.running} tone="primary" />
+        <StatCard icon={<CheckCircleOutlined />} label="已完成" value={stats.completed} tone="success" />
+        <StatCard icon={<CloseCircleOutlined />} label="已失败" value={stats.failed} tone="danger" />
+        <StatCard icon={<StopOutlined />} label="已停止" value={stats.stopped} tone="primary" />
       </div>
 
-      {/* 任务统计 */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        {([
-          { key: 'pending', label: '等待中', icon: 'mdi:clock-outline', color: '#ca8a04', bg: 'rgba(234,179,8,0.15)' },
-          { key: 'running', label: '执行中', icon: 'mdi:play-circle', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
-          { key: 'completed', label: '已完成', icon: 'mdi:check-circle', color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
-          { key: 'failed', label: '已失败', icon: 'mdi:close-circle', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
-          { key: 'stopped', label: '已停止', icon: 'mdi:stop-circle', color: '#f97316', bg: 'rgba(249,115,22,0.15)' },
-        ] as const).map(item => (
-          <div key={item.key} className="glass-card p-4 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: item.bg }}>
-                <span className="iconify" data-icon={item.icon} style={{ color: item.color, width: '20px', height: '20px' }}></span>
-              </div>
-              <div>
-                <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{item.label}</p>
-                <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{stats[item.key]}</p>
-              </div>
-            </div>
-          </div>
-        ))}
+      {/* 筛选：全部收进一行工具条 */}
+      <div className="art-toolbar">
+        <Select
+          style={{ width: 180 }}
+          placeholder="全部主机"
+          allowClear
+          value={selectedHost || undefined}
+          onChange={(v) => { setSelectedHost(v || ''); setPage(1) }}
+          options={[{ label: '全部主机', value: '' }, ...hosts.map(host => ({ label: host, value: host }))]}
+        />
+        <Select
+          style={{ width: 150 }}
+          placeholder="全部状态"
+          allowClear
+          value={selectedStatus || undefined}
+          onChange={(v) => { setSelectedStatus(v || ''); setPage(1) }}
+          options={[
+            { label: '全部状态', value: '' },
+            { label: '等待中', value: 'pending' },
+            { label: '执行中', value: 'running' },
+            { label: '已完成', value: 'completed' },
+            { label: '已失败', value: 'failed' },
+            { label: '已停止', value: 'stopped' },
+          ]}
+        />
+        <Select
+          style={{ width: 170 }}
+          placeholder="全部类型"
+          allowClear
+          value={selectedType || undefined}
+          onChange={(v) => { setSelectedType(v || ''); setPage(1) }}
+          options={[{ label: '全部类型', value: '' }, ...taskTypeOptions]}
+        />
+        <span className="art-toolbar-spacer" />
+        <span className="art-muted">共 {total} 条</span>
       </div>
 
       {/* 任务列表 */}
-      <div className="glass-card">
-        <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-primary)' }}>
-          <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-            <span className="iconify text-purple-600" data-icon="mdi:format-list-bulleted" style={{ width: '20px', height: '20px' }}></span>
-            任务列表 ({total})
-          </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className="text-xs px-3 py-1 rounded-lg transition-all duration-200"
-              style={autoRefresh
-                ? { background: 'rgba(34,197,94,0.15)', color: '#22c55e' }
-                : { background: 'rgba(107,114,128,0.12)', color: 'var(--text-secondary)' }}
-            >
-              <span className="iconify" data-icon={autoRefresh ? 'mdi:pause' : 'mdi:play'} style={{ width: '14px', height: '14px' }}></span>
-              {autoRefresh ? ' 停止刷新' : ' 自动刷新'}
-            </button>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="p-8 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
-              <span className="iconify animate-spin" data-icon="mdi:loading" style={{ width: '20px', height: '20px' }}></span>
-              <span className="ml-2">加载任务中...</span>
+      <div className="art-panel">
+        <header className="art-panel-head">
+          <span className="art-panel-title">
+            <UnorderedListOutlined />
+            任务列表
+          </span>
+        </header>
+        <div className={`art-panel-body${tasks.length > 0 ? ' is-flush' : ''}`}>
+          {loading && tasks.length === 0 ? (
+            <div className="art-loading">
+              <Spin />
+              <span>正在加载任务…</span>
             </div>
           ) : tasks.length === 0 ? (
-            <div className="p-8 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
-              <span className="iconify" data-icon="mdi:playlist-remove" style={{ width: '20px', height: '20px' }}></span>
-              <span className="ml-2">暂无任务记录</span>
-            </div>
+            <EmptyState
+              icon={<ScheduleOutlined />}
+              title="暂无任务记录"
+              description="当前筛选条件下没有任务。可以放宽筛选，或点击「刷新」重新拉取。"
+              actions={
+                <Button icon={<ReloadOutlined />} onClick={() => { loadTasks(); loadStats() }}>
+                  刷新
+                </Button>
+              }
+            />
           ) : (
-            <div className="divide-y" style={{ borderColor: 'var(--border-primary)' }}>
+            <ul className="art-log-list">
               {tasks.map((task) => {
                 const statusInfo = getStatusInfo(task.status)
                 const taskTypeLabel = TASK_TYPE_LABELS[task.task_type] || task.task_type
                 const canStop = task.status === 'running' || task.status === 'pending'
                 const canRetry = task.status === 'stopped'
-
                 return (
-                  <div
-                    key={task.task_id}
-                    className="p-4 transition-colors duration-200"
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <div className="flex items-center gap-3">
-                      {/* 状态图标 */}
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: statusInfo.bgColor }}>
-                        <span className="iconify" style={{ color: statusInfo.textColor, width: '20px', height: '20px' }} data-icon={statusInfo.icon}></span>
+                  <li key={task.task_id} className="art-log-item">
+                    <span className={`art-sem ${statusInfo.tone} art-sem-dot`} style={{ marginTop: 7 }} />
+                    <div className="art-log-main is-clickable" onClick={() => showTaskDetail(task)}>
+                      <div className="art-log-meta">
+                        <span className="art-log-level">{taskTypeLabel}</span>
+                        <span className={`art-sem ${statusInfo.tone} art-sem-text`}>{statusInfo.text}</span>
+                        <span className="art-log-host">{task.hs_name}</span>
+                        {task.vm_uuid && <span className="art-log-action">{task.vm_uuid}</span>}
+                        {task.username && <span className="art-log-action">{task.username}</span>}
+                        <span className="art-log-time">{formatTime(task.created_at)}</span>
                       </div>
-
-                      {/* 任务信息 */}
-                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => showTaskDetail(task)}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{taskTypeLabel}</span>
-                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ color: statusInfo.textColor, background: statusInfo.bgColor }}>
-                            {statusInfo.text}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          <span className="flex items-center gap-1">
-                            <span className="iconify" data-icon="mdi:server" style={{ width: '14px', height: '14px' }}></span>
-                            {task.hs_name}
-                          </span>
-                          {task.vm_uuid && (
-                            <span className="flex items-center gap-1">
-                              <span className="iconify" data-icon="mdi:cube-outline" style={{ width: '14px', height: '14px' }}></span>
-                              {task.vm_uuid}
-                            </span>
-                          )}
-                          {task.username && (
-                            <span className="flex items-center gap-1">
-                              <span className="iconify" data-icon="mdi:account" style={{ width: '14px', height: '14px' }}></span>
-                              {task.username}
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            <span className="iconify" data-icon="mdi:clock-outline" style={{ width: '14px', height: '14px' }}></span>
-                            {formatTime(task.created_at)}
-                          </span>
-                          {task.finished_at && (
-                            <span className="flex items-center gap-1">
-                              <span className="iconify" data-icon="mdi:clock-check" style={{ width: '14px', height: '14px' }}></span>
-                              {formatTime(task.finished_at)}
-                            </span>
-                          )}
-                        </div>
-                        {task.error_message && (
-                          <p className="text-xs mt-1 truncate" style={{ color: '#ef4444' }}>{task.error_message}</p>
-                        )}
-                      </div>
-
-                      {/* 操作按钮 */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {canStop && (
-                          <Popconfirm title="确定要强行结束此任务吗？" onConfirm={() => handleStopTask(task.task_id)} okText="确定" cancelText="取消">
-                            <button
-                              className="text-xs px-3 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1"
-                              style={{ background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}
-                            >
-                              <span className="iconify" data-icon="mdi:stop" style={{ width: '14px', height: '14px' }}></span>
-                              结束
-                            </button>
-                          </Popconfirm>
-                        )}
-                        {canRetry && (
-                          <Popconfirm title="确定要重新运行此任务吗？" onConfirm={() => handleRetryTask(task.task_id)} okText="确定" cancelText="取消">
-                            <button
-                              className="text-xs px-3 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1"
-                              style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}
-                            >
-                              <span className="iconify" data-icon="mdi:replay" style={{ width: '14px', height: '14px' }}></span>
-                              重试
-                            </button>
-                          </Popconfirm>
-                        )}
-                        <button
-                          onClick={() => showTaskDetail(task)}
-                          className="text-xs px-3 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1"
-                          style={{ background: 'rgba(107,114,128,0.12)', color: 'var(--text-secondary)' }}
-                        >
-                          <span className="iconify" data-icon="mdi:information-outline" style={{ width: '14px', height: '14px' }}></span>
-                          详情
-                        </button>
-                      </div>
+                      {task.error_message ? <p className="art-log-message is-danger">{task.error_message}</p> : null}
                     </div>
-                  </div>
+                    <div className="art-row-actions">
+                      {canStop && (
+                        <Popconfirm
+                          title="确定要强行结束此任务吗？"
+                          onConfirm={() => handleStopTask(task.task_id)}
+                          okText="确定"
+                          cancelText="取消"
+                        >
+                          <Button size="small" type="text" danger icon={<StopOutlined />}>
+                            结束
+                          </Button>
+                        </Popconfirm>
+                      )}
+                      {canRetry && (
+                        <Popconfirm
+                          title="确定要重新运行此任务吗？"
+                          onConfirm={() => handleRetryTask(task.task_id)}
+                          okText="确定"
+                          cancelText="取消"
+                        >
+                          <Button size="small" type="text" icon={<RedoOutlined />}>
+                            重试
+                          </Button>
+                        </Popconfirm>
+                      )}
+                      <Button size="small" type="text" icon={<InfoCircleOutlined />} onClick={() => showTaskDetail(task)}>
+                        详情
+                      </Button>
+                    </div>
+                  </li>
                 )
               })}
-            </div>
+            </ul>
           )}
         </div>
 
-        {/* 分页 */}
         {total > pageSize && (
-          <div className="p-4 border-t flex justify-end" style={{ borderColor: 'var(--border-primary)' }}>
+          <div className="art-panel-foot">
             <Pagination
               current={page}
               pageSize={pageSize}
@@ -410,92 +355,86 @@ function TaskManage() {
         )}
       </div>
 
-      {/* 任务详情模态框 */}
+      {/* 任务详情：字段用信息网格铺开，长文本收进代码块 */}
       <Modal
-        title={
-          <div className="flex items-center gap-2">
-            <span className="iconify text-purple-600" data-icon="mdi:information" style={{ width: '20px', height: '20px' }}></span>
-            任务详情
-          </div>
-        }
+        title="任务详情"
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
-        width={800}
+        width={720}
       >
         {selectedTask && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="art-detail">
+            <div className="art-info-grid">
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>任务ID</label>
-                <p className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{selectedTask.task_id}</p>
+                <div className="art-info-label">任务 ID</div>
+                <div className="art-info-value is-mono">{selectedTask.task_id}</div>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>状态</label>
-                {(() => {
-                  const statusInfo = getStatusInfo(selectedTask.status)
-                  return (
-                    <span className="inline-flex items-center gap-1 text-sm px-3 py-1 rounded-full font-medium" style={{ color: statusInfo.textColor, background: statusInfo.bgColor }}>
-                      <span className="iconify" data-icon={statusInfo.icon} style={{ width: '16px', height: '16px' }}></span>
-                      {statusInfo.text}
-                    </span>
-                  )
-                })()}
+                <div className="art-info-label">状态</div>
+                <div className="art-info-value">
+                  <span className={`art-sem ${getStatusInfo(selectedTask.status).tone} art-sem-pill`}>
+                    {getStatusInfo(selectedTask.status).text}
+                  </span>
+                </div>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>任务类型</label>
-                <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{TASK_TYPE_LABELS[selectedTask.task_type] || selectedTask.task_type}</p>
+                <div className="art-info-label">任务类型</div>
+                <div className="art-info-value">{TASK_TYPE_LABELS[selectedTask.task_type] || selectedTask.task_type}</div>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>操作人</label>
-                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selectedTask.username || '-'}</p>
+                <div className="art-info-label">操作人</div>
+                <div className="art-info-value">{selectedTask.username || '-'}</div>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>主机</label>
-                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selectedTask.hs_name}</p>
+                <div className="art-info-label">主机</div>
+                <div className="art-info-value is-mono">{selectedTask.hs_name}</div>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>虚拟机</label>
-                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selectedTask.vm_uuid || '-'}</p>
+                <div className="art-info-label">虚拟机</div>
+                <div className="art-info-value is-mono">{selectedTask.vm_uuid || '-'}</div>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>创建时间</label>
-                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatTime(selectedTask.created_at)}</p>
+                <div className="art-info-label">创建时间</div>
+                <div className="art-info-value is-mono">{formatTime(selectedTask.created_at)}</div>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>开始时间</label>
-                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatTime(selectedTask.started_at)}</p>
+                <div className="art-info-label">开始时间</div>
+                <div className="art-info-value is-mono">{formatTime(selectedTask.started_at)}</div>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>完成时间</label>
-                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatTime(selectedTask.finished_at)}</p>
+                <div className="art-info-label">完成时间</div>
+                <div className="art-info-value is-mono">{formatTime(selectedTask.finished_at)}</div>
               </div>
             </div>
 
             {selectedTask.error_message && (
-              <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>错误信息</label>
-                <div className="rounded-lg p-3" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                  <p className="text-sm font-mono" style={{ color: '#ef4444' }}>{selectedTask.error_message}</p>
+              <div className="art-subpanel is-danger">
+                <div className="art-subpanel-head">
+                  <CloseCircleOutlined />
+                  错误信息
                 </div>
+                <pre className="art-code is-danger">{selectedTask.error_message}</pre>
               </div>
             )}
 
             {selectedTask.params && Object.keys(selectedTask.params).length > 0 && (
-              <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>执行参数</label>
-                <div className="rounded-lg p-3 max-h-40 overflow-y-auto" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
-                  <pre className="text-xs font-mono whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>{JSON.stringify(selectedTask.params, null, 2)}</pre>
+              <div className="art-subpanel">
+                <div className="art-subpanel-head">
+                  <SettingOutlined />
+                  执行参数
                 </div>
+                <pre className="art-code">{JSON.stringify(selectedTask.params, null, 2)}</pre>
               </div>
             )}
 
             {selectedTask.result && Object.keys(selectedTask.result).length > 0 && (
-              <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>执行结果</label>
-                <div className="rounded-lg p-3 max-h-40 overflow-y-auto" style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}>
-                  <pre className="text-xs font-mono whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>{JSON.stringify(selectedTask.result, null, 2)}</pre>
+              <div className="art-subpanel">
+                <div className="art-subpanel-head">
+                  <CheckCircleOutlined />
+                  执行结果
                 </div>
+                <pre className="art-code">{JSON.stringify(selectedTask.result, null, 2)}</pre>
               </div>
             )}
           </div>

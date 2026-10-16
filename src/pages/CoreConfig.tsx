@@ -342,7 +342,7 @@ function CoreConfig() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Token管理 */}
-        <Card title={<span><span className="text-blue-600">🔑</span> 访问Token管理</span>} className="shadow-sm">
+        <Card title={<span><span>🔑</span> 访问Token管理</span>}>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2">当前Token</label>
@@ -404,7 +404,7 @@ function CoreConfig() {
         </Card>
 
         {/* API文档 */}
-        <Card title={<span><span className="text-green-600">🔌</span> 自动同步设置</span>} className="shadow-sm">
+        <Card title={<span><span>🔌</span> 自动同步设置</span>}>
           <div className="space-y-3 text-sm">
             <div className="border-t pt-3">
               <div className="space-y-2">
@@ -478,7 +478,7 @@ function CoreConfig() {
         </Card>
 
         {/* 数据管理 */}
-        <Card title={<span><span className="text-purple-600">💾</span> 数据管理</span>} className="shadow-sm">
+        <Card title={<span><span>💾</span> 数据管理</span>}>
           <div className="space-y-3">
             <Button
               block
@@ -509,7 +509,7 @@ function CoreConfig() {
         </Card>
 
         {/* 系统信息 */}
-        <Card title={<span><span>ℹ️</span> 系统信息</span>} className="shadow-sm">
+        <Card title={<span><span>ℹ️</span> 系统信息</span>}>
           <div className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--text-secondary)' }}>系统名称</span>
@@ -531,7 +531,7 @@ function CoreConfig() {
         </Card>
 
         {/* 用户注册设置 */}
-        <Card title={<span><span className="text-indigo-600">👥</span> 用户注册设置</span>} className="shadow-sm">
+        <Card title={<span><span>👥</span> 用户注册设置</span>}>
           <Form form={registrationForm} onFinish={saveRegistrationSettings} layout="vertical">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -637,7 +637,7 @@ function CoreConfig() {
         </Card>
 
         {/* 邮件服务配置 */}
-        <Card title={<span><span className="text-red-600">📧</span> 邮件服务配置</span>} className="shadow-sm">
+        <Card title={<span><span>📧</span> 邮件服务配置</span>}>
           <Alert
             message={
               <span>

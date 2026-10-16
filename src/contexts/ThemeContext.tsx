@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import { ThemeConfig, ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { lightTheme, darkTheme, lightTransparentTheme, darkTransparentTheme } from '../config/theme.config';
+import { FontId, getSavedFontId, saveFontId, applyFontId } from '../config/fonts.config';
 import {
   AnimeTheme,
   getAllAnimeThemes,
@@ -24,6 +25,9 @@ interface ThemeContextType {
   liquidMode: boolean;
   toggleLiquidMode: () => void;
   getThemeConfig: () => ThemeConfig;
+  /** 字体预设（global）：由 src/config/fonts.config.ts 定义 */
+  fontId: FontId;
+  setFontId: (id: FontId) => void;
   // 二次元主题相关
   animeThemeId: string | null;
   setAnimeTheme: (id: string | null) => void;
@@ -80,6 +84,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     return savedMode === 'true';
   });
 
+  // 字体预设（默认全局等宽 Maple Mono）
+  const [fontId, setFontIdState] = useState<FontId>(() => getSavedFontId());
+
   // 二次元主题状态
   const [animeThemeId, setAnimeThemeIdState] = useState<string | null>(() => {
     return getActiveAnimeThemeId();
@@ -126,6 +133,17 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     root.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  // 字体预设：写到 <html data-font>，由 src/styles/fonts.css 接管字体变量
+  const setFontId = useCallback((id: FontId) => {
+    setFontIdState(id);
+    saveFontId(id);
+  }, []);
+
+  useEffect(() => {
+    applyFontId(fontId);
+    saveFontId(fontId);
+  }, [fontId]);
 
   // 当透明模式或二次元主题变化时，更新背景
   useEffect(() => {
@@ -299,41 +317,21 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     localStorage.setItem('animeBlurMode', String(animeBlurMode));
   }, [animeBlurMode]);
 
-  const getThemeConfig = (): ThemeConfig => {
-    let base: ThemeConfig;
-    // 二次元主题下根据透明模式决定使用哪套主题配置
-    if (transparentMode) {
-      base = theme === 'light' ? lightTransparentTheme : darkTransparentTheme;
-    } else {
-      base = theme === 'light' ? lightTheme : darkTheme;
-    }
-    // 关闭圆角模式时：使用 Art Design 默认圆角（控件 6px / 容器 8-12px）
-    if (!roundedMode) {
-      return {
-        ...base,
-        token: {
-          ...base.token,
-          borderRadius: 6,
-          borderRadiusXS: 4,
-          borderRadiusSM: 6,
-          borderRadiusLG: 12,
-          borderRadiusOuter: 8,
-        },
-      };
-    }
-    // 开启圆角模式时：整体放大圆角（容器 16-24px）
-    return {
-      ...base,
-      token: {
-        ...base.token,
-        borderRadius: 12,
-        borderRadiusXS: 10,
-        borderRadiusSM: 12,
-        borderRadiusLG: 24,
-        borderRadiusOuter: 16,
-      },
-    };
-  };
+  /**
+   * 主题配置。
+   * 说明：早期这里会把 theme.config.ts 里的圆角整体改写成另一套数值，
+   * 导致「同一个项目里两套圆角」——组件内部按这里的值、设计层按 CSS 变量，
+   * 两边对不上。现在圆角只由 theme.config.ts 定义；
+   * 「圆角模式」开关改为纯 CSS 层（html[data-rounded]）放大容器圆角。
+   */
+  const getThemeConfig = (): ThemeConfig =>
+    transparentMode
+      ? theme === 'light'
+        ? lightTransparentTheme
+        : darkTransparentTheme
+      : theme === 'light'
+        ? lightTheme
+        : darkTheme;
 
   return (
     <ThemeContext.Provider value={{
@@ -342,13 +340,17 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       roundedMode, toggleRoundedMode,
       liquidMode, toggleLiquidMode,
       getThemeConfig,
+      fontId, setFontId,
       animeThemeId, setAnimeTheme, currentAnimeTheme, animeThemes, refreshAnimeThemes,
       animeBlurMode, toggleAnimeBlurMode,
     }}>
-      <ConfigProvider 
+      <ConfigProvider
         theme={getThemeConfig()}
         locale={zhCN}
-        getPopupContainer={(node) => node?.parentElement || document.body}
+        // 弹层必须挂到 document.body（antd 默认行为）。
+        // 曾覆盖为「挂到触发器父元素」：rc-trigger 的坐标计算以 body 为基准，
+        // 一旦父元素带 position/overflow（面板、卡片、fixed 工具栏），
+        // 下拉/气泡会被定位到视口之外或被裁剪 —— 表现为「下拉菜单点不开」。
         modal={{
           mask: false
         } as any}

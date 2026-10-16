@@ -843,7 +843,8 @@ export default function DockDetailV2() {
                 onClick={() => {
                   const domain = window.prompt('域名:'); if (!domain) return
                   const port = window.prompt('内部端口:'); if (!port) return
-                  api.addProxyConfig(hostName!, uuid!, { domain, port: Number(port) } as any)
+                  // 字段名必须与后端一致（Python add_vm_proxy_config / Go proxyRequest）
+                  api.addProxyConfig(hostName!, uuid!, { domain, backend_port: Number(port) } as any)
                     .then(() => { message.success('添加成功'); loadProxyRules() }).catch((e: any) => message.error(e?.message || '失败'))
                 }}>添加代理</button>
             }>
@@ -853,10 +854,13 @@ export default function DockDetailV2() {
                     <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 'var(--mmui-radius)', border: '1px solid var(--mmui-divider)', background: 'var(--mmui-fill-secondary)' }}>
                       <div>
                         <div style={{ color: 'var(--mmui-text)', fontFamily: 'monospace' }}>{rule.domain || rule.proxy_domain}</div>
-                        <div style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', marginTop: 4 }}>→ 端口 {rule.port || rule.proxy_port}</div>
+                        <div style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', marginTop: 4 }}>→ 端口 {rule.backend_port ?? rule.port ?? rule.proxy_port}</div>
                       </div>
                       <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
-                        onClick={() => Modal.confirm({ title: '删除代理', content: `删除 ${rule.domain || rule.proxy_domain}？`, okButtonProps: { danger: true }, onOk: async () => { try { await api.deleteProxyConfig(hostName!, uuid!, rule.id || rule.proxy_id); message.success('已删除'); loadProxyRules() } catch (e: any) { message.error(e?.message || '失败') } } })}>删除</button>
+                        // 删除接口按「数组下标」定位规则（后端返回 proxy_index），
+                        // 不能依赖 rule.id / rule.proxy_id —— 后端不返回这两个字段，
+                        // 取值会得到 undefined 并导致删除失败。
+                        onClick={() => Modal.confirm({ title: '删除代理', content: `删除 ${rule.domain || rule.proxy_domain}？`, okButtonProps: { danger: true }, onOk: async () => { try { await api.deleteProxyConfig(hostName!, uuid!, rule.proxy_index ?? i); message.success('已删除'); loadProxyRules() } catch (e: any) { message.error(e?.message || '失败') } } })}>删除</button>
                     </div>
                   ))}
                 </div>
