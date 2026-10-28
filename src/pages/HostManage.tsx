@@ -43,6 +43,7 @@ import {
 import {useNavigate} from 'react-router-dom'
 import api from '@/utils/apis.ts'
 import PageHeader from '@/components/PageHeader'
+import HostConfigBackupActions from '@/components/HostConfigBackupActions'
 
 // 主机配置接口
 // OS镜像配置项（system_maps/images_maps通用结构）
@@ -1289,6 +1290,7 @@ function HostManage() {
                         <Button icon={<ReloadOutlined/>} onClick={loadHosts}>
                             刷新
                         </Button>
+                        <HostConfigBackupActions hostNames={Object.keys(hosts)} onRestored={loadHosts} />
                         <Button type="primary" icon={<PlusOutlined/>} onClick={handleAdd}>
                             添加主机
                         </Button>

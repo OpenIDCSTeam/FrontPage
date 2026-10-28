@@ -116,6 +116,33 @@ export const getHostDetail = (hsName: string): Promise<ApiResponse<Host>> => {
   return http.get(`/api/server/detail/${hsName}`);
 };
 
+export interface HostConfigBackup {
+  format: 'openidcs-host-config';
+  version: 1;
+  exported_at: string;
+  hosts: Array<Record<string, unknown>>;
+}
+
+export interface HostConfigRestoreItem {
+  name: string;
+  type: string;
+  addr: string;
+  enable_host: boolean;
+  action: 'create' | 'overwrite';
+}
+
+export const exportHostConfigs = (hsName?: string): Promise<ApiResponse<HostConfigBackup>> => {
+  return http.get('/api/server/config/export', { params: { hs_name: hsName }, silent: true });
+};
+
+export const restoreHostConfigs = (
+  backup: HostConfigBackup,
+  overwrite = false,
+  dryRun = true,
+): Promise<ApiResponse<{ hosts: HostConfigRestoreItem[] }>> => {
+  return http.post('/api/server/config/restore', { backup, overwrite, dry_run: dryRun }, { silent: true, timeout: 120000 });
+};
+
 /**
  * 添加主机
  */
@@ -811,6 +838,8 @@ export default {
   // 主机管理
   getHosts,
   getHostDetail,
+  exportHostConfigs,
+  restoreHostConfigs,
   createHost,
   updateHost,
   deleteHost,
