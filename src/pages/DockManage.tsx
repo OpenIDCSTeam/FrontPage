@@ -4,8 +4,6 @@ import {
     Button,
     message,
     Spin,
-    Row,
-    Col,
     Modal,
     Checkbox,
     Input,
@@ -15,6 +13,7 @@ import {
     Tooltip,
     Space,
     Progress,
+    Segmented,
 } from 'antd'
 import {
     PlusOutlined,
@@ -32,6 +31,7 @@ import {
     EditOutlined,
     DeleteOutlined,
     UserOutlined,
+    SearchOutlined,
 } from '@ant-design/icons'
 import { VM_STATUS_MAP } from '@/constants/status'
 import { VM_PERMISSION, hasPermission } from '@/types'
@@ -90,8 +90,19 @@ function DockManage() {
         const ownerNames = Object.keys(ownAll)
         const primaryOwner = ownerNames.length > 0 ? ownerNames[0] : ''
 
-        // 实例名称搜索
-        if (searchText && !uuid.toLowerCase().includes(searchText.toLowerCase())) {
+        const config = vm.config || {}
+        const networkValues = Object.values(config.nic_all || {}).flatMap((nic: any) => [nic.ip4_addr, nic.ip6_addr, nic.mac_addr])
+        const searchableText = [
+            uuid,
+            vm.display_name,
+            vm.vm_name,
+            config.vm_name,
+            config.os_name,
+            vmHost,
+            ...ownerNames,
+            ...networkValues,
+        ].filter(Boolean).join(' ').toLocaleLowerCase()
+        if (searchText.trim() && !searchableText.includes(searchText.trim().toLocaleLowerCase())) {
             return acc
         }
         // 主机筛选
@@ -445,97 +456,96 @@ function DockManage() {
     }
 
     return (
-        <div className="art-stack">
+        <div className="art-stack vm-manage-page">
             <PageHeader
                 icon={<RadarChartOutlined />}
                 title={hostName ? `虚拟机管理 · ${hostName}` : '所有虚拟机'}
                 subtitle="管理与监控虚拟机实例的运行状态、资源占用与网络配置"
                 actions={
-                    <>
-                        <Button.Group>
-                            <Tooltip title="卡片视图">
-                                <Button
-                                    icon={<AppstoreOutlined />}
-                                    type={viewMode === 'card' ? 'primary' : 'default'}
-                                    onClick={() => { setViewMode('card'); localStorage.setItem('dockManage_viewMode', 'card') }}
-                                />
-                            </Tooltip>
-                            <Tooltip title="列表视图">
-                                <Button
-                                    icon={<UnorderedListOutlined />}
-                                    type={viewMode === 'table' ? 'primary' : 'default'}
-                                    onClick={() => { setViewMode('table'); localStorage.setItem('dockManage_viewMode', 'table') }}
-                                />
-                            </Tooltip>
-                        </Button.Group>
+                    <Space wrap className="vm-manage-header-actions">
                         {hostName && (
-                            <Button 
-                                icon={<RadarChartOutlined />} 
-                                onClick={handleScan}
-                                disabled={availableHosts[hostName]?.enabled === false}
-                            >
-                                扫描
+                            <Button icon={<RadarChartOutlined />} onClick={handleScan} disabled={availableHosts[hostName]?.enabled === false}>
+                                扫描主机
                             </Button>
                         )}
-                        <Input
-                            placeholder="搜索实例名称..."
-                            style={{ width: 180 }}
-                            value={searchText}
-                            onChange={(e) => setSearchText(e.target.value)}
-                            allowClear
-                        />
-                        {!hostName && (
-                            <Select
-                                placeholder="所有主机"
-                                style={{ width: 140 }}
-                                value={hostFilter || undefined}
-                                onChange={(v) => setHostFilter(v || '')}
-                                allowClear
-                            >
-                                {Object.keys(availableHosts).map(h => (
-                                    <Select.Option key={h} value={h}>{h}</Select.Option>
-                                ))}
-                            </Select>
-                        )}
-                        {!isAdmin ? null : (
-                            <Select
-                                placeholder="所有者"
-                                style={{ width: 120 }}
-                                value={ownerFilter || undefined}
-                                onChange={(v) => setOwnerFilter(v || '')}
-                                allowClear
-                            >
-                                {Array.from(new Set(Object.values(vms).map((vm: any) => {
-                                    const ownAll = vm.config?.own_all || {}
-                                    const names = Object.keys(ownAll)
-                                    return names.length > 0 ? names[0] : ''
-                                }).filter(Boolean))).map(owner => (
-                                    <Select.Option key={owner} value={owner}>{owner}</Select.Option>
-                                ))}
-                            </Select>
-                        )}
-                        <Button icon={<ReloadOutlined />} onClick={loadVMs}>
+                        <Button icon={<ReloadOutlined />} onClick={loadVMs} loading={loading}>
                             刷新
                         </Button>
-                        <Button 
-                            type="primary" 
-                            icon={<PlusOutlined />} 
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
                             onClick={handleCreate}
                             disabled={hostName ? availableHosts[hostName]?.enabled === false : false}
                         >
                             创建虚拟机
                         </Button>
-                        {hostName && (
-                            <Button 
-                                icon={<ArrowLeftOutlined />} 
-                                onClick={() => navigate(-1)}
-                            >
-                                返回
-                            </Button>
-                        )}
-                    </>
+                        {hostName && <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>返回主机</Button>}
+                    </Space>
                 }
             />
+
+            <section className="art-list-toolbar vm-manage-toolbar" aria-label="虚拟机筛选与列表操作">
+                <div className="art-list-toolbar-filters vm-manage-filters">
+                    <Input
+                        className="art-list-search vm-manage-search"
+                        prefix={<SearchOutlined />}
+                        placeholder="搜索名称、UUID 或地址"
+                        value={searchText}
+                        onChange={(event) => setSearchText(event.target.value)}
+                        allowClear
+                    />
+                    {!hostName && (
+                        <Select
+                            className="art-list-filter vm-manage-host-filter"
+                            placeholder="全部主机"
+                            value={hostFilter || undefined}
+                            onChange={(value) => setHostFilter(value || '')}
+                            allowClear
+                            options={Object.keys(availableHosts).map(host => ({ value: host, label: host }))}
+                        />
+                    )}
+                    {isAdmin && (
+                        <Select
+                            className="art-list-filter vm-manage-owner-filter"
+                            placeholder="全部所有者"
+                            value={ownerFilter || undefined}
+                            onChange={(value) => setOwnerFilter(value || '')}
+                            allowClear
+                            options={Array.from(new Set(Object.values(vms).map((vm: any) => {
+                                const ownerNames = Object.keys(vm.config?.own_all || {})
+                                return ownerNames[0] || ''
+                            }).filter(Boolean))).map(owner => ({ value: owner, label: owner }))}
+                        />
+                    )}
+                </div>
+                <div className="art-list-toolbar-actions vm-manage-toolbar-actions">
+                    <span className="art-list-result-count vm-manage-result-count" aria-live="polite">
+                        显示 <strong>{loading ? '—' : Object.keys(filteredVMs).length}</strong> / {Object.keys(vms).length} 台
+                    </span>
+                    <Segmented
+                        aria-label="虚拟机显示方式"
+                        size="small"
+                        value={viewMode}
+                        onChange={(value) => {
+                            const nextMode = value as 'card' | 'table'
+                            setViewMode(nextMode)
+                            localStorage.setItem('dockManage_viewMode', nextMode)
+                        }}
+                        options={[
+                            { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
+                            { value: 'table', icon: <UnorderedListOutlined />, label: '列表' },
+                        ]}
+                    />
+                </div>
+            </section>
+
+            <section className="art-list-results vm-manage-results" aria-label="虚拟机实例列表">
+                <header className="art-list-results-head vm-manage-results-head">
+                    <div>
+                        <h2>{viewMode === 'card' ? '实例概览' : '实例清单'}</h2>
+                        <span>{hostName ? `主机 ${hostName}` : isAdmin ? '集群范围' : '已分配给当前账号'}</span>
+                    </div>
+                </header>
 
             {loading ? (
                 <div className="art-loading">
@@ -558,29 +568,30 @@ function DockManage() {
                     }
                 />
             ) : viewMode === 'card' ? (
-                <Row gutter={[16, 16]}>
+                <div className="vm-resource-grid">
                     {Object.entries(filteredVMs).map(([key, vm]) => {
                         const vmHost = vm._host || hostName
                         const isHostDisabled = vmHost ? availableHosts[vmHost]?.enabled === false : false
                         return (
-                    <Col key={key} xs={24} sm={24} md={12} lg={8} xl={6} style={{ minWidth: 500 }}>
-                                <DockCard
-                                    uuid={vm._realUuid || key}
-                                    vm={vm}
-                                    hostName={vmHost}
-                                    hostDisabled={isHostDisabled}
-                                    userPermissions={vm.user_permissions}
-                                    onEdit={(uuid) => handleEdit(uuid, vm._host)}
-                                    onDelete={(uuid) => handleDelete(uuid, vm._host)}
-                                    onPower={(uuid) => handleOpenPower(uuid, vm._host)}
-                                    onVnc={(uuid) => handleOpenVnc(uuid, vm._host)}
-                                    onDetail={(uuid) => handleOpenDetail(uuid, vm._host)}
-                                />
-                            </Col>
+                            <DockCard
+                                key={key}
+                                uuid={vm._realUuid || key}
+                                vm={vm}
+                                hostName={vmHost}
+                                hostDisabled={isHostDisabled}
+                                userPermissions={vm.user_permissions}
+                                onEdit={(uuid) => handleEdit(uuid, vm._host)}
+                                onDelete={(uuid) => handleDelete(uuid, vm._host)}
+                                onPower={(uuid) => handleOpenPower(uuid, vm._host)}
+                                onVnc={(uuid) => handleOpenVnc(uuid, vm._host)}
+                                onDetail={(uuid) => handleOpenDetail(uuid, vm._host)}
+                            />
                         )
                     })}
-                </Row>
+                </div>
             ) : (
+                <div className="art-table-panel vm-manage-table">
+                    <div className="art-panel-body is-flush">
                 <Table
                     dataSource={Object.entries(filteredVMs).map(([key, vm]: [string, any]) => ({
                         key,
@@ -593,24 +604,24 @@ function DockManage() {
                             title: '虚拟机',
                             dataIndex: 'uuid',
                             key: 'uuid',
-                            width: 160,
+                            width: 120,
                             fixed: 'left',
                             render: (uuid: string, record: any) => {
                                 const statusList = record.vm?.status || []
                                 const firstStatus = statusList.length > 0 ? statusList[0] : { ac_status: 'UNKNOWN' }
                                 const powerStatus = firstStatus.ac_status || 'UNKNOWN'
                                 const statusInfo = VM_STATUS_MAP[powerStatus] || VM_STATUS_MAP.UNKNOWN
-                                const dotColor = powerStatus === 'STARTED' ? '#10b981' : powerStatus === 'STOPPED' ? '#ef4444' : powerStatus === 'PAUSED' ? '#f59e0b' : '#9ca3af'
+                                const dotColor = powerStatus === 'STARTED' ? 'var(--art-success)' : powerStatus === 'STOPPED' ? 'var(--art-danger)' : powerStatus === 'PAUSED' ? 'var(--art-warning)' : 'var(--art-gray-500)'
                                 return (
                                     <div>
-                                        <div className="flex items-center gap-2">
-                                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0, boxShadow: powerStatus === 'STARTED' ? '0 0 4px #10b981' : undefined }} />
-                                            <DesktopOutlined className="text-purple-500" />
-                                            <a onClick={() => handleOpenDetail(uuid, record.vm?._host)} className="font-medium text-blue-600 cursor-pointer hover:underline">{uuid}</a>
+                                        <div className="art-table-identity">
+                                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0, boxShadow: powerStatus === 'STARTED' ? '0 0 4px var(--art-success)' : undefined }} />
+                                            <DesktopOutlined style={{ color: 'var(--art-accent-text)' }} />
+                                            <a onClick={() => handleOpenDetail(uuid, record.vm?._host)} className="art-table-link" title={uuid}>{uuid}</a>
                                         </div>
-                                        <div className="flex items-center gap-1 mt-1">
+                                        <div className="art-table-meta">
                                             <Tag color={statusInfo.color} style={{ margin: 0, fontSize: 11 }}>{statusInfo.text}</Tag>
-                                            {record.hostName && <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>{record.hostName}</Tag>}
+                                            {record.hostName && <Tag className="art-table-tag-clip" title={record.hostName} color="processing" style={{ margin: 0, fontSize: 11 }}>{record.hostName}</Tag>}
                                         </div>
                                     </div>
                                 )
@@ -619,14 +630,17 @@ function DockManage() {
                         {
                             title: '所有者',
                             key: 'owner',
-                            width: 90,
+                            width: 60,
                             render: (_: any, record: any) => {
                                 const ownAll = record.vm?.config?.own_all || {}
                                 const ownerNames = Object.keys(ownAll)
                                 const primaryOwner = ownerNames.length > 0 ? ownerNames[0] : '未知'
                                 return (
-                                    <Tooltip title={ownerNames.length > 1 ? `共享: ${ownerNames.join(', ')}` : undefined}>
-                                        <span className="text-xs"><UserOutlined className="mr-1" />{primaryOwner}</span>
+                                    <Tooltip title={ownerNames.length > 1 ? `共享: ${ownerNames.join(', ')}` : primaryOwner}>
+                                        <span className="art-table-owner">
+                                            <UserOutlined />
+                                            <span className="art-table-owner-name">{primaryOwner}</span>
+                                        </span>
                                     </Tooltip>
                                 )
                             },
@@ -634,7 +648,7 @@ function DockManage() {
                         {
                             title: '系统',
                             key: 'os',
-                            width: 160,
+                            width: 140,
                             ellipsis: true,
                             render: (_: any, record: any) => {
                                 const osFile = record.vm?.config?.os_name || ''
@@ -654,7 +668,7 @@ function DockManage() {
                         {
                             title: 'CPU',
                             key: 'cpu',
-                            width: 80,
+                            width: 76,
                             render: (_: any, record: any) => {
                                 const config = record.vm?.config || {}
                                 const statusList = record.vm?.status || []
@@ -665,7 +679,7 @@ function DockManage() {
                                 return (
                                     <div>
                                         <div className="text-xs mb-1">{total}核 {percent}%</div>
-                                        <Progress percent={percent} size="small" showInfo={false} strokeColor={percent > 80 ? '#ef4444' : percent > 50 ? '#f59e0b' : '#3b82f6'} />
+                                        <Progress percent={percent} size="small" showInfo={false} strokeColor={percent > 80 ? 'var(--art-danger)' : percent > 50 ? 'var(--art-warning)' : 'var(--main-color)'} />
                                     </div>
                                 )
                             },
@@ -673,7 +687,7 @@ function DockManage() {
                         {
                             title: '内存',
                             key: 'mem',
-                            width: 80,
+                            width: 76,
                             render: (_: any, record: any) => {
                                 const config = record.vm?.config || {}
                                 const statusList = record.vm?.status || []
@@ -681,11 +695,12 @@ function DockManage() {
                                 const total = st.mem_total || config.mem_num || 0
                                 const usage = st.mem_usage || 0
                                 const percent = total > 0 ? Math.round((usage / total) * 100) : 0
-                                const fmtMem = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)}G` : `${mb}M`
+                                const unit = total >= 1024 ? 'G' : 'M'
+                                const fmtMem = (mb: number) => total >= 1024 ? (mb / 1024).toFixed(1) : String(Math.round(mb))
                                 return (
                                     <div>
-                                        <div className="text-xs mb-1">{fmtMem(usage)}/{fmtMem(total)}</div>
-                                        <Progress percent={percent} size="small" showInfo={false} strokeColor={percent > 80 ? '#ef4444' : percent > 50 ? '#f59e0b' : '#8b5cf6'} />
+                                        <div className="vm-manage-metric-text mb-1">{fmtMem(usage)}/{fmtMem(total)}{unit}</div>
+                                        <Progress percent={percent} size="small" showInfo={false} strokeColor={percent > 80 ? 'var(--art-danger)' : percent > 50 ? 'var(--art-warning)' : 'var(--art-chart-4)'} />
                                     </div>
                                 )
                             },
@@ -693,7 +708,7 @@ function DockManage() {
                         {
                             title: '硬盘',
                             key: 'hdd',
-                            width: 80,
+                            width: 76,
                             render: (_: any, record: any) => {
                                 const config = record.vm?.config || {}
                                 const statusList = record.vm?.status || []
@@ -701,11 +716,12 @@ function DockManage() {
                                 const total = st.hdd_total || config.hdd_num || 0
                                 const usage = st.hdd_usage || 0
                                 const percent = total > 0 ? Math.round((usage / total) * 100) : 0
-                                const fmtDisk = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)}G` : `${mb}M`
+                                const unit = total >= 1024 ? 'G' : 'M'
+                                const fmtDisk = (mb: number) => total >= 1024 ? (mb / 1024).toFixed(1) : String(Math.round(mb))
                                 return (
                                     <div>
-                                        <div className="text-xs mb-1">{fmtDisk(usage)}/{fmtDisk(total)}</div>
-                                        <Progress percent={percent} size="small" showInfo={false} strokeColor={percent > 80 ? '#ef4444' : percent > 50 ? '#f59e0b' : '#10b981'} />
+                                        <div className="vm-manage-metric-text mb-1">{fmtDisk(usage)}/{fmtDisk(total)}{unit}</div>
+                                        <Progress percent={percent} size="small" showInfo={false} strokeColor={percent > 80 ? 'var(--art-danger)' : percent > 50 ? 'var(--art-warning)' : 'var(--art-success)'} />
                                     </div>
                                 )
                             },
@@ -713,7 +729,7 @@ function DockManage() {
                         {
                             title: '流量',
                             key: 'traffic',
-                            width: 140,
+                            width: 116,
                             render: (_: any, record: any) => {
                                 const config = record.vm?.config || {}
                                 const statusList = record.vm?.status || []
@@ -724,11 +740,11 @@ function DockManage() {
                                 const fmtTraffic = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)}G` : `${mb}M`
                                 return (
                                     <div>
-                                        <div className="text-xs mb-1">
-                                            {fluTotal > 0 ? `${fmtTraffic(fluUsage)}/${fmtTraffic(fluTotal)}` : '无限制'}
-                                            <span style={{ color: '#888', marginLeft: 4 }}>↑{config.speed_u || 0}M ↓{config.speed_d || 0}M</span>
+                                        <div className="vm-manage-traffic mb-1">
+                                            <span className="vm-manage-metric-text">{fluTotal > 0 ? `${fmtTraffic(fluUsage)}/${fmtTraffic(fluTotal)}` : '无限制'}</span>
+                                            <span className="vm-manage-traffic-speed">↑{config.speed_u || 0}M ↓{config.speed_d || 0}M</span>
                                         </div>
-                                        {fluTotal > 0 && <Progress percent={fluPercent} size="small" showInfo={false} strokeColor={fluPercent > 80 ? '#ef4444' : '#10b981'} />}
+                                        {fluTotal > 0 && <Progress percent={fluPercent} size="small" showInfo={false} strokeColor={fluPercent > 80 ? 'var(--art-danger)' : 'var(--art-success)'} />}
                                     </div>
                                 )
                             },
@@ -736,23 +752,23 @@ function DockManage() {
                         {
                             title: '网卡/IP',
                             key: 'network',
-                            width: 120,
+                            width: 100,
                             render: (_: any, record: any) => {
                                 const nicAll = record.vm?.config?.nic_all || {}
                                 const nics = Object.entries(nicAll)
-                                if (nics.length === 0) return <span className="text-xs" style={{ color: '#999' }}>-</span>
+                                if (nics.length === 0) return <span className="text-xs" style={{ color: 'var(--art-gray-500)' }}>-</span>
                                 return (
                                     <div>
                                         {nics.slice(0, 2).map(([name, nic]: [string, any]) => (
                                             <div key={name} className="text-xs" style={{ lineHeight: '1.6' }}>
-                                                <Tag style={{ margin: 0, fontSize: 10, padding: '0 4px' }} color={nic.nic_type === 'pub' ? 'green' : 'default'}>{nic.nic_type === 'pub' ? '公' : '内'}</Tag>
+                                                <Tag style={{ margin: 0, fontSize: 10, padding: '0 4px' }} color={nic.nic_type === 'pub' ? 'success' : 'default'}>{nic.nic_type === 'pub' ? '公' : '内'}</Tag>
                                                 <span className="ml-1">{nic.ip4_addr || '-'}</span>
                                                 {!nic.ip6_addr && nic.mac_addr && (
-                                                    <div style={{ color: '#999', fontSize: 10, marginLeft: 2 }}>{nic.mac_addr}</div>
+                                                    <div style={{ color: 'var(--art-gray-500)', fontSize: 10, marginLeft: 2 }}>{nic.mac_addr}</div>
                                                 )}
                                             </div>
                                         ))}
-                                        {nics.length > 2 && <span className="text-xs" style={{ color: '#999' }}>+{nics.length - 2}张</span>}
+                                        {nics.length > 2 && <span className="text-xs" style={{ color: 'var(--art-gray-500)' }}>+{nics.length - 2}张</span>}
                                     </div>
                                 )
                             },
@@ -769,7 +785,7 @@ function DockManage() {
                                 return (
                                     <div>
                                         <div className="text-xs mb-1">{natUsed}/{natTotal}</div>
-                                        <Progress percent={natPercent} size={[undefined as any, 4]} showInfo={false} strokeColor="#06b6d4" />
+                                        <Progress percent={natPercent} size={[undefined as any, 4]} showInfo={false} strokeColor="var(--art-chart-5)" />
                                     </div>
                                 )
                             },
@@ -786,7 +802,7 @@ function DockManage() {
                                 return (
                                     <div>
                                         <div className="text-xs mb-1">{webUsed}/{webTotal}</div>
-                                        <Progress percent={webPercent} size={[undefined as any, 4]} showInfo={false} strokeColor="#a855f7" />
+                                        <Progress percent={webPercent} size={[undefined as any, 4]} showInfo={false} strokeColor="var(--art-chart-4)" />
                                     </div>
                                 )
                             },
@@ -794,80 +810,88 @@ function DockManage() {
                         {
                             title: '有效期',
                             key: 'created',
-                            width: 80,
+                            width: 72,
                             render: (_: any, record: any) => {
                                 const created = record.vm?.config?.created_time || record.vm?.created_time
-                                if (!created) return <span className="text-xs" style={{ color: '#999' }}>-</span>
+                                if (!created) return <span className="text-xs" style={{ color: 'var(--art-gray-500)' }}>-</span>
                                 const d = new Date(typeof created === 'number' ? created * 1000 : created)
                                 return <span className="text-xs">{d.toLocaleDateString()}</span>
                             },
                         },
                         {
-                            title: '电源',
-                            key: 'power',
-                            width: 100,
+                            title: '操作',
+                            key: 'actions',
+                            width: 216,
+                            fixed: 'right',
                             render: (_: any, record: any) => {
                                 const isHostDisabled = record.hostName ? availableHosts[record.hostName]?.enabled === false : false
                                 const perms = record.vm?.user_permissions ?? VM_PERMISSION.FULL_MASK
-                                const disabled = isHostDisabled || !hasPermission(perms, VM_PERMISSION.PWR_EDITS)
+                                const powerDisabled = isHostDisabled || !hasPermission(perms, VM_PERMISSION.PWR_EDITS)
                                 const statusList = record.vm?.status || []
                                 const st = statusList.length > 0 ? statusList[0] : { ac_status: 'UNKNOWN' }
                                 const isRunning = st.ac_status === 'STARTED'
                                 const isStopped = st.ac_status === 'STOPPED'
                                 const isPaused = st.ac_status === 'PAUSED'
                                 return (
-                                    <Space size={2} wrap>
-                                        {isStopped ? (
-                                            <Tooltip title="开机"><Button type="text" size="small" disabled={disabled} icon={<PlayCircleOutlined style={{ color: '#10b981' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'start')} /></Tooltip>
-                                        ) : (
-                                            <Tooltip title="关机"><Button type="text" size="small" disabled={disabled} icon={<PoweroffOutlined style={{ color: '#f59e0b' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'stop')} /></Tooltip>
-                                        )}
-                                        {isRunning ? (
-                                            <Tooltip title="强制重启"><Button type="text" size="small" disabled={disabled} icon={<ThunderboltOutlined style={{ color: '#3b82f6' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'hard_reset')} /></Tooltip>
-                                        ) : (
-                                            <Tooltip title="强制关机"><Button type="text" size="small" disabled={disabled || isStopped} danger icon={<ThunderboltOutlined />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'hard_stop')} /></Tooltip>
-                                        )}
-                                        {isPaused ? (
-                                            <Tooltip title="恢复"><Button type="text" size="small" disabled={disabled} icon={<PlayCircleOutlined style={{ color: '#8b5cf6' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'resume')} /></Tooltip>
-                                        ) : (
-                                            <Tooltip title="暂停"><Button type="text" size="small" disabled={disabled || !isRunning} icon={<PauseCircleOutlined style={{ color: '#6b7280' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'pause')} /></Tooltip>
-                                        )}
-                                    </Space>
-                                )
-                            },
-                        },
-                        {
-                            title: '操作',
-                            key: 'actions',
-                            width: 120,
-                            fixed: 'right',
-                            render: (_: any, record: any) => {
-                                const isHostDisabled = record.hostName ? availableHosts[record.hostName]?.enabled === false : false
-                                const perms = record.vm?.user_permissions ?? VM_PERMISSION.FULL_MASK
-                                return (
-                                    <Space size="small">
-                                        <Tooltip title="详情">
-                                            <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => handleOpenDetail(record.uuid, record.vm?._host)} />
-                                        </Tooltip>
-                                        <Tooltip title="VNC">
-                                            <Button type="text" size="small" icon={<DesktopOutlined />} onClick={() => handleOpenVnc(record.uuid, record.vm?._host)} disabled={isHostDisabled || !hasPermission(perms, VM_PERMISSION.VNC_EDITS)} />
-                                        </Tooltip>
-                        <Tooltip title="编辑">
-                                            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record.uuid, record.vm?._host)} disabled={isHostDisabled || !user?.can_modify_vm || !hasPermission(perms, VM_PERMISSION.VM_MODIFY)} />
-                                        </Tooltip>
-                                        <Tooltip title="删除">
-                                            <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.uuid, record.vm?._host)} disabled={isHostDisabled || !user?.can_delete_vm || !hasPermission(perms, VM_PERMISSION.VM_DELETE)} />
-                                        </Tooltip>
-                                    </Space>
+                                    <div className="art-table-actions">
+                                        <Space size={0} className="art-table-action-group">
+                                            {isStopped ? (
+                                                <Tooltip title="开机"><Button aria-label="开机" className="art-table-icon-btn" type="text" size="small" disabled={powerDisabled} icon={<PlayCircleOutlined style={{ color: 'var(--art-success)' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'start')} /></Tooltip>
+                                            ) : (
+                                                <Tooltip title="关机"><Button aria-label="关机" className="art-table-icon-btn" type="text" size="small" disabled={powerDisabled} icon={<PoweroffOutlined style={{ color: 'var(--art-warning)' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'stop')} /></Tooltip>
+                                            )}
+                                            {isRunning ? (
+                                                <Tooltip title="强制重启"><Button aria-label="强制重启" className="art-table-icon-btn" type="text" size="small" disabled={powerDisabled} icon={<ThunderboltOutlined style={{ color: 'var(--main-color)' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'hard_reset')} /></Tooltip>
+                                            ) : (
+                                                <Tooltip title="强制关机"><Button aria-label="强制关机" className="art-table-icon-btn" type="text" size="small" disabled={powerDisabled || isStopped} danger icon={<ThunderboltOutlined />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'hard_stop')} /></Tooltip>
+                                            )}
+                                            {isPaused ? (
+                                                <Tooltip title="恢复"><Button aria-label="恢复" className="art-table-icon-btn" type="text" size="small" disabled={powerDisabled} icon={<PlayCircleOutlined style={{ color: 'var(--art-chart-4)' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'resume')} /></Tooltip>
+                                            ) : (
+                                                <Tooltip title="暂停"><Button aria-label="暂停" className="art-table-icon-btn" type="text" size="small" disabled={powerDisabled || !isRunning} icon={<PauseCircleOutlined style={{ color: 'var(--art-gray-500)' }} />} onClick={() => handleQuickPower(record.uuid, record.vm?._host, 'pause')} /></Tooltip>
+                                            )}
+                                        </Space>
+                                        <span className="art-table-action-divider" aria-hidden="true" />
+                                        <Space size={0} className="art-table-action-group">
+                                            <Tooltip title="详情">
+                                                <Button aria-label="查看详情" className="art-table-icon-btn" type="text" size="small" icon={<EyeOutlined />} onClick={() => handleOpenDetail(record.uuid, record.vm?._host)} />
+                                            </Tooltip>
+                                            <Tooltip title="VNC">
+                                                <Button aria-label="打开 VNC" className="art-table-icon-btn" type="text" size="small" icon={<DesktopOutlined />} onClick={() => handleOpenVnc(record.uuid, record.vm?._host)} disabled={isHostDisabled || !hasPermission(perms, VM_PERMISSION.VNC_EDITS)} />
+                                            </Tooltip>
+                                            <Tooltip title="编辑">
+                                                <Button aria-label="编辑虚拟机" className="art-table-icon-btn" type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record.uuid, record.vm?._host)} disabled={isHostDisabled || !user?.can_modify_vm || !hasPermission(perms, VM_PERMISSION.VM_MODIFY)} />
+                                            </Tooltip>
+                                            <Tooltip title="删除">
+                                                <Button aria-label="删除虚拟机" className="art-table-icon-btn" type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.uuid, record.vm?._host)} disabled={isHostDisabled || !user?.can_delete_vm || !hasPermission(perms, VM_PERMISSION.VM_DELETE)} />
+                                            </Tooltip>
+                                        </Space>
+                                    </div>
                                 )
                             },
                         },
                     ]}
-                    pagination={false}
+                    pagination={{
+                        pageSize: 10,
+                        showSizeChanger: true,
+                        pageSizeOptions: [10, 20, 50],
+                        showTotal: (total) => `共 ${total} 条`,
+                    }}
                     size="small"
-                    scroll={{ x: 1600 }}
+                    scroll={{ x: 1184 }}
+                    locale={{
+                        emptyText: (
+                            <div className="art-table-empty">
+                                <DesktopOutlined />
+                                <p>暂无虚拟机实例</p>
+                            </div>
+                        ),
+                    }}
                 />
+                    </div>
+                </div>
             )}
+            </section>
 
             <DockCreateModal
                 open={createModalOpen}
@@ -907,9 +931,9 @@ function DockManage() {
             >
                 <div>
                     {deleteRecordOnly ? (
-                        <p>将移除虚拟机 "<strong style={{ color: '#faad14' }}>{deleteVmUuid}</strong>" 的纳管记录，<strong>不会删除平台上的虚拟机</strong>。</p>
+                        <p>将移除虚拟机 "<strong style={{ color: 'var(--art-warning)' }}>{deleteVmUuid}</strong>" 的纳管记录，<strong>不会删除平台上的虚拟机</strong>。</p>
                     ) : (
-                        <p>此操作将永久删除虚拟机 "<strong style={{ color: '#ef4444' }}>{deleteVmUuid}</strong>" 且不可恢复</p>
+                        <p>此操作将永久删除虚拟机 "<strong style={{ color: 'var(--art-danger)' }}>{deleteVmUuid}</strong>" 且不可恢复</p>
                     )}
                     <Checkbox
                         className="mt-2"

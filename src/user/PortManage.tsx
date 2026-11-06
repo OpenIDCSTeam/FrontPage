@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Button, message, Tag, Modal, Form, Input, Select, InputNumber, Space, Segmented } from 'antd';
-import { ReloadOutlined, PlusOutlined, DeleteOutlined, AppstoreOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { Table, Button, message, Tag, Modal, Form, Input, Select, InputNumber, Space, Segmented } from 'antd';
+import { ReloadOutlined, PlusOutlined, DeleteOutlined, AppstoreOutlined, UnorderedListOutlined, SearchOutlined } from '@ant-design/icons';
 import { ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
 import PageHeader from '@/components/PageHeader';
 import api from '@/utils/apis.ts';
@@ -21,7 +21,7 @@ const PortManage: React.FC<{ userMode?: boolean }> = ({ userMode = true }) => {
   const [filteredRules, setFilteredRules] = useState<UserNATRule[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [form] = Form.useForm();
-  const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'card'>(() => window.innerWidth < 768 ? 'card' : 'table');
   
   // 搜索和筛选
   const [searchPort, setSearchPort] = useState('');
@@ -33,6 +33,13 @@ const PortManage: React.FC<{ userMode?: boolean }> = ({ userMode = true }) => {
   const [hosts, setHosts] = useState<string[]>([]);
   const [vms, setVms] = useState<{label: string, value: string}[]>([]);
   const [selectedHost, setSelectedHost] = useState<string>('');
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)')
+    const apply = () => setViewMode(media.matches ? 'card' : 'table')
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
+  }, [])
 
   useEffect(() => {
     fetchNATRules();
@@ -215,43 +222,43 @@ const PortManage: React.FC<{ userMode?: boolean }> = ({ userMode = true }) => {
       title: '主机',
       dataIndex: 'hostName',
       key: 'hostName',
-      render: (text: string) => <Tag color="blue">{text}</Tag>,
+      render: (text: string) => <Tag color="processing">{text}</Tag>,
     },
     {
       title: '虚拟机',
       dataIndex: 'vmUuid',
       key: 'vmUuid',
-      render: (text: string) => <span className="dark:text-white">{text}</span>,
+      render: (text: string) => <span className="art-table-strong">{text}</span>,
     },
     {
       title: '外网IP',
       dataIndex: 'wan_ip',
       key: 'wan_ip',
-      render: (text: string) => <code className="px-1.5 py-0.5 text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">{text || '-'}</code>,
+      render: (text: string) => <code className="art-table-code is-wan">{text || '-'}</code>,
     },
     {
       title: '外网端口',
       dataIndex: 'wan_port',
       key: 'wan_port',
-      render: (text: number) => <span className="font-mono dark:text-white">{text || '-'}</span>,
+      render: (text: number) => <span className="art-table-mono">{text || '-'}</span>,
     },
     {
       title: '内网IP',
       dataIndex: 'lan_addr',
       key: 'lan_addr',
-      render: (text: string) => <code className="px-1.5 py-0.5 text-xs bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded">{text || '-'}</code>,
+      render: (text: string) => <code className="art-table-code is-lan">{text || '-'}</code>,
     },
     {
       title: '内网端口',
       dataIndex: 'lan_port',
       key: 'lan_port',
-      render: (text: number) => <span className="font-mono dark:text-white">{text || '-'}</span>,
+      render: (text: number) => <span className="art-table-mono">{text || '-'}</span>,
     },
     {
       title: '备注',
       dataIndex: 'nat_tips',
       key: 'nat_tips',
-      render: (text: string) => <span className="dark:text-white">{text || '-'}</span>,
+      render: (text: string) => <span className="art-table-muted">{text || '-'}</span>,
     },
     {
         title: '操作',
@@ -269,139 +276,175 @@ const PortManage: React.FC<{ userMode?: boolean }> = ({ userMode = true }) => {
     }
   ];
 
-  // 卡片视图渲染
+  // 卡片视图渲染：与列表视图共用中性面板与语义化文本
   const renderCardView = (data: UserNATRule[]) => {
     if (data.length === 0) {
-      return <div className="text-center py-8" style={{ color: 'var(--text-secondary)' }}>暂无端口转发规则</div>;
+      return (
+        <div className="art-table-empty">
+          <ArrowsRightLeftIcon style={{ width: 34, height: 34 }} />
+          <p>暂无端口转发规则</p>
+        </div>
+      );
     }
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="nat-card-grid">
         {data.map((rule, index) => (
-          <div key={`${rule.hostName}-${rule.vmUuid}-${rule.rule_index}-${index}`}
-               className="glass-card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Tag color="blue" className="m-0">{rule.hostName}</Tag>
-                <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{rule.vmUuid}</span>
+          <article
+            key={`${rule.hostName}-${rule.vmUuid}-${rule.rule_index}-${index}`}
+            className="art-panel nat-card"
+          >
+            <header className="nat-card-head">
+              <div className="art-table-identity">
+                <Tag color="processing" style={{ margin: 0 }}>{rule.hostName}</Tag>
+                <span className="art-cell-sub" title={rule.vmUuid}>{rule.vmUuid}</span>
               </div>
-              <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDelete(rule)}>删除</Button>
+              <Button aria-label="删除端口转发规则" danger size="small" type="text" icon={<DeleteOutlined />} onClick={() => handleDelete(rule)} />
+            </header>
+
+            <div className="nat-card-flow">
+              <div className="art-subpanel">
+                <div className="art-info-label">外网 (WAN)</div>
+                <div className="art-table-mono">{rule.wan_ip || '-'}:{rule.wan_port || '-'}</div>
+              </div>
+              <span className="nat-card-arrow" aria-hidden="true">↓</span>
+              <div className="art-subpanel">
+                <div className="art-info-label">内网 (LAN)</div>
+                <div className="art-table-mono">{rule.lan_addr || '-'}:{rule.lan_port || '-'}</div>
+              </div>
             </div>
-            <div className="space-y-2">
-              {/* 外网信息 */}
-              <div className="rounded-lg p-3 bg-blue-50 dark:bg-blue-900/20">
-                <p className="text-xs mb-1 font-medium text-blue-600 dark:text-blue-400">外网 (WAN)</p>
-                <div className="flex items-center justify-between text-sm">
-                  <code className="font-mono text-blue-700 dark:text-blue-300">{rule.wan_ip || '-'}</code>
-                  <span className="font-mono font-medium">:{rule.wan_port || '-'}</span>
-                </div>
-              </div>
-              {/* 箭头 */}
-              <div className="flex items-center justify-center" style={{ color: 'var(--text-tertiary)' }}>
-                <span className="iconify" data-icon="mdi:arrow-down" style={{width: '20px', height: '20px'}}></span>
-              </div>
-              {/* 内网信息 */}
-              <div className="rounded-lg p-3 bg-green-50 dark:bg-green-900/20">
-                <p className="text-xs mb-1 font-medium text-green-600 dark:text-green-400">内网 (LAN)</p>
-                <div className="flex items-center justify-between text-sm">
-                  <code className="font-mono text-green-700 dark:text-green-300">{rule.lan_addr || '-'}</code>
-                  <span className="font-mono font-medium">:{rule.lan_port || '-'}</span>
-                </div>
-              </div>
-              {/* 备注 */}
-              {rule.nat_tips && (
-                <div className="rounded-lg p-2 bg-yellow-50 dark:bg-yellow-900/20">
-                  <p className="text-xs text-yellow-700 dark:text-yellow-400">{rule.nat_tips}</p>
-                </div>
-              )}
-            </div>
-          </div>
+
+            <footer className="nat-card-foot">
+              <span className="art-table-muted">{rule.nat_tips || '无备注'}</span>
+            </footer>
+          </article>
         ))}
       </div>
     );
   };
 
   return (
-    <div className="p-6">
+    <div className="art-stack">
       {/* 页面标题 */}
       <PageHeader
         icon={<ArrowsRightLeftIcon style={{ width: '24px', height: '24px' }} />}
         title="端口转发管理"
         subtitle={userMode ? '管理您的NAT端口转发规则' : '管理所有NAT端口转发规则'}
         actions={
-          <Space size="middle" wrap>
-            <Input
-              placeholder="搜索端口..."
-              style={{ width: 140 }}
-              value={searchPort}
-              onChange={(e) => setSearchPort(e.target.value)}
-              allowClear
-            />
-            <Select
-              placeholder="所有主机"
-              style={{ width: 130 }}
-              value={hostFilter || undefined}
-              onChange={(v) => { setHostFilter(v || ''); setVmFilter(''); }}
-              allowClear
-            >
-              {hosts.map(h => <Select.Option key={h} value={h}>{h}</Select.Option>)}
-            </Select>
-            <Select
-              placeholder="所有虚拟机"
-              style={{ width: 150 }}
-              value={vmFilter || undefined}
-              onChange={(v) => setVmFilter(v || '')}
-              allowClear
-            >
-              {[...new Set(rules.map(r => r.vmUuid))].map(vm => (
-                <Select.Option key={vm} value={vm}>{vm}</Select.Option>
-              ))}
-            </Select>
-            {!userMode && (
-              <Select
-                placeholder="所有者"
-                style={{ width: 120 }}
-                value={ownerFilter || undefined}
-                onChange={(v) => setOwnerFilter(v || '')}
-                allowClear
-              >
-                {[...new Set(rules.map(r => (r as any).primaryOwner).filter(Boolean))].map(owner => (
-                  <Select.Option key={owner} value={owner}>{owner}</Select.Option>
-                ))}
-              </Select>
-            )}
-            <Segmented
-              value={viewMode}
-              onChange={(val) => setViewMode(val as 'table' | 'card')}
-              options={[
-                { value: 'table', icon: <UnorderedListOutlined /> },
-                { value: 'card', icon: <AppstoreOutlined /> },
-              ]}
-            />
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-              添加规则
-            </Button>
+          <Space wrap>
             <Button icon={<ReloadOutlined />} onClick={fetchNATRules} loading={loading}>
               刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+              添加规则
             </Button>
           </Space>
         }
       />
 
-      <Card className="glass-card">
-        {viewMode === 'table' ? (
-          <Table
-            dataSource={filteredRules}
-            columns={columns}
-            rowKey={(record) => `${record.hostName}-${record.vmUuid}-${record.rule_index}`}
-            loading={loading}
-            locale={{ emptyText: '暂无端口转发规则' }}
+      <section className="art-list-toolbar" aria-label="端口转发筛选与视图切换">
+        <div className="art-list-toolbar-filters">
+          <Input
+            className="art-list-search"
+            prefix={<SearchOutlined />}
+            placeholder="搜索端口、IP 或备注"
+            value={searchPort}
+            onChange={(e) => setSearchPort(e.target.value)}
+            allowClear
           />
+          <Select
+            className="art-list-filter"
+            placeholder="全部主机"
+            value={hostFilter || undefined}
+            onChange={(v) => { setHostFilter(v || ''); setVmFilter(''); }}
+            allowClear
+          >
+            {hosts.map(h => <Select.Option key={h} value={h}>{h}</Select.Option>)}
+          </Select>
+          <Select
+            className="art-list-filter"
+            placeholder="全部虚拟机"
+            value={vmFilter || undefined}
+            onChange={(v) => setVmFilter(v || '')}
+            allowClear
+          >
+            {[...new Set(rules.map(r => r.vmUuid))].map(vm => (
+              <Select.Option key={vm} value={vm}>{vm}</Select.Option>
+            ))}
+          </Select>
+          {!userMode && (
+            <Select
+              className="art-list-filter"
+              placeholder="全部所有者"
+              value={ownerFilter || undefined}
+              onChange={(v) => setOwnerFilter(v || '')}
+              allowClear
+            >
+              {[...new Set(rules.map(r => (r as any).primaryOwner).filter(Boolean))].map(owner => (
+                <Select.Option key={owner} value={owner}>{owner}</Select.Option>
+              ))}
+            </Select>
+          )}
+        </div>
+        <div className="art-list-toolbar-actions">
+          <span className="art-list-result-count" aria-live="polite">
+            显示 <strong>{loading ? '—' : filteredRules.length}</strong> / {rules.length} 条
+          </span>
+          <Segmented
+            aria-label="端口转发显示方式"
+            size="small"
+            value={viewMode}
+            onChange={(val) => setViewMode(val as 'table' | 'card')}
+            options={[
+              { value: 'table', icon: <UnorderedListOutlined />, label: '列表' },
+              { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
+            ]}
+          />
+        </div>
+      </section>
+
+      <section className="art-list-results" aria-label="端口转发清单">
+        <header className="art-list-results-head">
+          <div>
+            <h2>{viewMode === 'table' ? '转发清单' : '转发概览'}</h2>
+            <span>{userMode ? '当前账号的端口映射规则' : '全平台端口映射规则'}</span>
+          </div>
+        </header>
+
+        {viewMode === 'table' ? (
+          <div className="art-table-panel">
+            <div className="art-panel-body is-flush">
+              <Table
+                dataSource={filteredRules}
+                columns={columns}
+                rowKey={(record) => `${record.hostName}-${record.vmUuid}-${record.rule_index}`}
+                loading={loading}
+                size="small"
+                scroll={{ x: 'max-content' }}
+                pagination={{
+                  pageSize: 10,
+                  showSizeChanger: true,
+                  showTotal: (total) => `共 ${total} 条`,
+                }}
+                locale={{
+                  emptyText: (
+                    <div className="art-table-empty">
+                      <ArrowsRightLeftIcon style={{ width: 40, height: 40 }} />
+                      <p>暂无端口转发规则</p>
+                      <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+                        添加第一条规则
+                      </Button>
+                    </div>
+                  ),
+                }}
+              />
+            </div>
+          </div>
         ) : (
           loading ? (
-            <div className="text-center py-8">加载中...</div>
+            <div className="art-loading">正在加载端口转发规则…</div>
           ) : renderCardView(filteredRules)
         )}
-      </Card>
+      </section>
 
       <Modal
         title="添加端口转发规则"

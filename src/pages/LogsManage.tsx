@@ -31,6 +31,132 @@ interface Log {
   content?: string // 消息内容（备用字段）
 }
 
+/** 操作结果字段的中文名称（命中常见接口字段，其余保留原字段名） */
+const RESULT_FIELD_LABELS: Record<string, string> = {
+  code: '状态码',
+  status: '状态',
+  status_code: '状态码',
+  success: '是否成功',
+  msg: '消息',
+  message: '消息',
+  error: '错误',
+  errors: '错误详情',
+  detail: '详情',
+  details: '详情',
+  data: '数据',
+  result: '结果',
+  results: '结果',
+  items: '条目',
+  list: '列表',
+  total: '总数',
+  count: '数量',
+  id: '标识',
+  uuid: 'UUID',
+  name: '名称',
+  host: '主机',
+  host_name: '主机',
+  vm_uuid: '虚拟机',
+  vm_name: '虚拟机',
+  task: '任务',
+  task_id: '任务标识',
+  action: '操作',
+  path: '路径',
+  url: '链接',
+  ip: 'IP 地址',
+  port: '端口',
+  username: '用户名',
+  user: '用户',
+  time: '时间',
+  timestamp: '时间戳',
+}
+
+interface ResultEntry {
+  label: string
+  value: string
+  mono?: boolean
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** 后端偶尔把 JSON 作为字符串塞进 results，这里先尝试还原为结构 */
+function tryParseJson(text: string): unknown {
+  const trimmed = text.trim()
+  if (!trimmed || !/^[[{]/.test(trimmed)) return text
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return text
+  }
+}
+
+function formatResultScalar(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '—'
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.length ? `${value.length} 项数据` : '—'
+  if (isPlainObject(value)) return `${Object.keys(value).length} 项数据`
+  return String(value)
+}
+
+/**
+ * 把任意 results 结构摊平成可读的「字段 → 值」条目。
+ * 常见接口字段翻译为中文，嵌套对象/数组递归展开，不再直接展示 JSON 原文。
+ */
+function collectResultEntries(value: unknown, path = '', depth = 0): ResultEntry[] {
+  const parsed = typeof value === 'string' ? tryParseJson(value) : value
+
+  if (Array.isArray(parsed)) {
+    if (parsed.length === 0) return [{ label: path || '结果', value: '—' }]
+    const primitivesOnly = parsed.every(item => item === null || ['string', 'number', 'boolean'].includes(typeof item))
+    if (primitivesOnly) {
+      return [{ label: path || '结果', value: parsed.map(formatResultScalar).join('、') }]
+    }
+    return parsed.flatMap((item, index) =>
+      collectResultEntries(item, path ? `${path} · 第 ${index + 1} 项` : `第 ${index + 1} 项`, depth + 1),
+    )
+  }
+
+  if (isPlainObject(parsed)) {
+    const entries = Object.entries(parsed)
+    if (entries.length === 0) return [{ label: path || '结果', value: '—' }]
+    return entries.flatMap(([key, child]) => {
+      const label = RESULT_FIELD_LABELS[key] || key
+      const childPath = path ? `${path} · ${label}` : label
+      const childValue = typeof child === 'string' ? tryParseJson(child) : child
+
+      if (depth >= 3) {
+        return [{ label: childPath, value: formatResultScalar(childValue) }]
+      }
+      if (isPlainObject(childValue) || Array.isArray(childValue)) {
+        return collectResultEntries(childValue, childPath, depth + 1)
+      }
+      return [{
+        label: childPath,
+        value: formatResultScalar(childValue),
+        mono: typeof childValue === 'number' || typeof childValue === 'boolean',
+      }]
+    })
+  }
+
+  return [{
+    label: path || '结果',
+    value: formatResultScalar(parsed),
+    mono: typeof parsed === 'number' || typeof parsed === 'boolean',
+  }]
+}
+
+function hasResultPayload(value: unknown): boolean {
+  const parsed = typeof value === 'string' ? tryParseJson(value) : value
+  if (parsed === null || parsed === undefined) return false
+  if (typeof parsed === 'string') return parsed.trim().length > 0
+  if (Array.isArray(parsed)) return parsed.length > 0
+  if (isPlainObject(parsed)) return Object.keys(parsed).length > 0
+  return true
+}
+
 /**
  * 日志查看页面
  */
@@ -224,6 +350,9 @@ function LogsManage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh, filters])
 
+  const selectedResultEntries = selectedLog ? collectResultEntries(selectedLog.results) : []
+  const showSelectedResult = Boolean(selectedLog && hasResultPayload(selectedLog.results))
+
   return (
     <div className="art-stack">
       <PageHeader
@@ -257,47 +386,52 @@ function LogsManage() {
         <StatCard icon={<BugOutlined />} label="调试" value={statistics.DEBUG} tone="primary" />
       </div>
 
-      {/* 筛选：全部收进一行工具条 */}
-      <div className="art-toolbar">
-        <Select
-          style={{ width: 180 }}
-          placeholder="全部主机"
-          allowClear
-          value={filters.host || undefined}
-          onChange={(value) => setFilters({ ...filters, host: value || '' })}
-          getPopupContainer={() => document.body}
-        >
-          {hosts.map(host => (
-            <Select.Option key={host} value={host}>{host}</Select.Option>
-          ))}
-        </Select>
-        <Select
-          style={{ width: 150 }}
-          placeholder="全部级别"
-          allowClear
-          value={filters.level || undefined}
-          onChange={(value) => setFilters({ ...filters, level: value || '' })}
-          getPopupContainer={() => document.body}
-        >
-          <Select.Option value="ERROR">错误</Select.Option>
-          <Select.Option value="WARNING">警告</Select.Option>
-          <Select.Option value="INFO">信息</Select.Option>
-          <Select.Option value="DEBUG">调试</Select.Option>
-        </Select>
-        <Select
-          style={{ width: 120 }}
-          value={filters.limit}
-          onChange={(value) => setFilters({ ...filters, limit: value })}
-          getPopupContainer={() => document.body}
-        >
-          <Select.Option value={50}>50 条</Select.Option>
-          <Select.Option value={100}>100 条</Select.Option>
-          <Select.Option value={200}>200 条</Select.Option>
-          <Select.Option value={500}>500 条</Select.Option>
-        </Select>
-        <span className="art-toolbar-spacer" />
-        <span className="art-muted">{filteredLogs.length} 条记录</span>
-      </div>
+      {/* 筛选：与其他清单共用同一工具栏结构 */}
+      <section className="art-list-toolbar" aria-label="日志筛选">
+        <div className="art-list-toolbar-filters">
+          <Select
+            className="art-list-filter"
+            placeholder="全部主机"
+            allowClear
+            value={filters.host || undefined}
+            onChange={(value) => setFilters({ ...filters, host: value || '' })}
+            getPopupContainer={() => document.body}
+          >
+            {hosts.map(host => (
+              <Select.Option key={host} value={host}>{host}</Select.Option>
+            ))}
+          </Select>
+          <Select
+            className="art-list-filter"
+            placeholder="全部级别"
+            allowClear
+            value={filters.level || undefined}
+            onChange={(value) => setFilters({ ...filters, level: value || '' })}
+            getPopupContainer={() => document.body}
+          >
+            <Select.Option value="ERROR">错误</Select.Option>
+            <Select.Option value="WARNING">警告</Select.Option>
+            <Select.Option value="INFO">信息</Select.Option>
+            <Select.Option value="DEBUG">调试</Select.Option>
+          </Select>
+          <Select
+            className="art-list-filter art-list-filter--compact"
+            value={filters.limit}
+            onChange={(value) => setFilters({ ...filters, limit: value })}
+            getPopupContainer={() => document.body}
+          >
+            <Select.Option value={50}>50 条</Select.Option>
+            <Select.Option value={100}>100 条</Select.Option>
+            <Select.Option value={200}>200 条</Select.Option>
+            <Select.Option value={500}>500 条</Select.Option>
+          </Select>
+        </div>
+        <div className="art-list-toolbar-actions">
+          <span className="art-list-result-count" aria-live="polite">
+            共 <strong>{filteredLogs.length}</strong> 条
+          </span>
+        </div>
+      </section>
 
       {/* 列表 + 详情：固定高度分栏，两侧各自内部滚动 */}
       <div className="art-split">
@@ -404,13 +538,26 @@ function LogsManage() {
                   <p className="art-log-message is-expanded">{readLog(selectedLog).message}</p>
                 </div>
 
-                {selectedLog.results && Object.keys(selectedLog.results).length > 0 && (
+                {showSelectedResult && (
                   <div className="art-subpanel">
                     <div className="art-subpanel-head">
                       <EyeOutlined />
                       操作结果
                     </div>
-                    <pre className="art-code">{JSON.stringify(selectedLog.results, null, 2)}</pre>
+                    <div className="art-result-summary">
+                      <span className={`art-log-result ${selectedLog.success === false ? 'is-fail' : 'is-ok'}`}>
+                        {selectedLog.success === false ? '执行失败' : selectedLog.success === true ? '执行成功' : '已返回结果'}
+                      </span>
+                      <span>共 {selectedResultEntries.length} 项</span>
+                    </div>
+                    <div className="art-result-grid">
+                      {selectedResultEntries.map((entry, index) => (
+                        <div className="art-result-item" key={`${entry.label}-${index}`}>
+                          <span className="art-result-label">{entry.label}</span>
+                          <span className={`art-result-value${entry.mono ? ' is-mono' : ''}`}>{entry.value}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 

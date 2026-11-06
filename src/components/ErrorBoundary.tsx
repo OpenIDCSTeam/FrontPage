@@ -46,7 +46,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           justifyContent: 'center',
           alignItems: 'center',
           minHeight: '100vh',
-          background: 'var(--bg-primary, #f5f5f5)',
+          background: 'var(--art-content-bg, #ffffff)',
         }}>
           <Result
             status="error"

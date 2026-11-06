@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Select, Card, Row, Col, Checkbox } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, GlobalOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons'
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Select, Row, Col, Checkbox, Segmented } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, GlobalOutlined, LockOutlined, UnlockOutlined, SearchOutlined, AppstoreOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import api from '@/utils/apis.ts'
 import PageHeader from '@/components/PageHeader'
 
@@ -52,6 +52,7 @@ function HttpProxys({ userMode = false }: { userMode?: boolean }) {
   // 状态管理
   const [proxies, setProxies] = useState<WebProxy[]>([])
   const [filteredProxies, setFilteredProxies] = useState<WebProxy[]>([])
+  const [viewMode, setViewMode] = useState<'table' | 'card'>(() => window.innerWidth < 768 ? 'card' : 'table')
   const [hosts, setHosts] = useState<Host[]>([])
   const [vms, setVms] = useState<{ [key: string]: VM[] }>({})
   const [loading, setLoading] = useState(false)
@@ -67,6 +68,14 @@ function HttpProxys({ userMode = false }: { userMode?: boolean }) {
   const [ownerFilter, setOwnerFilter] = useState('')
   
   const [form] = Form.useForm()
+
+  // 小屏自动卡片，用户仍可手动切回列表；仅在跨过断点时重新自动选择
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)')
+    const apply = () => setViewMode(media.matches ? 'card' : 'table')
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
+  }, [])
 
   /**
    * 加载主机列表（用于添加代理时选择）
@@ -353,7 +362,8 @@ function HttpProxys({ userMode = false }: { userMode?: boolean }) {
           href={`http${record.ssl_enabled ? 's' : ''}://${domain}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
+          className="art-table-link"
+          title={domain}
         >
           {domain}
         </a>
@@ -363,7 +373,7 @@ function HttpProxys({ userMode = false }: { userMode?: boolean }) {
       title: '主机',
       dataIndex: 'hostName',
       key: 'hostName',
-      render: (name: string) => <Tag color="blue">{name}</Tag>
+      render: (name: string) => <Tag color="processing">{name}</Tag>
     },
     {
       title: '虚拟机',
@@ -407,13 +417,13 @@ function HttpProxys({ userMode = false }: { userMode?: boolean }) {
       title: '所有者',
       dataIndex: 'ownerName',
       key: 'ownerName',
-      render: (name: string) => <span style={{ color: 'var(--text-secondary)' }}>{name || '-'}</span>
+      render: (name: string) => <span className="art-table-muted">{name || '-'}</span>
     }] : []),
     {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
-      render: (desc: string) => <span style={{ color: 'var(--text-secondary)' }}>{desc || '-'}</span>
+      render: (desc: string) => <span className="art-table-muted">{desc || '-'}</span>
     },
     {
       title: '操作',
@@ -444,114 +454,224 @@ function HttpProxys({ userMode = false }: { userMode?: boolean }) {
     }
   ]
 
+  const renderCardView = (data: WebProxy[]) => {
+    if (data.length === 0) {
+      return (
+        <div className="art-table-empty">
+          <GlobalOutlined />
+          <p>暂无反向代理配置</p>
+          <Button type="primary" icon={<PlusOutlined />} onClick={showAddModal}>
+            添加第一个代理
+          </Button>
+        </div>
+      )
+    }
+
+    return (
+      <div className="nat-card-grid">
+        {data.map(record => (
+          <article
+            className="art-panel nat-card proxy-card"
+            key={`${record.hostName}-${record.vmUuid}-${record.proxy_index}`}
+          >
+            <header className="nat-card-head">
+              <div className="art-table-identity">
+                <GlobalOutlined style={{ color: 'var(--art-accent-text)' }} />
+                <a
+                  className="art-table-link"
+                  href={`http${record.ssl_enabled ? 's' : ''}://${record.domain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={record.domain}
+                >
+                  {record.domain}
+                </a>
+              </div>
+              <Tag color={record.enabled ? 'success' : 'error'}>
+                {record.enabled ? '已启用' : '已禁用'}
+              </Tag>
+            </header>
+
+            <div className="proxy-card-body">
+              <div className="art-subpanel">
+                <div className="art-info-label">后端地址</div>
+                <div className="art-table-mono">{record.backend_ip || 'auto'}:{record.backend_port}</div>
+              </div>
+              <div className="art-subpanel">
+                <div className="art-info-label">主机 / 虚拟机</div>
+                <div className="art-cell-title">{record.hostName}</div>
+                <div className="art-cell-sub">{record.vmName || record.vmUuid || '-'}</div>
+              </div>
+            </div>
+
+            <div className="proxy-card-meta">
+              <Tag
+                icon={record.ssl_enabled ? <LockOutlined /> : <UnlockOutlined />}
+                color={record.ssl_enabled ? 'success' : 'default'}
+              >
+                {record.ssl_enabled ? 'HTTPS' : 'HTTP'}
+              </Tag>
+              {!userMode && (
+                <span className="art-table-muted">所有者 {record.ownerName || '-'}</span>
+              )}
+            </div>
+
+            <footer className="nat-card-foot proxy-card-foot">
+              <span className="art-table-muted" title={record.description}>{record.description || '无描述'}</span>
+              <Space size={2}>
+                {!userMode && (
+                  <Button size="small" type="text" icon={<EditOutlined />} onClick={() => showEditModal(record)}>
+                    编辑
+                  </Button>
+                )}
+                <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
+                  删除
+                </Button>
+              </Space>
+            </footer>
+          </article>
+        ))}
+      </div>
+    )
+  }
+
   return (
-    <div className="p-6">
+    <div className="art-stack">
       {/* 页面标题 */}
       <PageHeader
         icon={<GlobalOutlined />}
         title="反向代理管理"
         subtitle={userMode ? '管理您的Web反向代理配置' : '管理所有虚拟机的Web反向代理配置'}
         actions={
-          <Space size="middle" style={{ flexWrap: 'wrap' }}>
-            <Input
-              placeholder="搜索域名、虚拟机、端口..."
-              style={{ width: 200 }}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              allowClear
-            />
-            <Select
-              placeholder="所有主机"
-              style={{ width: 130 }}
-              value={hostFilter || undefined}
-              onChange={(v) => setHostFilter(v || '')}
-              allowClear
-            >
-              {[...new Set(proxies.map(p => p.hostName).filter(Boolean))].map(host => (
-                <Select.Option key={host} value={host}>
-                  {host}
-                </Select.Option>
-              ))}
-            </Select>
-            <Select
-              placeholder="所有虚拟机"
-              style={{ width: 140 }}
-              value={vmFilter || undefined}
-              onChange={(v) => setVmFilter(v || '')}
-              allowClear
-            >
-              {[...new Set(proxies.map(p => p.vmName || p.vmUuid).filter(Boolean))].map(vm => (
-                <Select.Option key={vm} value={vm}>{vm}</Select.Option>
-              ))}
-            </Select>
-            {!userMode && (
-              <Select
-                placeholder="所有者"
-                style={{ width: 120 }}
-                value={ownerFilter || undefined}
-                onChange={(v) => setOwnerFilter(v || '')}
-                allowClear
-              >
-                {[...new Set(proxies.map(p => p.ownerName).filter(Boolean))].map(owner => (
-                  <Select.Option key={owner} value={owner!}>{owner}</Select.Option>
-                ))}
-              </Select>
-            )}
-            <Select
-              placeholder="协议"
-              style={{ width: 100 }}
-              value={protocolFilter || undefined}
-              onChange={(v) => setProtocolFilter(v || '')}
-              allowClear
-            >
-              <Select.Option value="http">HTTP</Select.Option>
-              <Select.Option value="https">HTTPS</Select.Option>
-            </Select>
-            <Button icon={<ReloadOutlined />} onClick={loadProxys}>刷新</Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={showAddModal}
-            >
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} onClick={loadProxys} loading={loading}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={showAddModal}>
               添加反向代理
             </Button>
           </Space>
         }
       />
 
-      {/* 代理列表表格 */}
-      <Card 
-        className="glass-card"
-        style={{ borderRadius: '16px' }}
-      >
-        <Table
-          columns={columns}
-          dataSource={filteredProxies}
-          rowKey={(record) => `${record.hostName}-${record.vmUuid}-${record.proxy_index}`}
-          loading={loading}
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 条记录`
-          }}
-          locale={{
-            emptyText: (
-              <div style={{ padding: '48px 0', textAlign: 'center' }}>
-                <GlobalOutlined style={{ fontSize: '5rem', color: 'var(--text-tertiary)' }} />
-                <p className="mt-4 text-lg" style={{ color: 'var(--text-secondary)' }}>暂无反向代理配置</p>
-                <Button 
-                  type="primary" 
-                  onClick={showAddModal} 
-                  style={{ marginTop: '16px' }}
-                  className="gradient-button"
-                >
-                  添加第一个代理
-                </Button>
-              </div>
-            )
-          }}
-        />
-      </Card>
+      <section className="art-list-toolbar" aria-label="反向代理筛选">
+        <div className="art-list-toolbar-filters">
+          <Input
+            className="art-list-search"
+            prefix={<SearchOutlined />}
+            placeholder="搜索域名、虚拟机、端口"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            allowClear
+          />
+          <Select
+            className="art-list-filter"
+            placeholder="全部主机"
+            value={hostFilter || undefined}
+            onChange={(v) => setHostFilter(v || '')}
+            allowClear
+          >
+            {[...new Set(proxies.map(p => p.hostName).filter(Boolean))].map(host => (
+              <Select.Option key={host} value={host}>
+                {host}
+              </Select.Option>
+            ))}
+          </Select>
+          <Select
+            className="art-list-filter"
+            placeholder="全部虚拟机"
+            value={vmFilter || undefined}
+            onChange={(v) => setVmFilter(v || '')}
+            allowClear
+          >
+            {[...new Set(proxies.map(p => p.vmName || p.vmUuid).filter(Boolean))].map(vm => (
+              <Select.Option key={vm} value={vm}>{vm}</Select.Option>
+            ))}
+          </Select>
+          {!userMode && (
+            <Select
+              className="art-list-filter"
+              placeholder="全部所有者"
+              value={ownerFilter || undefined}
+              onChange={(v) => setOwnerFilter(v || '')}
+              allowClear
+            >
+              {[...new Set(proxies.map(p => p.ownerName).filter(Boolean))].map(owner => (
+                <Select.Option key={owner} value={owner!}>{owner}</Select.Option>
+              ))}
+            </Select>
+          )}
+          <Select
+            className="art-list-filter art-list-filter--compact"
+            placeholder="全部协议"
+            value={protocolFilter || undefined}
+            onChange={(v) => setProtocolFilter(v || '')}
+            allowClear
+          >
+            <Select.Option value="http">HTTP</Select.Option>
+            <Select.Option value="https">HTTPS</Select.Option>
+          </Select>
+        </div>
+        <div className="art-list-toolbar-actions">
+          <span className="art-list-result-count" aria-live="polite">
+            显示 <strong>{loading ? '—' : filteredProxies.length}</strong> / {proxies.length} 条
+          </span>
+          <Segmented
+            aria-label="反向代理显示方式"
+            size="small"
+            value={viewMode}
+            onChange={(val) => setViewMode(val as 'table' | 'card')}
+            options={[
+              { value: 'table', icon: <UnorderedListOutlined />, label: '列表' },
+              { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
+            ]}
+          />
+        </div>
+      </section>
+
+      <section className="art-list-results" aria-label="反向代理清单">
+        <header className="art-list-results-head">
+          <div>
+            <h2>{viewMode === 'table' ? '代理清单' : '代理概览'}</h2>
+            <span>{userMode ? '当前账号的反向代理规则' : '全平台反向代理规则'}</span>
+          </div>
+        </header>
+
+        {viewMode === 'table' ? (
+          <div className="art-table-panel">
+            <div className="art-panel-body is-flush">
+            <Table
+              columns={columns}
+              dataSource={filteredProxies}
+              rowKey={(record) => `${record.hostName}-${record.vmUuid}-${record.proxy_index}`}
+              loading={loading}
+              size="small"
+              scroll={{ x: 'max-content' }}
+              pagination={{
+                pageSize: 10,
+                showSizeChanger: true,
+                showTotal: (total) => `共 ${total} 条`,
+              }}
+              locale={{
+                emptyText: (
+                  <div className="art-table-empty">
+                    <GlobalOutlined />
+                    <p>暂无反向代理配置</p>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={showAddModal}>
+                      添加第一个代理
+                    </Button>
+                  </div>
+                ),
+              }}
+            />
+            </div>
+          </div>
+        ) : loading ? (
+          <div className="art-loading">正在加载反向代理…</div>
+        ) : (
+          renderCardView(filteredProxies)
+        )}
+      </section>
 
       {/* 添加/编辑代理模态框 */}
       <Modal

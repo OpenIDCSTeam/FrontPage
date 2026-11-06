@@ -1,362 +1,262 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { ThemeConfig, ConfigProvider } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
-import { lightTheme, darkTheme, lightTransparentTheme, darkTransparentTheme } from '../config/theme.config';
-import { FontId, getSavedFontId, saveFontId, applyFontId } from '../config/fonts.config';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, ReactNode } from 'react'
+import { ConfigProvider } from 'antd'
+import type { ThemeConfig } from 'antd'
+import type { Locale } from 'antd/es/locale'
+import zhCN from 'antd/locale/zh_CN'
+import zhTW from 'antd/locale/zh_TW'
+import enUS from 'antd/locale/en_US'
+import jaJP from 'antd/locale/ja_JP'
+import koKR from 'antd/locale/ko_KR'
+import frFR from 'antd/locale/fr_FR'
+import deDE from 'antd/locale/de_DE'
+import itIT from 'antd/locale/it_IT'
+import ptPT from 'antd/locale/pt_PT'
+import esES from 'antd/locale/es_ES'
+import ruRU from 'antd/locale/ru_RU'
+import dayjs from 'dayjs'
+import 'dayjs/locale/zh-tw'
+import 'dayjs/locale/ja'
+import 'dayjs/locale/ko'
+import 'dayjs/locale/fr'
+import 'dayjs/locale/de'
+import 'dayjs/locale/it'
+import 'dayjs/locale/pt'
+import 'dayjs/locale/es'
+import 'dayjs/locale/ru'
 import {
-  AnimeTheme,
-  getAllAnimeThemes,
-  getActiveAnimeThemeId,
-  setActiveAnimeThemeId,
-  getThemeBackground,
-  isSolidTheme,
-} from '../config/animeThemes.config';
+  createArtTheme,
+  getThemeCssVariables,
+  getThemePalette,
+  ThemeMode,
+  ThemePreset,
+} from '../config/theme.config'
+import { FontId, getSavedFontId, saveFontId, applyFontId } from '../config/fonts.config'
 
-type Theme = 'light' | 'dark';
-
-interface ThemeContextType {
-  theme: Theme;
-  toggleTheme: () => void;
-  setTheme: (theme: Theme) => void;
-  transparentMode: boolean;
-  toggleTransparentMode: () => void;
-  roundedMode: boolean;
-  toggleRoundedMode: () => void;
-  liquidMode: boolean;
-  toggleLiquidMode: () => void;
-  getThemeConfig: () => ThemeConfig;
-  /** 字体预设（global）：由 src/config/fonts.config.ts 定义 */
-  fontId: FontId;
-  setFontId: (id: FontId) => void;
-  // 二次元主题相关
-  animeThemeId: string | null;
-  setAnimeTheme: (id: string | null) => void;
-  currentAnimeTheme: AnimeTheme | null;
-  animeThemes: AnimeTheme[];
-  refreshAnimeThemes: () => void;
-  // 二次元底层模糊开关
-  animeBlurMode: boolean;
-  toggleAnimeBlurMode: () => void;
+const ANTD_LOCALES: Record<string, Locale> = {
+  'zh-cn': zhCN,
+  'zh-tw': zhTW,
+  'en-us': enUS,
+  'ja-jp': jaJP,
+  'ko-kr': koKR,
+  'fr-fr': frFR,
+  'de-de': deDE,
+  'it-it': itIT,
+  'pt-br': ptPT,
+  'es-es': esES,
+  'ru-ru': ruRU,
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const DAYJS_LOCALES: Record<string, string> = {
+  'zh-cn': 'zh-cn',
+  'zh-tw': 'zh-tw',
+  'en-us': 'en',
+  'ja-jp': 'ja',
+  'ko-kr': 'ko',
+  'fr-fr': 'fr',
+  'de-de': 'de',
+  'it-it': 'it',
+  'pt-br': 'pt',
+  'es-es': 'es',
+  'ru-ru': 'ru',
+}
 
-export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider');
+const resolveLanguage = () => localStorage.getItem('language') || 'zh-cn'
+
+interface ThemeContextType {
+  theme: ThemeMode
+  setTheme: (theme: ThemeMode) => void
+  toggleTheme: () => void
+  themePreset: ThemePreset
+  setThemePreset: (preset: ThemePreset) => void
+  transparentMode: boolean
+  toggleTransparentMode: () => void
+  roundedMode: boolean
+  toggleRoundedMode: () => void
+  fontId: FontId
+  setFontId: (id: FontId) => void
+  getThemeConfig: () => ThemeConfig
+}
+
+type AppearanceState = {
+  theme: ThemeMode
+  themePreset: ThemePreset
+  transparentMode: boolean
+  roundedMode: boolean
+  fontId: FontId
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
+const PRESET_KEY = 'themePreset'
+const VALID_PRESETS: ThemePreset[] = ['minimal', 'tech', 'cute']
+
+function readInitialAppearance(): AppearanceState {
+  let theme: ThemeMode = 'light'
+  let themePreset: ThemePreset = 'minimal'
+  let transparentMode = false
+  let roundedMode = false
+
+  try {
+    const savedMode = localStorage.getItem('theme')
+    const legacyMmuiMode = localStorage.getItem('mmui-dark-mode')
+    if (savedMode === 'dark' || savedMode === 'light') {
+      theme = savedMode
+    } else if (legacyMmuiMode === 'enabled') {
+      theme = 'dark'
+    }
+
+    const savedPreset = localStorage.getItem(PRESET_KEY)
+    if (savedPreset && VALID_PRESETS.includes(savedPreset as ThemePreset)) {
+      themePreset = savedPreset as ThemePreset
+    } else {
+      const legacyPreset = localStorage.getItem('activeAnimeTheme')
+      if (legacyPreset === 'solid-tech-green' || legacyPreset === 'solid-klein-blue') themePreset = 'tech'
+      if (legacyPreset === 'solid-warm-sunset') themePreset = 'cute'
+    }
+
+    transparentMode = localStorage.getItem('transparentMode') === 'true'
+    roundedMode = localStorage.getItem('roundedMode') === 'true'
+  } catch {
+    // 浏览器禁用本地存储时使用默认外观。
   }
-  return context;
-};
+
+  return { theme, themePreset, transparentMode, roundedMode, fontId: getSavedFontId() }
+}
+
+function applyAppearance(state: AppearanceState): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  const body = document.body
+  const dark = state.theme === 'dark'
+  const palette = getThemePalette(state.themePreset, dark, state.transparentMode)
+
+  root.dataset.theme = state.theme
+  root.dataset.themePreset = state.themePreset
+  root.dataset.mmuiTheme = state.theme
+  root.style.colorScheme = state.theme
+  if (state.transparentMode) root.dataset.transparent = 'true'
+  else delete root.dataset.transparent
+  if (state.roundedMode) root.dataset.rounded = 'true'
+  else delete root.dataset.rounded
+
+  Object.entries(getThemeCssVariables(palette, state.roundedMode)).forEach(([name, value]) => {
+    root.style.setProperty(name, value)
+  })
+
+  if (body) {
+    body.dataset.mmuiTheme = state.theme
+    body.style.removeProperty('background-image')
+    body.style.removeProperty('background-size')
+    body.style.removeProperty('background-position')
+    body.style.removeProperty('background-attachment')
+    body.style.removeProperty('background-color')
+  }
+}
+
+const initialAppearance = readInitialAppearance()
+applyAppearance(initialAppearance)
+
+export function useTheme(): ThemeContextType {
+  const context = useContext(ThemeContext)
+  if (!context) throw new Error('useTheme must be used within a ThemeProvider')
+  return context
+}
 
 interface ThemeProviderProps {
-  children: ReactNode;
+  children: ReactNode
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  // 从 localStorage 读取保存的主题，默认为浅色
-  const [theme, setThemeState] = useState<Theme>(() => {
-    const savedTheme = localStorage.getItem('theme') as Theme;
-    return savedTheme || 'light';
-  });
+  const [theme, setThemeState] = useState<ThemeMode>(initialAppearance.theme)
+  const [themePreset, setThemePresetState] = useState<ThemePreset>(initialAppearance.themePreset)
+  const [transparentMode, setTransparentMode] = useState(initialAppearance.transparentMode)
+  const [roundedMode, setRoundedMode] = useState(initialAppearance.roundedMode)
+  const [fontId, setFontIdState] = useState<FontId>(initialAppearance.fontId)
+  const [localeCode, setLocaleCode] = useState<string>(() => resolveLanguage())
 
-  // 从 localStorage 读取透明模式状态，默认为关闭
-  const [transparentMode, setTransparentMode] = useState<boolean>(() => {
-    const savedMode = localStorage.getItem('transparentMode');
-    return savedMode === 'true';
-  });
-
-  // 从 localStorage 读取圆角模式状态，默认为关闭
-  const [roundedMode, setRoundedMode] = useState<boolean>(() => {
-    const savedMode = localStorage.getItem('roundedMode');
-    return savedMode === 'true';
-  });
-
-  // 从 localStorage 读取液态玻璃模式状态，默认为关闭
-  const [liquidMode, setLiquidMode] = useState<boolean>(() => {
-    const savedMode = localStorage.getItem('liquidMode');
-    return savedMode === 'true';
-  });
-
-  // 二次元底层模糊开关，默认关闭
-  const [animeBlurMode, setAnimeBlurMode] = useState<boolean>(() => {
-    const savedMode = localStorage.getItem('animeBlurMode');
-    return savedMode === 'true';
-  });
-
-  // 字体预设（默认全局等宽 Maple Mono）
-  const [fontId, setFontIdState] = useState<FontId>(() => getSavedFontId());
-
-  // 二次元主题状态
-  const [animeThemeId, setAnimeThemeIdState] = useState<string | null>(() => {
-    return getActiveAnimeThemeId();
-  });
-
-  const [animeThemes, setAnimeThemes] = useState<AnimeTheme[]>(() => getAllAnimeThemes());
-
-  // 刷新主题列表（添加/删除自定义主题后调用）
-  const refreshAnimeThemes = useCallback(() => {
-    setAnimeThemes(getAllAnimeThemes());
-  }, []);
-
-  // 当前激活的二次元主题对象
-  const currentAnimeTheme = animeThemeId
-    ? animeThemes.find(t => t.id === animeThemeId) || null
-    : null;
-
-  // 设置二次元主题
-  const setAnimeTheme = useCallback((id: string | null) => {
-    setAnimeThemeIdState(id);
-    setActiveAnimeThemeId(id);
-    if (id) {
-      const selectedTheme = getAllAnimeThemes().find(t => t.id === id);
-      if (selectedTheme) {
-        // 选择二次元壁纸主题时自动开启透明模式（用户可手动关闭）
-        if (!isSolidTheme(selectedTheme)) {
-          setTransparentMode(true);
-        }
-        // 选择纯白主题时自动切换为白天模式
-        if (selectedTheme.solidColor === '#ffffff') {
-          setThemeState('light');
-        }
-        // 选择科技绿主题时自动切换为暗黑模式
-        if (selectedTheme.id === 'solid-tech-green') {
-          setThemeState('dark');
-        }
-      }
+  useEffect(() => {
+    const handleLanguageChange = (event: Event) => {
+      const next = (event as CustomEvent<{ language?: string }>).detail?.language
+      setLocaleCode(next || resolveLanguage())
     }
-  }, []);
-
-  // 当主题变化时，更新 DOM 和 localStorage
-  useEffect(() => {
-    const root = document.documentElement;
-    root.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  // 字体预设：写到 <html data-font>，由 src/styles/fonts.css 接管字体变量
-  const setFontId = useCallback((id: FontId) => {
-    setFontIdState(id);
-    saveFontId(id);
-  }, []);
+    window.addEventListener('languageChanged', handleLanguageChange)
+    return () => window.removeEventListener('languageChanged', handleLanguageChange)
+  }, [])
 
   useEffect(() => {
-    applyFontId(fontId);
-    saveFontId(fontId);
-  }, [fontId]);
+    dayjs.locale(DAYJS_LOCALES[localeCode] || 'zh-cn')
+  }, [localeCode])
 
-  // 当透明模式或二次元主题变化时，更新背景
-  useEffect(() => {
-    const root = document.documentElement;
-    const body = document.body;
+  const antdLocale = ANTD_LOCALES[localeCode] || zhCN
+  const tableLocale = {
+    ...(antdLocale.Table || {}),
+    emptyText: <div className="art-table-empty"><p>暂无数据</p></div>,
+  }
 
-    if (currentAnimeTheme) {
-      // 设置主题主色调CSS变量
-      root.style.setProperty('--anime-primary', currentAnimeTheme.primaryColor);
-      root.style.setProperty('--anime-accent', currentAnimeTheme.accentColor);
-      root.setAttribute('data-anime-theme', currentAnimeTheme.id);
+  useLayoutEffect(() => {
+    const appearance = { theme, themePreset, transparentMode, roundedMode, fontId }
+    applyAppearance(appearance)
+    localStorage.setItem('theme', theme)
+    localStorage.setItem(PRESET_KEY, themePreset)
+    localStorage.setItem('transparentMode', String(transparentMode))
+    localStorage.setItem('roundedMode', String(roundedMode))
+  }, [theme, themePreset, transparentMode, roundedMode, fontId])
 
-      if (isSolidTheme(currentAnimeTheme)) {
-        // 纯色主题：深色模式下使用深色背景色，亮色模式下使用主题的solidColor
-        body.style.backgroundImage = '';
-        body.style.backgroundSize = '';
-        body.style.backgroundPosition = '';
-        body.style.backgroundAttachment = '';
-        body.style.backgroundColor = theme === 'dark' ? '#0f172a' : currentAnimeTheme.solidColor!;
-      } else {
-        // 壁纸主题：用图片背景
-        const bgUrl = getThemeBackground(currentAnimeTheme);
-        body.style.backgroundImage = `url(${bgUrl})`;
-        body.style.backgroundSize = 'cover';
-        body.style.backgroundPosition = 'center';
-        body.style.backgroundAttachment = 'fixed';
-        body.style.backgroundColor = 'transparent';
-      }
+  useLayoutEffect(() => {
+    applyFontId(fontId)
+    saveFontId(fontId)
+  }, [fontId])
 
-      // 壁纸主题标记：让 Layout 透明以显示壁纸
-      if (!isSolidTheme(currentAnimeTheme)) {
-        root.setAttribute('data-wallpaper', 'true');
-      } else {
-        root.removeAttribute('data-wallpaper');
-      }
-      // 透明模式完全由用户开关独立控制
-      if (transparentMode) {
-        root.setAttribute('data-transparent', 'true');
-      } else {
-        root.removeAttribute('data-transparent');
-      }
-    } else if (transparentMode) {
-      root.setAttribute('data-transparent', 'true');
-      root.removeAttribute('data-anime-theme');
-      root.removeAttribute('data-wallpaper');
-      root.style.removeProperty('--anime-primary');
-      root.style.removeProperty('--anime-accent');
-      body.style.backgroundImage = 'url(https://images.524228.xyz/)';
-      body.style.backgroundSize = 'cover';
-      body.style.backgroundPosition = 'center';
-      body.style.backgroundAttachment = 'fixed';
-      body.style.backgroundColor = 'transparent';
-    } else {
-      root.removeAttribute('data-transparent');
-      root.removeAttribute('data-anime-theme');
-      root.removeAttribute('data-wallpaper');
-      root.style.removeProperty('--anime-primary');
-      root.style.removeProperty('--anime-accent');
-      body.style.backgroundImage = '';
-      body.style.backgroundSize = '';
-      body.style.backgroundPosition = '';
-      body.style.backgroundAttachment = '';
-      body.style.backgroundColor = '';
-    }
-    localStorage.setItem('transparentMode', String(transparentMode));
-  }, [transparentMode, currentAnimeTheme, theme]);
+  useLayoutEffect(() => {
+    localStorage.removeItem('activeAnimeTheme')
+    localStorage.removeItem('animeBlurMode')
+    localStorage.removeItem('liquidMode')
+    localStorage.removeItem('mmui-dark-mode')
+    document.documentElement.removeAttribute('data-wallpaper')
+    document.documentElement.removeAttribute('data-anime-theme')
+    document.documentElement.removeAttribute('data-anime-blur')
+  }, [])
 
-  // 监听窗口大小变化，切换手机/PC端背景（仅壁纸主题）
-  useEffect(() => {
-    if (!currentAnimeTheme || isSolidTheme(currentAnimeTheme)) return;
-    // 二次元主题下无论透明模式是否开启都监听resize
+  const setTheme = useCallback((nextTheme: ThemeMode) => setThemeState(nextTheme), [])
+  const toggleTheme = useCallback(() => {
+    setThemeState(current => current === 'light' ? 'dark' : 'light')
+  }, [])
+  const setThemePreset = useCallback((nextPreset: ThemePreset) => {
+    if (VALID_PRESETS.includes(nextPreset)) setThemePresetState(nextPreset)
+  }, [])
+  const toggleTransparentMode = useCallback(() => setTransparentMode(current => !current), [])
+  const toggleRoundedMode = useCallback(() => setRoundedMode(current => !current), [])
+  const setFontId = useCallback((id: FontId) => setFontIdState(id), [])
 
-    const handleResize = () => {
-      const bgUrl = getThemeBackground(currentAnimeTheme);
-      document.body.style.backgroundImage = `url(${bgUrl})`;
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [currentAnimeTheme]);
-
-  // 当圆角模式变化时，更新 DOM 和 localStorage
-  useEffect(() => {
-    const root = document.documentElement;
-    if (roundedMode) {
-      root.setAttribute('data-rounded', 'true');
-    } else {
-      root.removeAttribute('data-rounded');
-    }
-    localStorage.setItem('roundedMode', String(roundedMode));
-  }, [roundedMode]);
-
-  // 当液态玻璃模式变化时，更新 DOM 和 localStorage
-  useEffect(() => {
-    const root = document.documentElement;
-    if (liquidMode) {
-      root.setAttribute('data-liquid', 'true');
-    } else {
-      root.removeAttribute('data-liquid');
-    }
-    localStorage.setItem('liquidMode', String(liquidMode));
-  }, [liquidMode]);
-
-  const toggleTheme = () => {
-    setThemeState(prevTheme => {
-      const next = prevTheme === 'light' ? 'dark' : 'light';
-      // 纯色主题下，白天切暗黑自动切换科技绿，暗黑切白天自动切换纯白；壁纸主题下不联动
-      const isWallpaper = currentAnimeTheme && !isSolidTheme(currentAnimeTheme);
-      if (!isWallpaper) {
-        if (next === 'dark') {
-          setAnimeThemeIdState('solid-tech-green');
-          setActiveAnimeThemeId('solid-tech-green');
-        }
-        if (next === 'light') {
-          setAnimeThemeIdState('solid-white');
-          setActiveAnimeThemeId('solid-white');
-        }
-      }
-      return next;
-    });
-  };
-
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
-    // 纯色主题下，切换暗黑自动切换科技绿，切换白天自动切换纯白；壁纸主题下不联动
-    const isWallpaper = currentAnimeTheme && !isSolidTheme(currentAnimeTheme);
-    if (!isWallpaper) {
-      if (newTheme === 'dark') {
-        setAnimeThemeIdState('solid-tech-green');
-        setActiveAnimeThemeId('solid-tech-green');
-      }
-      if (newTheme === 'light') {
-        setAnimeThemeIdState('solid-white');
-        setActiveAnimeThemeId('solid-white');
-      }
-    }
-  };
-
-  const toggleTransparentMode = () => {
-    setTransparentMode(prev => {
-      const next = !prev;
-      // 开启透明模式时，如果当前没有壁纸主题或是纯色主题，自动切换到随机必应
-      if (next && (!currentAnimeTheme || currentAnimeTheme.solidColor)) {
-        setAnimeThemeIdState('random-bing');
-        setActiveAnimeThemeId('random-bing');
-      }
-      return next;
-    });
-  };
-
-  const toggleRoundedMode = () => {
-    setRoundedMode(prev => !prev);
-  };
-
-  const toggleLiquidMode = () => {
-    setLiquidMode(prev => !prev);
-  };
-
-  const toggleAnimeBlurMode = () => {
-    setAnimeBlurMode(prev => !prev);
-  };
-
-  // 当二次元底层模糊模式变化时，更新 DOM 和 localStorage
-  useEffect(() => {
-    const root = document.documentElement;
-    if (animeBlurMode) {
-      root.setAttribute('data-anime-blur', 'true');
-    } else {
-      root.removeAttribute('data-anime-blur');
-    }
-    localStorage.setItem('animeBlurMode', String(animeBlurMode));
-  }, [animeBlurMode]);
-
-  /**
-   * 主题配置。
-   * 说明：早期这里会把 theme.config.ts 里的圆角整体改写成另一套数值，
-   * 导致「同一个项目里两套圆角」——组件内部按这里的值、设计层按 CSS 变量，
-   * 两边对不上。现在圆角只由 theme.config.ts 定义；
-   * 「圆角模式」开关改为纯 CSS 层（html[data-rounded]）放大容器圆角。
-   */
-  const getThemeConfig = (): ThemeConfig =>
-    transparentMode
-      ? theme === 'light'
-        ? lightTransparentTheme
-        : darkTransparentTheme
-      : theme === 'light'
-        ? lightTheme
-        : darkTheme;
+  const themeConfig = useMemo(() => createArtTheme({
+    preset: themePreset,
+    dark: theme === 'dark',
+    transparent: transparentMode,
+    rounded: roundedMode,
+  }), [themePreset, theme, transparentMode, roundedMode])
+  const getThemeConfig = useCallback(() => themeConfig, [themeConfig])
 
   return (
     <ThemeContext.Provider value={{
-      theme, toggleTheme, setTheme,
-      transparentMode, toggleTransparentMode,
-      roundedMode, toggleRoundedMode,
-      liquidMode, toggleLiquidMode,
+      theme,
+      setTheme,
+      toggleTheme,
+      themePreset,
+      setThemePreset,
+      transparentMode,
+      toggleTransparentMode,
+      roundedMode,
+      toggleRoundedMode,
+      fontId,
+      setFontId,
       getThemeConfig,
-      fontId, setFontId,
-      animeThemeId, setAnimeTheme, currentAnimeTheme, animeThemes, refreshAnimeThemes,
-      animeBlurMode, toggleAnimeBlurMode,
     }}>
       <ConfigProvider
-        theme={getThemeConfig()}
-        locale={zhCN}
-        // 弹层必须挂到 document.body（antd 默认行为）。
-        // 曾覆盖为「挂到触发器父元素」：rc-trigger 的坐标计算以 body 为基准，
-        // 一旦父元素带 position/overflow（面板、卡片、fixed 工具栏），
-        // 下拉/气泡会被定位到视口之外或被裁剪 —— 表现为「下拉菜单点不开」。
-        modal={{
-          mask: false
-        } as any}
+        theme={themeConfig}
+        locale={{ ...antdLocale, Table: tableLocale }}
+        modal={{ mask: false } as any}
       >
         {children}
       </ConfigProvider>
     </ThemeContext.Provider>
-  );
-};
+  )
+}

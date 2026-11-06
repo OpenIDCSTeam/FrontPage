@@ -1,5 +1,5 @@
-import {useEffect, useState, useMemo, useRef} from 'react'
-import {useParams, useNavigate} from 'react-router-dom'
+import {useEffect, useState, useMemo, useRef, type ReactNode} from 'react'
+import {useParams, useNavigate, useLocation} from 'react-router-dom'
 import {
     Card,
     Tabs,
@@ -24,7 +24,6 @@ import {
     Dropdown,
     MenuProps,
     Radio,
-    Tooltip,
     Divider,
     Segmented,
     Table
@@ -55,13 +54,62 @@ import {
     DownOutlined,
     AppstoreOutlined,
     UnorderedListOutlined,
+    MenuOutlined,
     LoadingOutlined
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
+import { useTheme } from '@/contexts/ThemeContext'
+import { getThemePalette } from '@/config/theme.config'
+import { getVMDetailLayoutKey, readVMDetailLayout, saveVMDetailLayout, type VMDetailLayout } from '@/utils/vmDetailLayout'
 import api from '@/utils/apis.ts'
 import { useUserStore } from '@/utils/data'
 import { startTaskWithNotification, getTaskList } from '@/utils/taskPoller'
-import {VM_PERMISSION, hasPermission, TAB_PERMISSION_MAP, VM_PERMISSION_LABELS, PERMISSION_FIELD_MASK, HIDDEN_TABS, OWNER_ONLY_TABS, getTabQuota} from '@/types'
+import {VM_PERMISSION, hasPermission, TAB_PERMISSION_MAP, VM_PERMISSION_LABELS, PERMISSION_FIELD_MASK, HIDDEN_TABS, OWNER_ONLY_TABS, getTabQuota, isQuotaExhausted} from '@/types'
+
+const VM_DETAIL_TAB_ORDER = ['overview', 'ip', 'hdd', 'iso', 'nat', 'proxy', 'pci', 'usb', 'backup', 'efi', 'owners', 'access']
+
+/** 详情卡片：标题可点击折叠，移动端用于收起低频信息 */
+function FoldCard({ title, defaultOpen = true, className = '', children }: {
+    title: ReactNode
+    defaultOpen?: boolean
+    className?: string
+    children: ReactNode
+}) {
+    const [open, setOpen] = useState(defaultOpen)
+    return (
+        <Card
+            size="small"
+            variant="borderless"
+            className={`shadow-sm glass-card-transparent vm-classic-fold-card${className ? ` ${className}` : ''}${open ? '' : ' is-collapsed'}`}
+            title={(
+                <button
+                    type="button"
+                    className="vm-classic-fold-trigger"
+                    aria-expanded={open}
+                    onClick={() => setOpen(value => !value)}
+                >
+                    <span>{title}</span>
+                    <DownOutlined className={open ? 'is-open' : ''} />
+                </button>
+            )}
+        >
+            {open && children}
+        </Card>
+    )
+}
+
+function isVMDetailTabVisible(
+    key: string,
+    config: Record<string, any>,
+    permissions: { isAdminUser: boolean; isOwnerOrAdmin: boolean; canManageAccessKey: boolean; userPermissions: number },
+): boolean {
+    if (key === 'access') return permissions.canManageAccessKey
+    if (OWNER_ONLY_TABS.has(key)) return permissions.isOwnerOrAdmin
+    const requiredPermission = TAB_PERMISSION_MAP[key]
+    if (!requiredPermission || permissions.isAdminUser) return true
+    if (getTabQuota(config, key) === 0) return false
+    return !HIDDEN_TABS.has(key) || hasPermission(permissions.userPermissions, requiredPermission)
+}
 
 interface VGConfig {
     gpu_uuid: string
@@ -201,6 +249,15 @@ interface OSConfigItem {
     sys_flag?: boolean
 }
 
+interface HostCapabilities {
+    /** 挂载/卸载光盘是否免重启 */
+    hot_iso?: boolean
+    /** 增删网卡是否免重启 */
+    hot_nic?: boolean
+    /** 数据盘/PCI/USB 是否必须关机 */
+    offline_only?: boolean
+}
+
 interface HostConfig {
     system_maps: OSConfigItem[]
     images_maps?: OSConfigItem[]
@@ -210,12 +267,44 @@ interface HostConfig {
     ipaddr_maps?: Record<string, any>
     ipaddr_ddns?: string[]
     public_addr?: string[]
+    capabilities?: HostCapabilities
 }
 
 function VMDetail() {
     const {hostName, uuid} = useParams<{ hostName: string; uuid: string }>()
     const navigate = useNavigate()
+    const location = useLocation()
     const { user } = useUserStore()
+    const detailLayoutPreferenceKey = getVMDetailLayoutKey(user?.username)
+    const [layoutPreference, setLayoutPreference] = useState<{ key: string; mode: VMDetailLayout }>(() => ({
+        key: detailLayoutPreferenceKey,
+        mode: readVMDetailLayout(user?.username),
+    }))
+    const detailLayout = layoutPreference.key === detailLayoutPreferenceKey
+        ? layoutPreference.mode
+        : readVMDetailLayout(user?.username)
+    const changeDetailLayout = (mode: VMDetailLayout) => {
+        saveVMDetailLayout(user?.username, mode)
+        setLayoutPreference({ key: detailLayoutPreferenceKey, mode })
+        if (mode === 'vertical' && hostName && uuid) {
+            navigate({
+                pathname: `/hosts/${hostName}/vms/${uuid}/v2`,
+                search: location.search,
+                hash: location.hash,
+            })
+        }
+    }
+    const { theme, themePreset, transparentMode } = useTheme()
+    const themePalette = getThemePalette(themePreset, theme === 'dark', transparentMode)
+
+    useEffect(() => {
+        if (detailLayout !== 'vertical' || location.pathname.endsWith('/v2') || !hostName || !uuid) return
+        navigate({
+            pathname: `/hosts/${hostName}/vms/${uuid}/v2`,
+            search: location.search,
+            hash: location.hash,
+        }, { replace: true })
+    }, [detailLayout, hostName, uuid, location.pathname, location.search, location.hash, navigate])
 
     // 状态管理
     const [vm, setVM] = useState<DockDetail | null>(null)
@@ -353,6 +442,20 @@ function VMDetail() {
     // 当前用户是否为主所有者或管理员（用于控制owners tab可见性）
     const [isOwnerOrAdmin, setIsOwnerOrAdmin] = useState(false)
 
+    useEffect(() => {
+        const permissions = {
+            isAdminUser,
+            isOwnerOrAdmin,
+            canManageAccessKey: isAdminUser || (isOwnerOrAdmin && !(user as any)?.temp_login),
+            userPermissions,
+        }
+        const config = vm?.config || {}
+        const fallbackTab = VM_DETAIL_TAB_ORDER.find(key => isVMDetailTabVisible(key, config, permissions))
+        if (fallbackTab && !isVMDetailTabVisible(activeTab, config, permissions)) {
+            setActiveTab(fallbackTab)
+        }
+    }, [activeTab, isAdminUser, isOwnerOrAdmin, userPermissions, user, vm?.config])
+
     // New Confirmation States
     const [isoMountConfirmChecked, setIsoMountConfirmChecked] = useState(false)
     const [unmountIsoConfirmVisible, setUnmountIsoConfirmVisible] = useState(false)
@@ -405,6 +508,56 @@ function VMDetail() {
 
     // 临时状态管理 - 用于显示操作中的状态
     const [tempStatus, setTempStatus] = useState<string | null>(null)
+
+    // 平台能力：决定是否提示“需重启”，以及操作后是否真的重启。
+    // 之前所有平台都提示「需重启/同意强制关机」，但 PVE 换光盘是热生效；
+    // 而真正需要重启的操作又只提示不执行，导致勾选了也没重启。
+    const hotISO = hostConfig?.capabilities?.hot_iso === true
+    const hotNIC = hostConfig?.capabilities?.hot_nic === true
+    const vmRunning = currentStatus.ac_status === 'STARTED'
+
+    // 需要重启才生效的操作：操作成功后真的执行重启，避免“勾选了却没重启”
+    const restartVMForApply = async (reason: string) => {
+        if (!hostName || !uuid) return
+        try {
+            await api.vmPower(hostName, uuid, 'S_RESET')
+            message.success(`${reason}，已重启虚拟机使其生效`)
+        } catch {
+            message.warning(`${reason}，请手动重启虚拟机使其生效`)
+        }
+    }
+
+    // 必须关机才能执行的配置变更：关机 → 执行 → 恢复运行。
+    // 原来每个确认框都写着「我已同意强制关机」，但代码里根本没有关机，
+    // 用户勾选后什么也没发生，配置自然不生效。
+    const withVmOffline = async (label: string, action: () => Promise<void>) => {
+        if (!hostName || !uuid) return
+        const wasRunning = vmRunning
+        if (wasRunning) {
+            const hide = message.loading('正在关闭虚拟机...', 0)
+            try {
+                await api.vmPower(hostName, uuid, 'H_CLOSE')
+                hide()
+            } catch (e: any) {
+                hide()
+                message.error(e?.message || '关闭虚拟机失败，请手动关机后重试')
+                return
+            }
+            await new Promise((resolve) => setTimeout(resolve, 3000))
+        }
+        try {
+            await action()
+        } finally {
+            if (wasRunning) {
+                try {
+                    await api.vmPower(hostName, uuid, 'S_START')
+                    message.success(`${label}已完成，虚拟机已重新启动`)
+                } catch {
+                    message.warning(`${label}已完成，请手动启动虚拟机`)
+                }
+            }
+        }
+    }
     
     // 操作锁定状态 - 执行操作时禁用所有按钮
     const [operationLocked, setOperationLocked] = useState<boolean>(false)
@@ -513,10 +666,10 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
     const getOSIcon = (osName: string) => {
         const name = (osName || '').toLowerCase()
         const iconStyle = {fontSize: '60px', marginRight: '0px'}
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+        const isDark = theme === 'dark'
 
-        if (name.includes('windows')) return <WindowsOutlined style={{...iconStyle, color: '#1890ff'}}/>
-        if (name.includes('macos')) return <AppleOutlined style={{...iconStyle, color: isDark ? '#ffffff' : '#000000'}}/>
+        if (name.includes('windows')) return <WindowsOutlined style={{...iconStyle, color: themePalette.primary}}/>
+        if (name.includes('macos')) return <AppleOutlined style={{...iconStyle, color: themePalette.gray[900]}}/>
         if (name.includes('ubuntu')) return <span className="anticon" style={{...iconStyle, color: '#E95420'}}><i
             className="fab fa-ubuntu"></i><CodeOutlined/></span>
         if (name.includes('centos')) return <span className="anticon"
@@ -846,16 +999,18 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             async () => {
                 try {
                     setUsbActionLoading(true)
-                    const result = await api.setupUSB(hostName!, uuid!, {
-                        usb_key: usbKey,
-                        vid_uuid: usbConfig?.vid_uuid || '',
-                        pid_uuid: usbConfig?.pid_uuid || '',
-                        usb_hint: usbConfig?.usb_hint || '',
-                        action: 'remove'
-                    })
-                    submitAsyncTask(result, '移除USB设备', {
-                        onCompleted: () => loadVMDetail(),
-                        onFailed: () => loadVMDetail(),
+                    await withVmOffline('移除USB设备', async () => {
+                        const result = await api.setupUSB(hostName!, uuid!, {
+                            usb_key: usbKey,
+                            vid_uuid: usbConfig?.vid_uuid || '',
+                            pid_uuid: usbConfig?.pid_uuid || '',
+                            usb_hint: usbConfig?.usb_hint || '',
+                            action: 'remove'
+                        })
+                        submitAsyncTask(result, '移除USB设备', {
+                            onCompleted: () => loadVMDetail(),
+                            onFailed: () => loadVMDetail(),
+                        })
                     })
                 } catch (error: any) {
                     console.error('删除USB设备失败:', error)
@@ -1430,7 +1585,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             if (url && url.startsWith('http')) {
                 window.open(url, '_blank')
             } else {
-                message.error('获取的控制台地址无效')
+                message.error(response.data?.console_error || '获取的控制台地址无效')
             }
         } catch (error) {
             hide()
@@ -1485,7 +1640,11 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             content: (
                 <div>
                     <p className="mb-3">确定要添加网卡吗？</p>
-                    <Alert message="添加网卡后需要重启虚拟机才能生效" type="warning" showIcon className="mb-3"/>
+                    <Alert
+                        message={hotNIC
+                            ? '当前平台支持网卡热插拔，添加后立即生效'
+                            : '添加网卡后需要重启虚拟机才能生效，确认后将自动重启'}
+                        type={hotNIC ? 'info' : 'warning'} showIcon className="mb-3"/>
                 <div className="p-3 rounded">
                         <p className="text-sm mb-1">网卡类型：{_values.nic_type === 'pub' ? '公网' : '内网'}</p>
                         {_values.ip4_addr && <p className="text-sm mb-1">IPv4地址：{_values.ip4_addr}</p>}
@@ -1501,9 +1660,21 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                 setTempStatus('configuring')
                 const hide = message.loading('正在添加网卡...', 0)
                 try {
-                    await api.addIPAddress(hostName!, uuid!, _values)
+                    const addRes = await api.addIPAddress(hostName!, uuid!, _values)
                     hide()
-                    message.success('网卡添加成功，请重启虚拟机使其生效')
+                    const assigned = (addRes.data as any)?.nic?.ip4_addr
+                    if (hotNIC) {
+                        message.success(assigned
+                            ? `网卡添加成功，已分配 IP ${assigned}（无需重启）`
+                            : '网卡添加成功（无需重启）')
+                    } else {
+                        message.success(assigned ? `网卡添加成功，已分配 IP ${assigned}` : '网卡添加成功')
+                        if (vmRunning) {
+                            await restartVMForApply('网卡已添加')
+                        } else {
+                            message.info('请启动虚拟机后新网卡才会生效')
+                        }
+                    }
                     setIpModalVisible(false);
                     ipForm.resetFields();
                     loadIPAddresses()
@@ -1529,7 +1700,11 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             content: (
                 <div>
                     <p className="mb-3">确定要删除网卡 "{nicName}" 吗？</p>
-                    <Alert message="删除网卡后需要重启虚拟机才能生效" type="warning" showIcon/>
+                    <Alert
+                        message={hotNIC
+                            ? '当前平台支持网卡热插拔，删除后立即生效'
+                            : '删除网卡后需要重启虚拟机才能生效，确认后将自动重启'}
+                        type={hotNIC ? 'info' : 'warning'} showIcon/>
                 </div>
             ),
             okText: '确认删除',
@@ -1543,7 +1718,16 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                 try {
                     await api.deleteIPAddress(hostName!, uuid!, nicName)
                     hide()
-                    message.success('网卡删除成功，请重启虚拟机使其生效')
+                    if (hotNIC) {
+                        message.success('网卡删除成功（无需重启）')
+                    } else {
+                        message.success('网卡删除成功')
+                        if (vmRunning) {
+                            await restartVMForApply('网卡已删除')
+                        } else {
+                            message.info('请启动虚拟机后变更才会生效')
+                        }
+                    }
                     loadIPAddresses()
                     loadVMDetail() // 刷新虚拟机信息以更新网卡列表
                     // 操作完成后，清除临时状态
@@ -1614,7 +1798,8 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         const hide = message.loading('正在添加NAT规则...', 0)
         try {
             const data: any = {
-                wan_port: _values.wan_port || '',
+                // 留空表示自动分配：传 0 而不是空串，避免后端 int 字段解析失败
+                wan_port: Number(_values.wan_port) || 0,
                 lan_port: parseInt(_values.lan_port),
                 lan_addr: _values.lan_addr || '',
                 nat_tips: _values.nat_tips || ''
@@ -1667,7 +1852,6 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         try {
             const result = await api.addHDD(hostName!, uuid!, {
                 hdd_size: _values.hdd_size * 1024,
-                hdd_name: _values.hdd_name,
                 hdd_type: _values.hdd_type
             })
             setHddModalVisible(false);
@@ -1688,16 +1872,18 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         if (!hostEnabled) { message.error('该主机已被禁用，无法操作'); return }
         setHddActionLoading(true)
         try {
-            const result = await api.post(`/api/client/hdd/mount/${hostName}/${uuid}`, {
-                hdd_name: currentMountHdd.hdd_path,
-                hdd_size: currentMountHdd.hdd_num,
-                hdd_type: currentMountHdd.hdd_type
-            })
-            setMountHddModalVisible(false);
-            setMountHddConfirmChecked(false);
-            submitAsyncTask(result, '挂载数据盘', {
-                onCompleted: () => loadHDDs(),
-                onFailed: () => loadHDDs(),
+            await withVmOffline('挂载数据盘', async () => {
+                const result = await api.post(`/api/client/hdd/mount/${hostName}/${uuid}`, {
+                    hdd_name: currentMountHdd.hdd_path,
+                    hdd_size: currentMountHdd.hdd_num,
+                    hdd_type: currentMountHdd.hdd_type
+                })
+                setMountHddModalVisible(false);
+                setMountHddConfirmChecked(false);
+                submitAsyncTask(result, '挂载数据盘', {
+                    onCompleted: () => loadHDDs(),
+                    onFailed: () => loadHDDs(),
+                })
             })
         } catch (error) {
             message.error('挂载失败')
@@ -1711,12 +1897,14 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         if (!hostEnabled) { message.error('该主机已被禁用，无法操作'); return }
         setHddActionLoading(true)
         try {
-            const result = await api.post(`/api/client/hdd/unmount/${hostName}/${uuid}`, {hdd_name: currentUnmountHdd.hdd_path})
-            setUnmountHddModalVisible(false);
-            setUnmountHddConfirmChecked(false);
-            submitAsyncTask(result, '卸载数据盘', {
-                onCompleted: () => loadHDDs(),
-                onFailed: () => loadHDDs(),
+            await withVmOffline('卸载数据盘', async () => {
+                const result = await api.post(`/api/client/hdd/unmount/${hostName}/${uuid}`, {hdd_name: currentUnmountHdd.hdd_path})
+                setUnmountHddModalVisible(false);
+                setUnmountHddConfirmChecked(false);
+                submitAsyncTask(result, '卸载数据盘', {
+                    onCompleted: () => loadHDDs(),
+                    onFailed: () => loadHDDs(),
+                })
             })
         } catch (error) {
             message.error('卸载失败')
@@ -1837,25 +2025,14 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         }
     }
 
-    // PCI关机确认后执行
+    // PCI关机确认后执行：关机 → 下发直通 → 重新启动
     const handlePciShutdownConfirm = async () => {
         setPciShutdownConfirmVisible(false)
         setPciShutdownConfirmChecked(false)
-        // 先关机
-        try {
-            const hide = message.loading('正在关闭虚拟机...', 0)
-await api.vmPower(hostName!, uuid!, 'H_CLOSE')
-            hide()
-            message.success('虚拟机已关闭，正在执行PCI直通操作...')
-            // 等待一小段时间让状态更新
-            await new Promise(resolve => setTimeout(resolve, 3000))
-            if (pendingPciAction) {
-                await pendingPciAction()
-            }
-        } catch (e: any) {
-            message.error(e?.message || '关闭虚拟机失败，请手动关机后重试')
-        }
+        const action = pendingPciAction
         setPendingPciAction(null)
+        if (!action) return
+        await withVmOffline('PCI直通配置', action)
     }
 
     const handleOpenTransferHDD = (hdd: HDDInfo) => {
@@ -1896,8 +2073,8 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
         if (!hostEnabled) { message.error('该主机已被禁用，无法操作'); return }
         setIsoActionLoading(true)
         try {
+            // 名称由后端自动生成（iso-年月日时分秒）
             const result = await api.addISO(hostName!, uuid!, {
-                iso_name: _values.iso_name,
                 iso_file: _values.iso_file,
                 iso_hint: _values.iso_hint
             })
@@ -1908,6 +2085,10 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                 onCompleted: () => loadISOs(),
                 onFailed: () => loadISOs(),
             })
+            // 平台不支持热挂载时，必须真的重启，否则“提示了需重启”等于没做
+            if (!hotISO && vmRunning) {
+                await restartVMForApply('光盘已挂载')
+            }
         } catch (error) {
             message.error('挂载失败')
         } finally {
@@ -1927,6 +2108,9 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                 onCompleted: () => loadISOs(),
                 onFailed: () => loadISOs(),
             })
+            if (!hotISO && vmRunning) {
+                await restartVMForApply('光盘已卸载')
+            }
         } catch (error) {
             message.error('卸载失败')
         } finally {
@@ -1941,11 +2125,15 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
         backupForm.resetFields()
         setBackupCreateConfirmChecked(false)
         try {
-            const result = await api.createVMBackup(hostName!, uuid!, {vm_tips: _values.backup_name})
-            submitAsyncTask(result, '创建备份', {
-                onCompleted: () => loadBackups(),
-                onFailed: () => loadBackups(),
-            })
+            // 备份名：<虚拟机名>-backup-年月日时分秒（与后端兜底规则一致）
+            const now = new Date()
+            const pad = (n: number) => String(n).padStart(2, '0')
+            const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+            const result = await api.createVMBackup(hostName!, uuid!, {vm_tips: `${uuid}-backup-${stamp}`})
+            // 备份是分钟级长任务：后端已立即返回受理结果，
+            // 真正的完成状态通过稍后刷新列表体现。
+            message.success(result?.msg || '备份任务已提交，正在后台执行')
+            setTimeout(() => loadBackups(), 5000)
         } catch (error) {
             message.error('创建备份失败')
         } finally {
@@ -2226,19 +2414,28 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
     }
 
     const getChartOption = (title: string, data: number[], color: string, labels?: string[], unit: string = '%') => {
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
         return ({
-        title: {text: title, left: 'center', textStyle: {fontSize: 12, fontWeight: 'normal', color: isDark ? '#ccc' : '#666'}},
+        backgroundColor: 'transparent',
+        title: {text: title, left: 'center', textStyle: {fontSize: 12, fontWeight: 'normal', color: themePalette.gray[600]}},
         tooltip: {
+            backgroundColor: themePalette.elevatedBg,
+            borderColor: themePalette.cardBorder,
+            textStyle: {color: themePalette.gray[900]},
             trigger: 'axis',
             formatter: (params: any[]) => `${params[0].axisValue}<br/>${params[0].marker}${params[0].seriesName}: ${params[0].value}${unit}`
         },
         grid: {left: '3%', right: '4%', bottom: '3%', top: '30px', containLabel: true},
-        xAxis: {type: 'category', boundaryGap: false, data: labels},
+        xAxis: {
+            type: 'category', boundaryGap: false, data: labels,
+            axisLabel: {color: themePalette.gray[600]},
+            axisLine: {lineStyle: {color: themePalette.cardBorder}},
+            axisTick: {show: false},
+        },
         yAxis: {
             type: 'value',
             max: unit === '%' ? 100 : undefined,
-            axisLabel: {formatter: `{value}${unit}`, fontSize: 10}
+            axisLabel: {formatter: `{value}${unit}`, fontSize: 10, color: themePalette.gray[600]},
+            splitLine: {lineStyle: {color: themePalette.cardBorder}},
         },
         series: [{
             name: title,
@@ -2348,90 +2545,76 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
     }
 
     const getProgressBarColor = (percent: number) => {
-        if (percent < 50) return '#10b981'
-        if (percent < 70) return '#f59e0b'
-        if (percent < 90) return '#f97316'
-        return '#ef4444'
+        if (percent < 50) return themePalette.success
+        if (percent < 70) return themePalette.warning
+        if (percent < 90) return themePalette.chartColors[2]
+        return themePalette.danger
     }
 
+    const infoField = (label: string, content: ReactNode, options?: { mono?: boolean }) => (
+        <div className="vm-classic-property" key={label}>
+            <span className="vm-classic-property-label">{label}</span>
+            <div className={`vm-classic-property-value${options?.mono ? ' is-mono' : ''}`}>{content}</div>
+        </div>
+    )
+
+    const powerLocked = isIntermediateState() || !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS)
+    const powerToggleLabel = currentStatus.ac_status === 'STOPPED' ? '启动' : '关机'
+    const pauseToggleLabel = currentStatus.ac_status === 'SUSPEND' ? '恢复' : '暂停'
+    const pauseToggleDisabled = powerLocked
+    const restartDisabled = powerLocked || (currentStatus.ac_status !== 'STARTED' && currentStatus.ac_status !== 'SUSPEND')
+    const hardPowerDisabled = restartDisabled
+
+    const isCompactViewport = window.innerWidth < 768
+
     const overviewTab = (
-        <Row gutter={24}>
+        <Row className="vm-classic-overview-row" gutter={[16, 16]}>
             {/* 左侧面板：信息 + 配置 */}
-            <Col span={16}>
+            <Col xs={24} xxl={16}>
                 <div className="space-y-6">
                     {/* 机器信息区域 */}
-                    <Card title="实例信息" size="small" variant="borderless" className="shadow-sm glass-card-transparent">
-                        <Row gutter={24}>
-                            <Col span={16}>
-                                <Descriptions column={2} bordered size="small" styles={{
-                                    label: {width: '100px', fontWeight: 500},
-                                    content: {fontWeight: 500}
-                                }}>
-                                    <Descriptions.Item label="实例名称">{config.vm_uuid}</Descriptions.Item>
-                                    <Descriptions.Item label="系统密码">
-                                        {hasPermission(userPermissions, VM_PERMISSION.PWD_EDITS) ? (
-                                            <Space size="small">
-                                                <span
-                                                    className="font-mono">{showPassword ? config.os_pass : '••••••••'}</span>
-                                                <EyeOutlined className="cursor-pointer"
-                                                             onClick={() => setShowPassword(!showPassword)}/>
-                                                <CopyOutlined className="cursor-pointer"
-                                                              onClick={() => handleCopyPassword(config.os_pass || '', '系统')}/>
-                                                <EditOutlined className="cursor-pointer text-blue-500"
-                                                              onClick={() => { setPasswordActionType('os_password'); setPasswordModalVisible(true) }}/>
-                                            </Space>
-                                        ) : (
-                                            <span className="text-gray-400">无权限查看</span>
-                                        )}
-                                    </Descriptions.Item>
-
-                                    <Descriptions.Item label="实例状态"><Badge
-                                        status={getStatusColor(displayStatus)}
-                                        text={getStatusText(displayStatus)}/></Descriptions.Item>
-                                    <Descriptions.Item label="远程密码">
-                                        {hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS) ? (
-                                            <Space size="small">
-                                                <span
-                                                    className="font-mono">{showVncPassword ? config.vc_pass : '••••••••'}</span>
-                                                <EyeOutlined className="cursor-pointer"
-                                                             onClick={() => setShowVncPassword(!showVncPassword)}/>
-                                                <CopyOutlined className="cursor-pointer"
-                                                              onClick={() => handleCopyPassword(config.vc_pass || '', 'VNC')}/>
-                                                <EditOutlined className="cursor-pointer text-blue-500"
-                                                              onClick={() => { setPasswordActionType('vnc_password'); setPasswordModalVisible(true) }}/>
-                                            </Space>
-                                        ) : (
-                                            <span className="text-gray-400">无权限查看</span>
-                                        )}
-                                    </Descriptions.Item>
-
-                                    <Descriptions.Item label="主机名称">{hostName}</Descriptions.Item>
-                                    <Descriptions.Item
-                                        label="主机类型">{hostConfig?.server_type || vm.config?.virt_type || 'Hyper-V'}</Descriptions.Item>
-                                    <Descriptions.Item label="操作系统">
-                                        <Space>
-                                            {/*{getOSIcon(config.os_name || '')}*/}
-                                            <span>{getOSDisplayName(config.os_name || '')}</span>
-                                        </Space>
-                                    </Descriptions.Item>
-                                    {vm.config?.nic_all && Object.values(vm.config.nic_all).some((nic: any) => nic.nic_type !== 'pub') && hostConfig?.public_addr?.length ? (
-                                        <Descriptions.Item label="公网IP">{hostConfig.public_addr[0]}</Descriptions.Item>
-                                    ) : null}
-                                    <Descriptions.Item label="端口数量">{config.nat_num || 0} 个</Descriptions.Item>
-                                    <Descriptions.Item
-                                        label="IPv4地址">{vm.ipv4_address || '未分配'}</Descriptions.Item>
-                                    <Descriptions.Item
-                                        label="IPv6地址">{vm.ipv6_address || '未分配'}</Descriptions.Item>
-                                    <Descriptions.Item label="VNC 端口">{config.vc_port || '未设置'}</Descriptions.Item>
-                                    <Descriptions.Item label="上行带宽">{config.speed_u || 0} Mbps</Descriptions.Item>
-                                    <Descriptions.Item label="下行带宽">{config.speed_d || 0} Mbps</Descriptions.Item>
-                                    {/*<Descriptions.Item label="主所有者">{config.own_all ? Object.keys(config.own_all)[0] || '未知' : '未知'}</Descriptions.Item>*/}
-
-                                </Descriptions>
+                    <FoldCard title="实例信息">
+                        <Row gutter={[16, 16]} className="vm-classic-instance-details-row">
+                            <Col xs={24}>
+                                <div className="vm-classic-property-grid">
+                                    {infoField('实例名称', config.vm_uuid, { mono: true })}
+                                    {infoField('实例状态', <Badge status={getStatusColor(displayStatus)} text={getStatusText(displayStatus)} />)}
+                                    {infoField('系统密码',
+                                        hasPermission(userPermissions, VM_PERMISSION.PWD_EDITS) ? (
+                                            <div className="vm-classic-secret-control">
+                                                <span className="vm-classic-secret-text font-mono">{showPassword ? config.os_pass : '••••••••'}</span>
+                                                <span className="vm-classic-secret-actions">
+                                                    <EyeOutlined aria-label={showPassword ? '隐藏系统密码' : '显示系统密码'} className="cursor-pointer" onClick={() => setShowPassword(!showPassword)}/>
+                                                    <CopyOutlined aria-label="复制系统密码" className="cursor-pointer" onClick={() => handleCopyPassword(config.os_pass || '', '系统')}/>
+                                                    <EditOutlined aria-label="修改系统密码" className="cursor-pointer text-blue-500" onClick={() => { setPasswordActionType('os_password'); setPasswordModalVisible(true) }}/>
+                                                </span>
+                                            </div>
+                                        ) : <span className="vm-classic-property-muted">无权限查看</span>
+                                    )}
+                                    {infoField('远程密码',
+                                        hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS) ? (
+                                            <div className="vm-classic-secret-control">
+                                                <span className="vm-classic-secret-text font-mono">{showVncPassword ? config.vc_pass : '••••••••'}</span>
+                                                <span className="vm-classic-secret-actions">
+                                                    <EyeOutlined aria-label={showVncPassword ? '隐藏远程密码' : '显示远程密码'} className="cursor-pointer" onClick={() => setShowVncPassword(!showVncPassword)}/>
+                                                    <CopyOutlined aria-label="复制远程密码" className="cursor-pointer" onClick={() => handleCopyPassword(config.vc_pass || '', 'VNC')}/>
+                                                    <EditOutlined aria-label="修改远程密码" className="cursor-pointer text-blue-500" onClick={() => { setPasswordActionType('vnc_password'); setPasswordModalVisible(true) }}/>
+                                                </span>
+                                            </div>
+                                        ) : <span className="vm-classic-property-muted">无权限查看</span>
+                                    )}
+                                    {infoField('主机名称', hostName, { mono: true })}
+                                    {infoField('操作系统', getOSDisplayName(config.os_name || ''))}
+                                    {infoField('IPv4 地址', vm.ipv4_address || '未分配', { mono: true })}
+                                    {infoField('IPv6 地址', vm.ipv6_address || '未分配', { mono: true })}
+                                    {infoField('VNC 端口', config.vc_port || '未设置', { mono: true })}
+                                    {infoField('端口数量', `${config.nat_num || 0} 个`)}
+                                    {infoField('上行带宽', `${config.speed_u || 0} Mbps`)}
+                                    {infoField('下行带宽', `${config.speed_d || 0} Mbps`)}
+                                </div>
                             </Col>
-                            <Col span={8} className="flex flex-col justify-between">
-                                <div className="rounded-lg flex items-center justify-center mb-4"
-                                     style={{height: 170}}>
+                            <Col xs={24} className="vm-classic-info-visual">
+                                <div className="vm-classic-info-screenshot">
                                     {(() => {
                                         const serverType = hostConfig?.server_type || '';
                                         if (serverType === 'OCInterface' || serverType === 'LxContainer') {
@@ -2439,25 +2622,25 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                                 <div className="text-center flex flex-col items-center justify-center">
                                                     <div style={{
                                                         width: 240, height: 120,
-                                                        background: 'var(--bg-secondary, #1a1a2e)',
+                                                        background: 'var(--art-sunken-bg)',
                                                         borderRadius: 8,
                                                         display: 'flex', flexDirection: 'column',
                                                         alignItems: 'center', justifyContent: 'center',
-                                                        border: '2px solid var(--border-color, #333)',
+                                                        border: '2px solid var(--art-card-border)',
                                                         position: 'relative',
                                                         overflow: 'hidden'
                                                     }}>
                                                         <div style={{
                                                             position: 'absolute', top: 0, left: 0, right: 0,
-                                                            height: 16, background: 'var(--border-color, #333)',
+                                                            height: 16, background: 'var(--art-card-border)',
                                                             display: 'flex', alignItems: 'center', paddingLeft: 6, gap: 3
                                                         }}>
                                                             <span style={{width: 6, height: 6, borderRadius: '50%', background: '#ff5f57'}}/>
                                                             <span style={{width: 6, height: 6, borderRadius: '50%', background: '#febc2e'}}/>
                                                             <span style={{width: 6, height: 6, borderRadius: '50%', background: '#28c840'}}/>
                                                         </div>
-                                                        <CodeOutlined style={{fontSize: 28, color: '#52c41a', marginTop: 8}}/>
-                                                        <div style={{fontSize: 9, color: '#52c41a', fontFamily: 'monospace', marginTop: 2}}>Shell</div>
+                                                        <CodeOutlined style={{fontSize: 28, color: 'var(--art-success)', marginTop: 8}}/>
+                                                        <div style={{fontSize: 9, color: 'var(--art-success)', fontFamily: 'monospace', marginTop: 2}}>Shell</div>
                                                     </div>
                                                     <div className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>此虚拟机所属的物理机不提供桌面截图</div>
                                                 </div>
@@ -2501,89 +2684,101 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                         }
                                     })()}
                                 </div>
-                                <div className="grid grid-cols-4 gap-2">
-                                    <Tooltip title={isSuspendedState() ? "虚拟机已暂停，请先恢复" : "启动"}><Button size="small" icon={<PlayCircleOutlined/>}
-                                                                  onClick={() => handlePowerAction('start')}
-                                                                  disabled={currentStatus.ac_status === 'STARTED' || isIntermediateState() || 
-                                                                            !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS)}
-                                                                  block><span
-                                        className="hidden md:inline">启动</span></Button></Tooltip>
-                                    <Tooltip title={isIntermediateState() ? "虚拟机操作中，请稍候" : "关机"}><Button size="small" icon={<PoweroffOutlined/>}
-                                                                  onClick={() => handlePowerAction('stop')}
-                                                                  disabled={currentStatus.ac_status !== 'STARTED' || isIntermediateState() || 
-                                                                            !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS)}
-                                                                  danger block><span
-                                        className="hidden md:inline">关机</span></Button></Tooltip>
-                                    <Tooltip title={isIntermediateState() ? "虚拟机操作中，请稍候" : "重启"}><Button size="small" icon={<ReloadOutlined/>}
-                                                                  onClick={() => handlePowerAction('reset')}
-                                                                  disabled={currentStatus.ac_status !== 'STARTED' || isIntermediateState() || 
-                                                                            !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS)}
-                                                                  block><span
-                                        className="hidden md:inline">重启</span></Button></Tooltip>
-                                    <Tooltip title={isIntermediateState() ? "虚拟机操作中，请稍候" : "暂停"}><Button size="small" icon={<PauseCircleOutlined/>}
-                                                                  onClick={() => handlePowerAction('pause')}
-                                                                  disabled={currentStatus.ac_status !== 'STARTED' || isIntermediateState() || 
-                                                                            !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS)}
-                                                                  block><span
-                                        className="hidden md:inline">暂停</span></Button></Tooltip>
+                                <div className="vm-classic-action-groups">
+                                  <section className="vm-classic-action-group">
+                                    <div className="vm-classic-power-grid">
+                                      <Dropdown
+                                        trigger={['click']}
+                                        menu={{
+                                          items: [
+                                            { key: 'start', label: '启动', icon: <PlayCircleOutlined/>, disabled: powerLocked, onClick: () => handlePowerAction('start') },
+                                            { key: 'stop', label: '关机', icon: <PoweroffOutlined/>, danger: true, disabled: powerLocked, onClick: () => handlePowerAction('stop') },
+                                          ],
+                                        }}
+                                      >
+                                        <Button size="small" className="vm-classic-split-btn" icon={currentStatus.ac_status === 'STOPPED' ? <PlayCircleOutlined/> : <PoweroffOutlined/>} block disabled={powerLocked}>
+                                          <span className="vm-classic-action-label">{powerToggleLabel}</span>
+                                          <DownOutlined className="vm-classic-split-caret"/>
+                                        </Button>
+                                      </Dropdown>
 
-                                    <Tooltip title={isIntermediateState() && !isSuspendedState() ? "虚拟机操作中，请稍候" : "恢复"}><Button size="small" icon={<PlayCircleOutlined/>}
-                                                                  onClick={() => handlePowerAction('resume')}
-                                                                  disabled={currentStatus.ac_status !== 'SUSPEND' || (isIntermediateState() && !isSuspendedState()) || 
-                                                                            !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS)}
-                                                                  block><span
-                                        className="hidden md:inline">恢复</span></Button></Tooltip>
-                                    <Tooltip title={isIntermediateState() ? "虚拟机操作中，请稍候" : "强制关机"}><Button size="small" danger icon={<PoweroffOutlined/>}
-                                                                      onClick={() => handlePowerAction('hard_stop')}
-                                                                      disabled={(currentStatus.ac_status !== 'STARTED' && currentStatus.ac_status !== 'SUSPEND') || 
-                                                                                isIntermediateState() || 
-                                                                                !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS)}
-                                                                      block><span
-                                        className="hidden md:inline">强关</span></Button></Tooltip>
-                                    <Tooltip title={isIntermediateState() ? "虚拟机操作中，请稍候" : "强制重启"}><Button size="small" danger icon={<ReloadOutlined/>}
-                                                                      onClick={() => handlePowerAction('hard_reset')}
-                                                                      disabled={(currentStatus.ac_status !== 'STARTED' && currentStatus.ac_status !== 'SUSPEND') || 
-                                                                                isIntermediateState() || 
-                                                                                !hasPermission(userPermissions, VM_PERMISSION.PWR_EDITS)}
-                                                                      block><span
-                                        className="hidden md:inline">重置</span></Button></Tooltip>
-                                    <Tooltip title={isIntermediateState() || isSuspendedState() ? "虚拟机操作中或已暂停" : "编辑配置"}><Button size="small" icon={<EditOutlined/>}
-                                                                      onClick={() => setEditModalVisible(true)}
-                                                                      disabled={operationLocked || isIntermediateState() || isSuspendedState() || 
-                                                                                !hasPermission(userPermissions, VM_PERMISSION.VM_MODIFY) || !user?.can_modify_vm}
-                                                                      block><span
-                                        className="hidden md:inline">编辑</span></Button></Tooltip>
+                                      <Dropdown
+                                        trigger={['click']}
+                                        menu={{
+                                          items: [
+                                            { key: 'reset', label: '重启', icon: <ReloadOutlined/>, disabled: restartDisabled, onClick: () => handlePowerAction('reset') },
+                                            { key: 'hard_reset', label: '强制重启', icon: <ReloadOutlined/>, danger: true, disabled: restartDisabled, onClick: () => handlePowerAction('hard_reset') },
+                                          ],
+                                        }}
+                                      >
+                                        <Button size="small" className="vm-classic-split-btn" icon={<ReloadOutlined/>} block disabled={restartDisabled}>
+                                          <span className="vm-classic-action-label">重启</span>
+                                          <DownOutlined className="vm-classic-split-caret"/>
+                                        </Button>
+                                      </Dropdown>
 
-                                    <Tooltip title="重装系统"><Button size="small" danger icon={<CloudSyncOutlined/>}
-                                                                      onClick={() => setReinstallModalVisible(true)}
-                                                                      disabled={!hasPermission(userPermissions, VM_PERMISSION.SYS_EDITS)}
-                                                                      block><span
-                                        className="hidden md:inline">重装</span></Button></Tooltip>
-                                    <Tooltip title="删除"><Button size="small" danger icon={<DeleteOutlined/>}
-                                                                  onClick={handleDelete}
-                                                                  disabled={!hasPermission(userPermissions, VM_PERMISSION.VM_DELETE) || !user?.can_delete_vm}
-                                                                  block><span
-                                        className="hidden md:inline">删除</span></Button></Tooltip>
-                                    <Tooltip title="VNC控制台"><Button size="small" type="primary"
-                                                                       icon={<DesktopOutlined/>} onClick={handleOpenVNC}
-                                                                       disabled={!hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS)}
-                                                                       block><span
-                                        className="hidden md:inline">VNC</span></Button></Tooltip>
-                                    <Tooltip title="修改密码"><Button size="small" icon={<KeyOutlined/>}
-                                                                      onClick={() => setPasswordModalVisible(true)}
-                                                                      disabled={!hasPermission(userPermissions, VM_PERMISSION.PWD_EDITS)}
-                                                                      block><span
-                                        className="hidden md:inline">改密</span></Button></Tooltip>
+                                      <Button size="small" danger icon={<PoweroffOutlined/>} block disabled={hardPowerDisabled}
+                                              onClick={() => handlePowerAction('hard_stop')}>
+                                        <span className="vm-classic-action-label">强制关机</span>
+                                      </Button>
+
+                                      <Dropdown
+                                        trigger={['click']}
+                                        menu={{
+                                          items: [
+                                            { key: 'pause', label: '暂停', icon: <PauseCircleOutlined/>, disabled: powerLocked, onClick: () => handlePowerAction('pause') },
+                                            { key: 'resume', label: '恢复', icon: <PlayCircleOutlined/>, disabled: powerLocked, onClick: () => handlePowerAction('resume') },
+                                          ],
+                                        }}
+                                      >
+                                        <Button size="small" className="vm-classic-split-btn" icon={currentStatus.ac_status === 'SUSPEND' ? <PlayCircleOutlined/> : <PauseCircleOutlined/>} block disabled={pauseToggleDisabled}>
+                                          <span className="vm-classic-action-label">{pauseToggleLabel}</span>
+                                          <DownOutlined className="vm-classic-split-caret"/>
+                                        </Button>
+                                      </Dropdown>
+
+                                      <Button size="small" danger icon={<CloudSyncOutlined/>} block
+                                              disabled={!hasPermission(userPermissions, VM_PERMISSION.SYS_EDITS)}
+                                              onClick={() => setReinstallModalVisible(true)}>
+                                        <span className="vm-classic-action-label">重装</span>
+                                      </Button>
+
+                                      <Button size="small" danger icon={<DeleteOutlined/>} block
+                                              disabled={!hasPermission(userPermissions, VM_PERMISSION.VM_DELETE) || !user?.can_delete_vm}
+                                              onClick={handleDelete}>
+                                        <span className="vm-classic-action-label">删除</span>
+                                      </Button>
+
+                                      <Button size="small" type="primary" icon={<DesktopOutlined/>} block
+                                              disabled={!hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS)}
+                                              onClick={handleOpenVNC}>
+                                        <span className="vm-classic-action-label">VNC</span>
+                                      </Button>
+
+                                      <Button size="small" icon={<EditOutlined/>} block
+                                              disabled={operationLocked || isIntermediateState() || isSuspendedState() ||
+                                                        !hasPermission(userPermissions, VM_PERMISSION.VM_MODIFY) || !user?.can_modify_vm}
+                                              onClick={() => setEditModalVisible(true)}>
+                                        <span className="vm-classic-action-label">编辑</span>
+                                      </Button>
+
+                                      <Button size="small" icon={<KeyOutlined/>} block
+                                              disabled={!hasPermission(userPermissions, VM_PERMISSION.PWD_EDITS)}
+                                              onClick={() => setPasswordModalVisible(true)}>
+                                        <span className="vm-classic-action-label">改密</span>
+                                      </Button>
+                                    </div>
+                                  </section>
                                 </div>
                             </Col>
                         </Row>
-                    </Card>
+                    </FoldCard>
 
                     {/* 实例配置区域 */}
-                    <Card title="实例配置" size="small" variant="borderless" className="shadow-sm glass-card-transparent" style={{minHeight: '780px'}}>
-                        <Row gutter={[16, 16]}>
-                            <Col span={8}>
-                                <div className="space-y-4">
+                    <FoldCard title="实例配置" defaultOpen={!isCompactViewport} className="vm-classic-resource-config">
+                        <Row gutter={[16, 16]} className="vm-classic-resource-grid">
+                            <Col xs={24} sm={12} xl={8} className="vm-classic-resource-group">
+                                <div className="space-y-4 vm-classic-resource-stack">
                                     <ResourceCard title="CPU" icon={<AreaChartOutlined className="text-blue-500"/>}
                                                   value={`${config.cpu_num || 0} 核`} subValue="利用率"
                                                   percent={currentStatus.cpu_usage || 0}
@@ -2600,8 +2795,8 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                                   color={getProgressBarColor(config.gpu_mem > 0 ? Math.round((currentStatus.gpu_total || 0) / config.gpu_mem * 100) : 0)}/>
                                 </div>
                             </Col>
-                            <Col span={8}>
-                                <div className="space-y-4">
+                            <Col xs={24} sm={12} xl={8} className="vm-classic-resource-group">
+                                <div className="space-y-4 vm-classic-resource-stack">
                                     <ResourceCard title="系统盘" icon={<HddOutlined className="text-yellow-500"/>}
                                                   value={`已用 ${formatDisk(currentStatus.hdd_usage || 0)} / ${formatDisk(config.hdd_num || 0)}`}
                                                   subValue="使用率"
@@ -2619,8 +2814,8 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                                   color={getProgressBarColor(config.nat_num > 0 ? Math.round((config.nat_all ? Object.keys(config.nat_all).length : 0) / config.nat_num * 100) : 0)}/>
                                 </div>
                             </Col>
-                            <Col span={8}>
-                                <div className="space-y-4">
+                            <Col xs={24} sm={12} xl={8} className="vm-classic-resource-group">
+                                <div className="space-y-4 vm-classic-resource-stack">
                                     <ResourceCard title="上行带宽" icon={<CloudSyncOutlined className="text-cyan-500"/>}
                                                   value={`已用 ${currentStatus.network_u || 0} / ${config.speed_u || 0} Mbps`}
                                                   subValue="使用率"
@@ -2642,7 +2837,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
 
                         {/* 网络配置 */}
                         <Divider style={{margin: '12px 0 8px'}}/>
-                        <Descriptions title="网络配置" size="small" column={4} bordered style={{tableLayout: 'fixed'}} labelStyle={{width: '150px'}} contentStyle={{width: '100px'}}>
+                        <Descriptions className="vm-classic-properties vm-classic-network-properties" title="网络配置" size="small" column={{ xs: 1, sm: 2, xl: 3 }} bordered>
                             <Descriptions.Item label="上行带宽">{config.speed_u || 0} Mbps</Descriptions.Item>
                             <Descriptions.Item label="下行带宽">{config.speed_d || 0} Mbps</Descriptions.Item>
                             <Descriptions.Item label="端口配额">{config.nat_num || 0} 个</Descriptions.Item>
@@ -2655,7 +2850,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                         <br></br>
                         {/* 配额配置 */}
                         <Divider style={{margin: '12px 0 8px'}}/>
-                        <Descriptions title="配额配置" size="small" column={4} bordered style={{tableLayout: 'fixed'}} labelStyle={{width: '150px'}} contentStyle={{width: '100px'}}>
+                        <Descriptions className="vm-classic-properties vm-classic-quota-properties" title="配额配置" size="small" column={{ xs: 1, sm: 2, xl: 3 }} bordered>
                             <Descriptions.Item label="备份配额">{config.bak_num ?? 1}</Descriptions.Item>
                             <Descriptions.Item label="光盘配额">{config.iso_num ?? 1}</Descriptions.Item>
                             <Descriptions.Item label="PCI 配额">{config.pci_num ?? 0}</Descriptions.Item>
@@ -2665,13 +2860,13 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                             <Descriptions.Item label="处理器配额">{config.cpu_per ? `${config.cpu_per}%` : 'N/A'}</Descriptions.Item>
                             <Descriptions.Item label="系统盘IOPS">{config.hdd_iop || 0}</Descriptions.Item>
                         </Descriptions>
-                    </Card>
+                    </FoldCard>
                 </div>
             </Col>
 
             {/* 右侧面板：历史资源用量 */}
-            <Col span={8} style={{padding: '0'}}>
-                <Card title="资源用量" size="small" variant="borderless" className="shadow-sm glass-card-transparent h-full" style={{padding: '0', minHeight: '780px'}}
+            <Col xs={24} xxl={8} style={{padding: 0}}>
+                <Card title="资源用量" size="small" variant="borderless" className="shadow-sm glass-card-transparent h-full vm-classic-resource-history" style={{padding: '0'}}
                       extra={
                           <Radio.Group value={timeRange} onChange={e => setTimeRange(e.target.value)} size="small"
                                        optionType="button" buttonStyle="solid">
@@ -2697,23 +2892,23 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     <div className="space-y-4 flex flex-col" style={{padding: '0'}}>
                         {chartView === 'performance' && (
                             <>
-                                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded p-2 overflow-hidden flex-shrink-0" style={{height: '344px', borderRadius: '20px'}}>
+                                <div className="dock-detail-chart-panel vm-classic-history-chart">
                                     <ReactECharts
-                                        option={getChartOption('CPU使用率', monitorData.cpu, '#3b82f6', monitorData.labels)}
+                                        option={getChartOption('CPU使用率', monitorData.cpu, themePalette.chartColors[0], monitorData.labels)}
                                         style={{height: '100%', width: '100%'}}
                                         notMerge={true}
                                     />
                                 </div>
-                                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded p-2 overflow-hidden flex-shrink-0" style={{height: '343px', borderRadius: '20px'}}>
+                                <div className="dock-detail-chart-panel vm-classic-history-chart">
                                     <ReactECharts
-                                        option={getChartOption('RAM使用率', monitorData.memory, '#f59e0b', monitorData.labels)}
+                                        option={getChartOption('RAM使用率', monitorData.memory, themePalette.chartColors[2], monitorData.labels)}
                                         style={{height: '100%', width: '100%'}}
                                         notMerge={true}
                                     />
                                 </div>
-                                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded p-2 overflow-hidden flex-shrink-0" style={{height: '343px', borderRadius: '20px'}}>
+                                <div className="dock-detail-chart-panel vm-classic-history-chart">
                                     <ReactECharts
-                                        option={getChartOption('GPU使用率', monitorData.gpu, '#8b5cf6', monitorData.labels, 'MB')}
+                                        option={getChartOption('GPU使用率', monitorData.gpu, themePalette.chartColors[3], monitorData.labels, 'MB')}
                                         style={{height: '100%', width: '100%'}}
                                         notMerge={true}
                                     />
@@ -2722,23 +2917,23 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                         )}
                         {chartView === 'resource' && (
                             <>
-                                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded p-2 overflow-hidden flex-shrink-0" style={{height: '344px', borderRadius: '20px'}}>
+                                <div className="dock-detail-chart-panel vm-classic-history-chart">
                                     <ReactECharts
-                                        option={getChartOption('硬盘使用率', monitorData.disk, '#10b981', monitorData.labels)}
+                                        option={getChartOption('硬盘使用率', monitorData.disk, themePalette.chartColors[1], monitorData.labels)}
                                         style={{height: '100%', width: '100%'}}
                                         notMerge={true}
                                     />
                                 </div>
-                                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded p-2 overflow-hidden flex-shrink-0" style={{height: '343px', borderRadius: '20px'}}>
+                                <div className="dock-detail-chart-panel vm-classic-history-chart">
                                     <ReactECharts
-                                        option={getChartOption('流量使用率', monitorData.traffic, '#ef4444', monitorData.labels, 'GB')}
+                                        option={getChartOption('流量使用率', monitorData.traffic, themePalette.chartColors[5], monitorData.labels, 'GB')}
                                         style={{height: '100%', width: '100%'}}
                                         notMerge={true}
                                     />
                                 </div>
-                                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded p-2 overflow-hidden flex-shrink-0" style={{height: '343px', borderRadius: '20px'}}>
+                                <div className="dock-detail-chart-panel vm-classic-history-chart">
                                     <ReactECharts
-                                        option={getChartOption('端口使用数', monitorData.nat, '#6366f1', monitorData.labels, '个')}
+                                        option={getChartOption('端口使用数', monitorData.nat, themePalette.chartColors[4], monitorData.labels, '个')}
                                         style={{height: '100%', width: '100%'}}
                                         notMerge={true}
                                     />
@@ -2747,23 +2942,23 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                         )}
                         {chartView === 'network' && (
                             <>
-                                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded p-2 overflow-hidden flex-shrink-0" style={{height: '344px', borderRadius: '20px'}}>
+                                <div className="dock-detail-chart-panel vm-classic-history-chart">
                                     <ReactECharts
-                                        option={getChartOption('上行带宽率', monitorData.netUp, '#06b6d4', monitorData.labels, 'Mbps')}
+                                        option={getChartOption('上行带宽率', monitorData.netUp, themePalette.chartColors[6], monitorData.labels, 'Mbps')}
                                         style={{height: '100%', width: '100%'}}
                                         notMerge={true}
                                     />
                                 </div>
-                                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded p-2 overflow-hidden flex-shrink-0" style={{height: '343px', borderRadius: '20px'}}>
+                                <div className="dock-detail-chart-panel vm-classic-history-chart">
                                     <ReactECharts
-                                        option={getChartOption('下行带宽率', monitorData.netDown, '#0891b2', monitorData.labels, 'Mbps')}
+                                        option={getChartOption('下行带宽率', monitorData.netDown, themePalette.chartColors[7], monitorData.labels, 'Mbps')}
                                         style={{height: '100%', width: '100%'}}
                                         notMerge={true}
                                     />
                                 </div>
-                                <div className="backdrop-blur-md bg-white/10 dark:bg-black/10 rounded p-2 overflow-hidden flex-shrink-0" style={{height: '343px', borderRadius: '20px'}}>
+                                <div className="dock-detail-chart-panel vm-classic-history-chart">
                                     <ReactECharts
-                                        option={getChartOption('反向代理数', monitorData.proxy, '#ec4899', monitorData.labels, '个')}
+                                        option={getChartOption('反向代理数', monitorData.proxy, themePalette.chartColors[3], monitorData.labels, '个')}
                                         style={{height: '100%', width: '100%'}}
                                         notMerge={true}
                                     />
@@ -2796,7 +2991,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                     size="small"
                                 />
                                 <Button type="primary" icon={<PlusOutlined/>}
-                                                            disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.NIC_EDITS) || (config.nic_num !== undefined && config.nic_all && Object.keys(config.nic_all).length >= (config.nic_num || 0))}
+                                                            disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.NIC_EDITS) || isQuotaExhausted(config.nic_num, config.nic_all ? Object.keys(config.nic_all).length : 0)}
                                                             onClick={() => setIpModalVisible(true)}>添加网卡</Button>
                             </Space>}
                             variant="borderless">
@@ -2877,7 +3072,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                     size="small"
                                 />
                                 <Button type="primary" icon={<PlusOutlined/>}
-                                                              disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.HDD_EDITS) || (config.dat_num > 0 && hdds.length >= config.dat_num)}
+                                                              disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.HDD_EDITS) || isQuotaExhausted(config.dat_num, hdds.length)}
                                                               onClick={() => setHddModalVisible(true)}>挂载数据盘</Button>
                             </Space>}
                             variant="borderless">
@@ -2996,7 +3191,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                     size="small"
                                 />
                                 <Button type="primary" icon={<PlusOutlined/>}
-                                                               disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.ISO_EDITS) || (config.iso_num > 0 && isos.length >= config.iso_num)}
+                                                               disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.ISO_EDITS) || isQuotaExhausted(config.iso_num, isos.length)}
                                                                onClick={() => setIsoModalVisible(true)}>挂载ISO</Button>
                             </Space>}
                             variant="borderless">
@@ -3080,7 +3275,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                     ]}
                                     size="small"
                                 />
-                                <Button type="primary" icon={<PlusOutlined/>} disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.NET_EDITS) || (config.nat_num > 0 && natRules.length >= config.nat_num)} onClick={() => {
+                                <Button type="primary" icon={<PlusOutlined/>} disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.NET_EDITS) || isQuotaExhausted(config.nat_num, natRules.length)} onClick={() => {
                                     setNatModalVisible(true);
                                     form.setFieldsValue({lan_addr: availableIPs[0]})
                                 }}>添加规则</Button>
@@ -3196,7 +3391,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     ]}
                     size="small"
                 />
-                <Button type="primary" icon={<PlusOutlined/>} disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.WEB_EDITS) || (config.web_num > 0 && proxyRules.length >= config.web_num)} onClick={() => {
+                <Button type="primary" icon={<PlusOutlined/>} disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.WEB_EDITS) || isQuotaExhausted(config.web_num, proxyRules.length)} onClick={() => {
                 setProxyModalVisible(true);
                 proxyForm.setFieldsValue({backend_ip: availableIPs[0]})
             }}>添加代理</Button>
@@ -3300,7 +3495,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     size="small"
                 />
                 <Button type="primary" icon={<PlusOutlined/>}
-                                                            disabled={operationLocked || (config.pci_num > 0 && vm && vm.config && vm.config.pci_all && Object.keys(vm.config.pci_all).length >= config.pci_num)}
+                                                            disabled={operationLocked || isQuotaExhausted(config.pci_num, vm?.config?.pci_all ? Object.keys(vm.config.pci_all).length : 0)}
                                                             onClick={handleOpenPciModal}>添加PCI设备</Button>
             </Space>}
                             variant="borderless">
@@ -3381,7 +3576,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     ]}
                     size="small"
                 />
-                <Button type="primary" icon={<PlusOutlined/>} disabled={operationLocked || (config.usb_num > 0 && usbList.length >= config.usb_num)} onClick={handleOpenUsbModal}>添加USB设备</Button>
+                <Button type="primary" icon={<PlusOutlined/>} disabled={operationLocked || isQuotaExhausted(config.usb_num, usbList.length)} onClick={handleOpenUsbModal}>添加USB设备</Button>
             </Space>} variant="borderless">
                 {usbList && usbList.length > 0 ? (
                     usbViewMode === 'card' ? (
@@ -3465,7 +3660,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     size="small"
                 />
                 <Button type="primary" icon={<PlusOutlined/>}
-                                                            disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.VM_BACKUP) || (config.bak_num > 0 && backups.length >= config.bak_num)}
+                                                            disabled={operationLocked || !hasPermission(userPermissions, VM_PERMISSION.VM_BACKUP) || isQuotaExhausted(config.bak_num, backups.length)}
                                                             onClick={() => setBackupModalVisible(true)}>创建备份</Button>
             </Space>}
                             variant="borderless">
@@ -3613,7 +3808,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                  className="glass-card flex items-center justify-between px-4 py-3">
                                 <div className="flex items-center gap-3">
                                     <span className="text-lg font-bold text-blue-500 w-8 text-center">#{index + 1}</span>
-                                    <span className="iconify text-xl" data-icon={item.efi_type ? 'mdi:disc' : 'mdi:harddisk'} style={{color: item.efi_type ? '#f59e0b' : '#3b82f6'}}></span>
+                                    <span className="iconify text-xl" data-icon={item.efi_type ? 'mdi:disc' : 'mdi:harddisk'} style={{color: item.efi_type ? themePalette.warning : themePalette.primary}}></span>
                                     <div>
                                         <div className="font-medium">{item.efi_name || (item.efi_type ? 'CD/DVD' : '硬盘')}</div>
                                         <div className="text-xs" style={{color: 'var(--text-secondary)'}}>
@@ -3857,12 +4052,12 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     showIcon
                     style={{marginBottom: 16}}
                     message="访问密钥用于免账号登录该虚拟机"
-                    description="持有 16 位访问密钥的用户可直接登录并在权限范围内管理此虚拟机（权限与临时凭据一致，且仅限本虚拟机）；也可以通过带密钥的链接直接跳转。密钥等同于登录凭据，请妥善保管，泄露后请立即重置。"
+                    description="持有访问密钥的用户可直接登录并在权限范围内管理此虚拟机，密钥等同于登录凭据，请妥善保管"
                 />
                 {accessKeyInfo.enabled && accessKeyInfo.access_key ? (
-                    <Descriptions column={1} bordered size="small">
+                    <Descriptions className="vm-classic-properties vm-classic-access-properties" column={1} bordered size="small">
                         <Descriptions.Item label="访问密钥">
-                            <Space>
+                            <Space className="vm-classic-access-inline">
                                 <span className="font-mono" style={{letterSpacing: 2}}>
                                     {accessKeyVisible ? accessKeyInfo.access_key : '••••••••••••••••'}
                                 </span>
@@ -3876,7 +4071,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                         </Descriptions.Item>
                         <Descriptions.Item label="跳转链接">
                             <Space>
-                                <span className="font-mono text-xs break-all">{accessKeyLoginURL}</span>
+                                <span className="font-mono text-xs vm-classic-long-value">{accessKeyLoginURL}</span>
                                 <Button size="small" icon={<CopyOutlined/>}
                                         onClick={() => handleCopyText(accessKeyLoginURL, '跳转链接已复制')}>复制</Button>
                             </Space>
@@ -3895,6 +4090,15 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
             </Card>
         },
     ];
+
+    const tabVisibility = {
+        isAdminUser,
+        isOwnerOrAdmin,
+        canManageAccessKey,
+        userPermissions,
+    }
+    const visibleTabItems = tabItems.filter(item => isVMDetailTabVisible(item.key, config, tabVisibility))
+    const activeTabItem = visibleTabItems.find(item => item.key === activeTab)
 
     const powerMenuProps: MenuProps = {
         items: [
@@ -3957,17 +4161,30 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
         return statusMap[status] || {key: 'start', label: '启动', icon: <PlayCircleOutlined/>};
     })()
 
+    const engineLabels: Record<string, string> = {
+        PromoxSetup: 'Proxmox VE',
+        OCInterface: 'OpenStack',
+        LxContainer: 'LXC',
+    }
+    const engineRaw = hostConfig?.server_type || vm.config?.virt_type || 'Hyper-V'
+    const engineLabel = engineLabels[engineRaw] || engineRaw
+    const activeNic = Object.values((config.nic_all || {}) as Record<string, any>)
+        .find((nic: any) => nic?.ip4_addr === vm.ipv4_address) as any
+    const ipv4Scope = activeNic?.nic_type === 'pub' ? '公网' : '内网'
+    const ipv6Address = vm.ipv6_address && vm.ipv6_address !== '-' ? vm.ipv6_address : ''
+    const hardwareSummary = `${config.cpu_num || 0}C · ${formatMemory(config.mem_num || 0).replace(/\.00/, '')} · ${formatDisk(config.hdd_num || 0).replace(/\.00/, '')} · ${config.speed_u || 0} Mbps`
+
     return (
-        <div className="h-auto">
+        <div className={`vm-unified-detail-page vm-classic-detail-page h-auto is-layout-${detailLayout}`} data-detail-layout={detailLayout}>
             <div className="">
-                <div className="px-6 py-2 border-b border-gray-100 ">
+                <div className="vm-classic-breadcrumb px-6 py-2 border-b border-gray-100 ">
                     <Breadcrumb separator="/" items={[
                         {title: <HomeOutlined/>},
                         {title: 'VPS'},
                         {title: config.vm_uuid}
                     ]}/>
                 </div>
-                <div className="px-6 py-4">
+                <div className="vm-classic-hero-wrap px-6 py-4">
                     {!hostEnabled && (
                         <Alert
                             message="主机已被禁用"
@@ -3978,39 +4195,37 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                             className="mb-4"
                         />
                     )}
-                    <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-4">
+                    <div className="vm-classic-hero-layout flex justify-between items-center">
+                        <div className="vm-classic-hero-identity flex items-center gap-4">
                             <div
-                                className="p-3 rounded text-8xl flex items-center justify-center w-30 h-30">
+                                className="vm-classic-hero-icon p-3 rounded text-6xl flex items-center justify-center w-20 h-20">
                                 {getOSIcon(config.os_name || '')}
                             </div>
                             <div>
-                                <div className="flex items-center gap-3">
+                                <div className="vm-classic-hero-title flex items-center gap-3">
                                     <h1 className="text-3xl font-bold dark:text-white m-0">{config.vm_uuid}</h1>
-                                    <Tag color="blue">{hostConfig?.server_type || vm.config?.virt_type || 'Hyper-V'}</Tag>
+                                    <Tag color="processing">{engineLabel}</Tag>
                                     <Badge status={getStatusColor(displayStatus)}
                                            text={getStatusText(displayStatus)}/>
-                                    <span
-                                        className="text-sm border-l pl-3 ml-1">
-                                        IPv4 : {vm.ipv4_address || '未分配'} <CopyOutlined className="cursor-pointer"
-                                                                                           onClick={() => handleCopyPassword(vm.ipv4_address || '', 'IPv4')}/>
-                                        &nbsp;| IPv6 : {vm.ipv6_address || '未分配'} <CopyOutlined
-                                        className="cursor-pointer"
-                                        onClick={() => handleCopyPassword(vm.ipv6_address || '', 'IPv6')}/>
+                                    <span className="vm-classic-hero-address text-sm">
+                                        <span className="vm-classic-address-item">
+                                            <span>IPv4</span>
+                                            <code>{vm.ipv4_address || '未分配'}</code>
+                                            <span className="vm-classic-address-scope">{ipv4Scope}</span>
+                                            <CopyOutlined className="vm-classic-copy-address" onClick={() => handleCopyPassword(vm.ipv4_address || '', 'IPv4')}/>
+                                        </span>
                                     </span>
                                 </div>
-                                <div className="flex gap-4 mt-2 text-sm ">
+                                <div className="vm-classic-hero-meta flex gap-4 mt-2 text-sm ">
                                     <span>主机名称: {hostName}</span>
-                                    <span>主机类型: {hostConfig?.server_type || vm.config?.virt_type || 'Hyper-V'}</span>
                                     <span>系统: {getOSDisplayName(config.os_name || '')}</span>
-                                    {vm.config?.nic_all && Object.values(vm.config.nic_all).some((nic: any) => nic.nic_type !== 'pub') && hostConfig?.public_addr?.length ? (
-                                        <span>公网IP: {hostConfig.public_addr[0]}</span>
-                                    ) : null}
+                                    {ipv6Address
+                                        ? <span>IPv6: <code>{ipv6Address}</code></span>
+                                        : <span className="vm-classic-hero-hardware">配置: {hardwareSummary}</span>}
                                 </div>
                             </div>
                         </div>
-                        <Space>
-                            <Button type="primary" onClick={() => navigate(`/hosts/${hostName}/vms/${uuid}/v2`)}>新版面板</Button>
+                        <Space className="vm-classic-hero-actions" wrap>
             <Button type="primary" className="bg-blue-600" onClick={() => setRemoteModalVisible(true)} 
                 disabled={!hostEnabled || operationLocked || isIntermediateState() || isSuspendedState() || 
                          !hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS)}>远程桌面</Button>
@@ -4036,42 +4251,36 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                         </Space>
                     </div>
                 </div>
-                <div className="px-6">
-                    <Tabs activeKey={activeTab} onChange={setActiveTab}
-                          items={tabItems.filter(i => {
-                              const requiredPerm = TAB_PERMISSION_MAP[i.key];
-                              // owners tab 仅管理员/主所有者可见
-                              // access（访问密钥）tab 另需排除受限临时身份
-                              if (i.key === 'access') return canManageAccessKey;
-                              if (OWNER_ONLY_TABS.has(i.key)) return isOwnerOrAdmin;
-                              if (!requiredPerm) return true; // overview等无需权限的Tab始终显示
-                              // 仅管理员跳过配额和权限限制（主所有者仍受user_permission约束）
-                              if (isAdminUser) return true;
-                              // 配额为0时直接隐藏Tab（该虚拟机不支持此功能）
-                              const quota = getTabQuota(config, i.key);
-                              if (quota === 0) return false;
-                              // HIDDEN_TABS：权限不足时直接隐藏
-                              if (HIDDEN_TABS.has(i.key)) return hasPermission(userPermissions, requiredPerm);
-                              return true;
-                          }).map(i => ({key: i.key, label: i.label}))} tabBarStyle={{marginBottom: 0}}/>
+                <div className="vm-detail-layout-toolbar">
+                    <div className="vm-detail-layout-copy">
+                        <strong>详情布局</strong>
+                        <span>选择导航方式，偏好按账号保存</span>
+                    </div>
+                    <Segmented<VMDetailLayout>
+                        aria-label="虚拟机详情布局"
+                        size="small"
+                        value={detailLayout}
+                        onChange={changeDetailLayout}
+                        options={[
+                            { value: 'horizontal', label: <span><AppstoreOutlined /> 默认布局</span> },
+                            { value: 'vertical', label: <span><MenuOutlined /> 竖版菜单</span> },
+                        ]}
+                    />
                 </div>
             </div>
-            <div className="p-6">
-                {tabItems.filter(i => {
-                    const requiredPerm = TAB_PERMISSION_MAP[i.key];
-                    // owners tab 仅管理员/主所有者可见
-                    // access（访问密钥）tab 另需排除受限临时身份
-                    if (i.key === 'access') return canManageAccessKey;
-                    if (OWNER_ONLY_TABS.has(i.key)) return isOwnerOrAdmin;
-                    if (!requiredPerm) return true;
-                    // 仅管理员跳过配额和权限限制
-                    if (isAdminUser) return true;
-                    // 配额为0时直接隐藏Tab
-                    const quota = getTabQuota(config, i.key);
-                    if (quota === 0) return false;
-                    if (HIDDEN_TABS.has(i.key)) return hasPermission(userPermissions, requiredPerm);
-                    return true;
-                }).find(i => i.key === activeTab)?.children}
+
+            <div className="vm-detail-horizontal-layout">
+                <div className="vm-detail-horizontal-tabs">
+                    <Tabs
+                        activeKey={activeTab}
+                        onChange={setActiveTab}
+                        items={visibleTabItems.map(item => ({ key: item.key, label: item.label }))}
+                        tabBarStyle={{ marginBottom: 0 }}
+                    />
+                </div>
+                <div className="vm-detail-horizontal-content">
+                    {activeTabItem?.children}
+                </div>
             </div>
 
             <Modal title="编辑虚拟机配置" open={editModalVisible} onCancel={() => setEditModalVisible(false)}
@@ -4102,36 +4311,36 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                             placeholder="留空则不修改"/></Form.Item></Col>
                     </Row>
                     <Row gutter={16}>
-                        <Col span={8}><Form.Item label="CPU核心" name="cpu_num"
+                        <Col xs={24} sm={12} xl={8}><Form.Item label="CPU核心" name="cpu_num"
                                                  initialValue={config.cpu_num}><InputNumber min={1} max={64}
                                                                                             style={{width: '100%'}}/></Form.Item></Col>
-                        <Col span={8}><Form.Item label="内存(MB)" name="mem_num"
+                        <Col xs={24} sm={12} xl={8}><Form.Item label="内存(MB)" name="mem_num"
                                                  initialValue={config.mem_num}><InputNumber min={512} max={1048576}
                                                                                             style={{width: '100%'}}/></Form.Item></Col>
-                        <Col span={8}><Form.Item label="硬盘(GB)" name="hdd_num"
+                        <Col xs={24} sm={12} xl={8}><Form.Item label="硬盘(GB)" name="hdd_num"
                                                  initialValue={config.hdd_num}><InputNumber min={1} max={10240}
                                                                                             style={{width: '100%'}}/></Form.Item></Col>
                     </Row>
                     <Row gutter={16}>
-                        <Col span={8}><Form.Item label="GPU数量" name="gpu_num"
+                        <Col xs={24} sm={12} xl={8}><Form.Item label="GPU数量" name="gpu_num"
                                                  initialValue={config.gpu_num || 0}><InputNumber min={0} max={8}
                                                                                                  style={{width: '100%'}}/></Form.Item></Col>
-                        <Col span={8}><Form.Item label="上行带宽(Mbps)" name="speed_up"
+                        <Col xs={24} sm={12} xl={8}><Form.Item label="上行带宽(Mbps)" name="speed_up"
                                                  initialValue={config.speed_up || 100}><InputNumber min={1} max={10000}
                                                                                                     style={{width: '100%'}}/></Form.Item></Col>
-                        <Col span={8}><Form.Item label="下行带宽(Mbps)" name="speed_down"
+                        <Col xs={24} sm={12} xl={8}><Form.Item label="下行带宽(Mbps)" name="speed_down"
                                                  initialValue={config.speed_down || 100}><InputNumber min={1}
                                                                                                       max={10000}
                                                                                                       style={{width: '100%'}}/></Form.Item></Col>
                     </Row>
                     <Row gutter={16}>
-                        <Col span={8}><Form.Item label="NAT端口数" name="nat_num"
+                        <Col xs={24} sm={12} xl={8}><Form.Item label="NAT端口数" name="nat_num"
                                                  initialValue={config.nat_num || 0}><InputNumber min={0} max={100}
                                                                                                  style={{width: '100%'}}/></Form.Item></Col>
-                        <Col span={8}><Form.Item label="Web代理数" name="web_num"
+                        <Col xs={24} sm={12} xl={8}><Form.Item label="Web代理数" name="web_num"
                                                  initialValue={config.web_num || 0}><InputNumber min={0} max={100}
                                                                                                  style={{width: '100%'}}/></Form.Item></Col>
-                        <Col span={8}><Form.Item label="流量限制(GB)" name="flu_num" initialValue={config.flu_num || 0}><InputNumber
+                        <Col xs={24} sm={12} xl={8}><Form.Item label="流量限制(GB)" name="flu_num" initialValue={config.flu_num || 0}><InputNumber
                             min={0} max={100000} style={{width: '100%'}}/></Form.Item></Col>
                     </Row>
                     <Divider orientation="left">
@@ -4146,14 +4355,14 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                                                             onClick={() => removeEditNic(nic.id)}/>
                             </div>
                             <Row gutter={8}>
-                                <Col span={8}>
+                                <Col xs={24} sm={12} xl={8}>
                                     <div className="mb-2"><span
                                         className="text-xs  block">网卡名称</span><Input value={nic.name}
                                                                                                       onChange={e => updateEditNic(nic.id, 'name', e.target.value)}
                                                                                                       size="small"/>
                                     </div>
                                 </Col>
-                                <Col span={8}>
+                                <Col xs={24} sm={12} xl={8}>
                                     <div className="mb-2"><span
                                         className="text-xs  block">类型</span><Select value={nic.type}
                                                                                                    onChange={val => updateEditNic(nic.id, 'type', val)}
@@ -4162,7 +4371,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                                         value="nat">NAT</Select.Option><Select.Option
                                         value="bridge">Bridge</Select.Option></Select></div>
                                 </Col>
-                                <Col span={8}>
+                                <Col xs={24} sm={12} xl={8}>
                                     <div className="mb-2"><span
                                         className="text-xs  block">IPv4地址</span><Input value={nic.ip}
                                                                                                       onChange={e => updateEditNic(nic.id, 'ip', e.target.value)}
@@ -4385,10 +4594,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                    onOk={() => hddForm.submit()} confirmLoading={hddActionLoading}
                    okButtonProps={{disabled: !addHddConfirmChecked}}>
                 <Form form={hddForm} onFinish={handleAddHDD} layout="vertical">
-                    <Form.Item label="磁盘名称" name="hdd_name" rules={[{required: true, message: '请输入磁盘名称'}, {
-                        pattern: /^[a-zA-Z0-9_]+$/,
-                        message: '只能包含字母、数字和下划线'
-                    }]} help="仅支持英文、数字和下划线"><Input placeholder="例如: data_disk_1"/></Form.Item>
+                    <Alert message="磁盘名称由系统自动生成，无需填写" type="info" showIcon className="mb-3"/>
                     <Form.Item label="容量 (GB)" name="hdd_size" initialValue={10}
                                rules={[{required: true, message: '请输入容量'}]} help="最小 1 GB"><InputNumber min={1}
                                                                                                                max={10240}
@@ -4432,7 +4638,7 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
             </Modal>
 
             <Modal title="挂载ISO" open={isoModalVisible} onCancel={() => setIsoModalVisible(false)}
-                   onOk={() => isoForm.submit()} okButtonProps={{disabled: !isoMountConfirmChecked}}
+                   onOk={() => isoForm.submit()} okButtonProps={{disabled: !hotISO && !isoMountConfirmChecked}}
                    confirmLoading={isoActionLoading}>
                 <Form form={isoForm} onFinish={handleAddISO} layout="vertical">
                     <Form.Item label="ISO镜像" name="iso_file" rules={[{required: true, message: '请选择镜像'}]}
@@ -4440,32 +4646,41 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                         placeholder="请选择">{hostConfig?.images_maps && (Array.isArray(hostConfig.images_maps) ? hostConfig.images_maps : Object.entries(hostConfig.images_maps as any).map(([name, file]: [string, any]) => (file && typeof file === 'object' ? { sys_name: name, ...file } : { sys_name: name, sys_file: file }))).filter((it: any) => it && it.sys_flag !== false).map((it: any) => (
                         it && it.sys_file ? <Select.Option key={it.sys_name || it.sys_file} value={it.sys_file}>{it.sys_name || it.sys_file} ({it.sys_file})</Select.Option> : null
                         ))}</Select></Form.Item>
-                    <Form.Item label="挂载名称" name="iso_name" rules={[{required: true, message: '请输入名称'}, {
-                        pattern: /^[a-zA-Z0-9]+$/,
-                        message: '只能包含英文字母和数字'
-                    }]} help="仅支持英文和数字"><Input placeholder="例如: system_iso"/></Form.Item>
+                    <Alert message="挂载名称由系统自动生成，无需填写" type="info" showIcon className="mb-3"/>
                     <Form.Item label="备注" name="iso_hint" help="可选，用于说明此ISO的用途"><Input
                         placeholder="例如: 系统安装盘"/></Form.Item>
                 </Form>
-                <div className="p-3 rounded flex items-center mt-4" style={{ background: "var(--bg-secondary, rgba(250,204,21,0.08))", border: "1px solid var(--border-color, rgba(250,204,21,0.3))" }}>
-                    <Space><input type="checkbox" id="isoMountCheck" checked={isoMountConfirmChecked}
-                                  onChange={(e) => setIsoMountConfirmChecked(e.target.checked)}
-                                  className="w-4 h-4 text-purple-600"/><label htmlFor="isoMountCheck"
-                                                                              className="cursor-pointer select-none text-sm ">我已同意强制关机此虚拟机</label></Space>
-                </div>
+                {hotISO ? (
+                    <Alert message="当前平台支持热挂载，保存后立即生效，无需重启虚拟机" type="info" showIcon
+                           className="mt-4"/>
+                ) : (
+                    <div className="p-3 rounded flex items-center mt-4"
+                         style={{ background: "var(--bg-secondary, rgba(250,204,21,0.08))", border: "1px solid var(--border-color, rgba(250,204,21,0.3))" }}>
+                        <Space><input type="checkbox" id="isoMountCheck" checked={isoMountConfirmChecked}
+                                      onChange={(e) => setIsoMountConfirmChecked(e.target.checked)}
+                                      className="w-4 h-4 text-purple-600"/><label htmlFor="isoMountCheck"
+                                                                                  className="cursor-pointer select-none text-sm ">保存后需要重启虚拟机，我已了解将自动重启</label></Space>
+                    </div>
+                )}
             </Modal>
 
             <Modal title="卸载ISO镜像" open={unmountIsoConfirmVisible}
                    onCancel={() => setUnmountIsoConfirmVisible(false)} onOk={executeUnmountISO} okText="确认卸载"
-                   okType="danger" okButtonProps={{disabled: !unmountIsoConfirmChecked}}
+                   okType="danger" okButtonProps={{disabled: !hotISO && !unmountIsoConfirmChecked}}
                    confirmLoading={isoActionLoading}>
                 <p>确定要卸载ISO镜像 "<strong>{currentUnmountIso}</strong>" 吗？</p>
-                <div className="p-3 rounded flex items-center mt-4" style={{ background: "var(--bg-secondary, rgba(250,204,21,0.08))", border: "1px solid var(--border-color, rgba(250,204,21,0.3))" }}>
-                    <Space><input type="checkbox" id="unmountIsoCheck" checked={unmountIsoConfirmChecked}
-                                  onChange={(e) => setUnmountIsoConfirmChecked(e.target.checked)}
-                                  className="w-4 h-4 text-orange-600"/><label htmlFor="unmountIsoCheck"
-                                                                              className="cursor-pointer select-none text-sm ">我已同意强制关机此虚拟机</label></Space>
-                </div>
+                {hotISO ? (
+                    <Alert message="当前平台支持热卸载，确认后立即生效，无需重启虚拟机" type="info" showIcon
+                           className="mt-4"/>
+                ) : (
+                    <div className="p-3 rounded flex items-center mt-4"
+                         style={{ background: "var(--bg-secondary, rgba(250,204,21,0.08))", border: "1px solid var(--border-color, rgba(250,204,21,0.3))" }}>
+                        <Space><input type="checkbox" id="unmountIsoCheck" checked={unmountIsoConfirmChecked}
+                                      onChange={(e) => setUnmountIsoConfirmChecked(e.target.checked)}
+                                      className="w-4 h-4 text-orange-600"/><label htmlFor="unmountIsoCheck"
+                                                                                  className="cursor-pointer select-none text-sm ">卸载后需要重启虚拟机，我已了解将自动重启</label></Space>
+                    </div>
+                )}
             </Modal>
 
             <Modal title="重装系统" open={reinstallModalVisible} onCancel={() => setReinstallModalVisible(false)}
@@ -4493,8 +4708,8 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                    onOk={() => backupForm.submit()} okButtonProps={{disabled: !backupCreateConfirmChecked}}
                    confirmLoading={backupActionLoading}>
                 <Form form={backupForm} onFinish={handleCreateBackup} layout="vertical">
-                    <Form.Item label="备份说明" name="backup_name" rules={[{required: true, message: '请输入备份说明'}]}
-                               help="请输入备份的说明信息"><Input placeholder="例如: 系统更新前备份"/></Form.Item>
+                    <Alert type="info" showIcon message="备份名称自动生成"
+                           description={`${vm?.vm_uuid || uuid}-backup-年月日时分秒`}/>
                 </Form>
                 <Alert message="备份可能需要数十分钟，取决于虚拟机硬盘大小，请耐心等待！" type="info" showIcon
                        className="mb-4 mt-2"/>
@@ -4596,12 +4811,12 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                         </label>
                     ))}
                 </div>
-                <div style={{marginTop: 12, fontSize: 12, color: '#888'}}>
+                <div style={{marginTop: 12, fontSize: 12, color: 'var(--art-gray-500)'}}>
                     当前掩码值: {editPermMask} / {VM_PERMISSION.FULL_MASK}
                 </div>
             </Modal>
 
-            <Modal title={<div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#1890ff'}}>
+            <Modal title={<div style={{display: 'flex', alignItems: 'center', gap: 8, color: 'var(--main-color)'}}>
                 <CloudSyncOutlined/><span>移交数据盘</span></div>} open={transferHddModalVisible}
                    onCancel={() => setTransferHddModalVisible(false)} onOk={handleTransferHDD} okText="确认移交"
                    okButtonProps={{disabled: !transferHddConfirmChecked}} confirmLoading={hddActionLoading}>
@@ -4610,10 +4825,10 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                 <div style={{marginBottom: 16}}><label style={{display: 'block', marginBottom: 8, fontWeight: 500}}>目标虚拟机UUID
                     *</label><Input placeholder="输入目标虚拟机UUID" value={transferTargetUuid}
                                     onChange={(e) => setTransferTargetUuid(e.target.value)}/>
-                    <div style={{fontSize: 12, color: '#666', marginTop: 4}}>数据盘将从当前虚拟机移交到目标虚拟机</div>
+                    <div style={{fontSize: 12, color: 'var(--art-gray-600)', marginTop: 4}}>数据盘将从当前虚拟机移交到目标虚拟机</div>
                 </div>
                 <Alert message="目标机器不会自动挂载转移硬盘" type="info" showIcon style={{marginBottom: 16}}/>
-                <div className="p-3 rounded" style={{ background: 'var(--bg-secondary, rgba(250,204,21,0.08))', border: '1px solid var(--border-color, rgba(250,204,21,0.3))' }}>
+                <div className="p-3 rounded" style={{ background: 'var(--art-warning-soft)', border: '1px solid color-mix(in srgb, var(--art-warning) 32%, transparent)' }}>
                     <Space><input type="checkbox" id="transferConfirm" checked={transferHddConfirmChecked}
                                   onChange={(e) => setTransferHddConfirmChecked(e.target.checked)}/><label
                         htmlFor="transferConfirm"
@@ -4667,11 +4882,11 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                 <div className="remote-modal-cards" style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '8px 0' }}>
                     {/* 1. VNC/TTY 一键连接 - 所有非docker+lxc系统都有 */}
                     {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' && (
-                        <div className="remote-card" style={{ borderRadius: 8, padding: 16 }}>
+                        <div className="remote-card" style={{ padding: 16 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div>
                                     <div style={{ fontWeight: 600, fontSize: 15 }}>
-                                        <DesktopOutlined style={{ marginRight: 8, color: '#6366f1' }} />
+                                        <DesktopOutlined style={{ marginRight: 8, color: 'var(--art-chart-4)' }} />
                                         VNC / TTY 控制台
                                     </div>
                                     <div className="remote-card-desc" style={{ fontSize: 13, marginTop: 4 }}>网页远程控制台，适合救援排障</div>
@@ -4686,23 +4901,23 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     {/* 2. ToDesk远程桌面 - 仅Windows+非docker+lxc */}
                     {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' &&
                      (config.os_name || '').toLowerCase().includes('win') && (
-                        <div className="remote-card" style={{ borderRadius: 8, padding: 16 }}>
+                        <div className="remote-card" style={{ padding: 16 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
                                     <div style={{ fontWeight: 600, fontSize: 15 }}>
-                                        <GlobalOutlined style={{ marginRight: 8, color: '#10b981' }} />
+                                        <GlobalOutlined style={{ marginRight: 8, color: 'var(--art-success)' }} />
                                         ToDesk 远程桌面
                                     </div>
                                     <div className="remote-card-desc" style={{ fontSize: 13, marginTop: 4 }}>高性能远程桌面，适合日常使用</div>
                                 </div>
                                 {config.rdp_info?.todesk?.code ? (
-                                    <Tag color="green">已就绪</Tag>
+                                    <Tag color="success">已就绪</Tag>
                                 ) : (
                                     <Tag color="default">未就绪</Tag>
                                 )}
                             </div>
                             {config.rdp_info?.todesk?.code ? (
-                                <div className="remote-card-info" style={{ marginTop: 12, borderRadius: 6, padding: 12 }}>
+                                <div className="remote-card-info" style={{ marginTop: 12, padding: 12 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                         <span className="remote-card-label" style={{ fontSize: 13 }}>设备代码</span>
                                         <Space>
@@ -4729,17 +4944,17 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     {/* 3. RDP 一键连接 - 仅Windows+非docker+lxc */}
                     {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' &&
                      (config.os_name || '').toLowerCase().includes('win') && (
-                        <div className="remote-card" style={{ borderRadius: 8, padding: 16 }}>
+                        <div className="remote-card" style={{ padding: 16 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
                                     <div style={{ fontWeight: 600, fontSize: 15 }}>
-                                        <WindowsOutlined style={{ marginRight: 8, color: '#3b82f6' }} />
+                                        <WindowsOutlined style={{ marginRight: 8, color: 'var(--main-color)' }} />
                                         Microsoft RDP 远程桌面
                                     </div>
                                     <div className="remote-card-desc" style={{ fontSize: 13, marginTop: 4 }}>Windows原生远程桌面协议</div>
                                 </div>
                             </div>
-                            <div className="remote-card-info" style={{ marginTop: 12, borderRadius: 6, padding: 12 }}>
+                            <div className="remote-card-info" style={{ marginTop: 12, padding: 12 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                     <span className="remote-card-label" style={{ fontSize: 13 }}>连接地址</span>
                                     <Space>
@@ -4784,17 +4999,17 @@ await api.vmPower(hostName!, uuid!, 'H_CLOSE')
                     {/* 4. SSH 一键连接 - 仅Linux和macOS+非docker+lxc */}
                     {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' &&
                      !(config.os_name || '').toLowerCase().includes('win') && (
-                        <div className="remote-card" style={{ borderRadius: 8, padding: 16 }}>
+                        <div className="remote-card" style={{ padding: 16 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
                                     <div style={{ fontWeight: 600, fontSize: 15 }}>
-                                        <CodeOutlined style={{ marginRight: 8, color: '#f59e0b' }} />
+                                        <CodeOutlined style={{ marginRight: 8, color: 'var(--art-warning)' }} />
                                         SSH 远程连接
                                     </div>
                                     <div className="remote-card-desc" style={{ fontSize: 13, marginTop: 4 }}>命令行远程连接，适合Linux/macOS</div>
                                 </div>
                             </div>
-                            <div className="remote-card-info" style={{ marginTop: 12, borderRadius: 6, padding: 12 }}>
+                            <div className="remote-card-info" style={{ marginTop: 12, padding: 12 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                     <span className="remote-card-label" style={{ fontSize: 13 }}>连接地址</span>
                                     <Space>

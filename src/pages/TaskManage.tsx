@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { message, Modal, Select, Popconfirm, Pagination, Button, Spin } from 'antd'
+import { message, Select, Popconfirm, Pagination, Button, Spin } from 'antd'
 import {
   ScheduleOutlined,
   PlayCircleOutlined,
@@ -17,6 +17,7 @@ import {
 import PageHeader from '@/components/PageHeader'
 import StatCard from '@/components/StatCard'
 import EmptyState from '@/components/EmptyState'
+import { collectStructuredEntries, hasStructuredPayload } from '@/utils/structuredDisplay'
 import {
   getTaskList,
   getTaskStats,
@@ -44,7 +45,6 @@ function TaskManage() {
   const [selectedType, setSelectedType] = useState<string>('')
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [selectedTask, setSelectedTask] = useState<AsyncTask | null>(null)
-  const [modalVisible, setModalVisible] = useState(false)
   const [stats, setStats] = useState<TaskStats>({ pending: 0, running: 0, completed: 0, failed: 0, stopped: 0 })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
@@ -179,14 +179,6 @@ function TaskManage() {
     return new Date(timestamp).toLocaleString('zh-CN')
   }
 
-  /**
-   * 显示任务详情
-   */
-  const showTaskDetail = (task: AsyncTask) => {
-    setSelectedTask(task)
-    setModalVisible(true)
-  }
-
   // 任务类型选项
   const taskTypeOptions = Object.entries(TASK_TYPE_LABELS).map(([value, label]) => ({ label, value }))
 
@@ -221,225 +213,260 @@ function TaskManage() {
         <StatCard icon={<StopOutlined />} label="已停止" value={stats.stopped} tone="primary" />
       </div>
 
-      {/* 筛选：全部收进一行工具条 */}
-      <div className="art-toolbar">
-        <Select
-          style={{ width: 180 }}
-          placeholder="全部主机"
-          allowClear
-          value={selectedHost || undefined}
-          onChange={(v) => { setSelectedHost(v || ''); setPage(1) }}
-          options={[{ label: '全部主机', value: '' }, ...hosts.map(host => ({ label: host, value: host }))]}
-        />
-        <Select
-          style={{ width: 150 }}
-          placeholder="全部状态"
-          allowClear
-          value={selectedStatus || undefined}
-          onChange={(v) => { setSelectedStatus(v || ''); setPage(1) }}
-          options={[
-            { label: '全部状态', value: '' },
-            { label: '等待中', value: 'pending' },
-            { label: '执行中', value: 'running' },
-            { label: '已完成', value: 'completed' },
-            { label: '已失败', value: 'failed' },
-            { label: '已停止', value: 'stopped' },
-          ]}
-        />
-        <Select
-          style={{ width: 170 }}
-          placeholder="全部类型"
-          allowClear
-          value={selectedType || undefined}
-          onChange={(v) => { setSelectedType(v || ''); setPage(1) }}
-          options={[{ label: '全部类型', value: '' }, ...taskTypeOptions]}
-        />
-        <span className="art-toolbar-spacer" />
-        <span className="art-muted">共 {total} 条</span>
-      </div>
-
-      {/* 任务列表 */}
-      <div className="art-panel">
-        <header className="art-panel-head">
-          <span className="art-panel-title">
-            <UnorderedListOutlined />
-            任务列表
-          </span>
-        </header>
-        <div className={`art-panel-body${tasks.length > 0 ? ' is-flush' : ''}`}>
-          {loading && tasks.length === 0 ? (
-            <div className="art-loading">
-              <Spin />
-              <span>正在加载任务…</span>
-            </div>
-          ) : tasks.length === 0 ? (
-            <EmptyState
-              icon={<ScheduleOutlined />}
-              title="暂无任务记录"
-              description="当前筛选条件下没有任务。可以放宽筛选，或点击「刷新」重新拉取。"
-              actions={
-                <Button icon={<ReloadOutlined />} onClick={() => { loadTasks(); loadStats() }}>
-                  刷新
-                </Button>
-              }
-            />
-          ) : (
-            <ul className="art-log-list">
-              {tasks.map((task) => {
-                const statusInfo = getStatusInfo(task.status)
-                const taskTypeLabel = TASK_TYPE_LABELS[task.task_type] || task.task_type
-                const canStop = task.status === 'running' || task.status === 'pending'
-                const canRetry = task.status === 'stopped'
-                return (
-                  <li key={task.task_id} className="art-log-item">
-                    <span className={`art-sem ${statusInfo.tone} art-sem-dot`} style={{ marginTop: 7 }} />
-                    <div className="art-log-main is-clickable" onClick={() => showTaskDetail(task)}>
-                      <div className="art-log-meta">
-                        <span className="art-log-level">{taskTypeLabel}</span>
-                        <span className={`art-sem ${statusInfo.tone} art-sem-text`}>{statusInfo.text}</span>
-                        <span className="art-log-host">{task.hs_name}</span>
-                        {task.vm_uuid && <span className="art-log-action">{task.vm_uuid}</span>}
-                        {task.username && <span className="art-log-action">{task.username}</span>}
-                        <span className="art-log-time">{formatTime(task.created_at)}</span>
-                      </div>
-                      {task.error_message ? <p className="art-log-message is-danger">{task.error_message}</p> : null}
-                    </div>
-                    <div className="art-row-actions">
-                      {canStop && (
-                        <Popconfirm
-                          title="确定要强行结束此任务吗？"
-                          onConfirm={() => handleStopTask(task.task_id)}
-                          okText="确定"
-                          cancelText="取消"
-                        >
-                          <Button size="small" type="text" danger icon={<StopOutlined />}>
-                            结束
-                          </Button>
-                        </Popconfirm>
-                      )}
-                      {canRetry && (
-                        <Popconfirm
-                          title="确定要重新运行此任务吗？"
-                          onConfirm={() => handleRetryTask(task.task_id)}
-                          okText="确定"
-                          cancelText="取消"
-                        >
-                          <Button size="small" type="text" icon={<RedoOutlined />}>
-                            重试
-                          </Button>
-                        </Popconfirm>
-                      )}
-                      <Button size="small" type="text" icon={<InfoCircleOutlined />} onClick={() => showTaskDetail(task)}>
-                        详情
-                      </Button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
+      {/* 筛选：与其他清单共用同一工具栏结构 */}
+      <section className="art-list-toolbar" aria-label="任务筛选">
+        <div className="art-list-toolbar-filters">
+          <Select
+            className="art-list-filter"
+            placeholder="全部主机"
+            allowClear
+            value={selectedHost || undefined}
+            onChange={(v) => { setSelectedHost(v || ''); setPage(1) }}
+            options={[{ label: '全部主机', value: '' }, ...hosts.map(host => ({ label: host, value: host }))]}
+          />
+          <Select
+            className="art-list-filter"
+            placeholder="全部状态"
+            allowClear
+            value={selectedStatus || undefined}
+            onChange={(v) => { setSelectedStatus(v || ''); setPage(1) }}
+            options={[
+              { label: '全部状态', value: '' },
+              { label: '等待中', value: 'pending' },
+              { label: '执行中', value: 'running' },
+              { label: '已完成', value: 'completed' },
+              { label: '已失败', value: 'failed' },
+              { label: '已停止', value: 'stopped' },
+            ]}
+          />
+          <Select
+            className="art-list-filter"
+            placeholder="全部类型"
+            allowClear
+            value={selectedType || undefined}
+            onChange={(v) => { setSelectedType(v || ''); setPage(1) }}
+            options={[{ label: '全部类型', value: '' }, ...taskTypeOptions]}
+          />
         </div>
+        <div className="art-list-toolbar-actions">
+          <span className="art-list-result-count" aria-live="polite">
+            共 <strong>{total}</strong> 条
+          </span>
+        </div>
+      </section>
 
-        {total > pageSize && (
-          <div className="art-panel-foot">
-            <Pagination
-              current={page}
-              pageSize={pageSize}
-              total={total}
-              onChange={(p, ps) => { setPage(p); setPageSize(ps) }}
-              showSizeChanger
-              showTotal={(t) => `共 ${t} 条`}
-              size="small"
-            />
+      {/* 左列表 + 右详情，与日志查看保持同一工作区结构 */}
+      <div className="art-split">
+        <section className="art-panel" aria-label="任务列表">
+          <header className="art-panel-head">
+            <span className="art-panel-title">
+              <UnorderedListOutlined />
+              任务列表
+            </span>
+            <span className="art-muted">共 {total} 条</span>
+          </header>
+          <div className={`art-panel-body${tasks.length > 0 ? ' is-flush' : ''}`}>
+            {loading && tasks.length === 0 ? (
+              <div className="art-loading">
+                <Spin />
+                <span>正在加载任务…</span>
+              </div>
+            ) : tasks.length === 0 ? (
+              <EmptyState
+                icon={<ScheduleOutlined />}
+                title="暂无任务记录"
+                description="当前筛选条件下没有任务。可以放宽筛选，或点击「刷新」重新拉取。"
+                actions={
+                  <Button icon={<ReloadOutlined />} onClick={() => { loadTasks(); loadStats() }}>
+                    刷新
+                  </Button>
+                }
+              />
+            ) : (
+              <ul className="art-log-list">
+                {tasks.map((task) => {
+                  const statusInfo = getStatusInfo(task.status)
+                  const taskTypeLabel = TASK_TYPE_LABELS[task.task_type] || task.task_type
+                  const canStop = task.status === 'running' || task.status === 'pending'
+                  const canRetry = task.status === 'stopped'
+                  const isSelected = selectedTask?.task_id === task.task_id
+                  return (
+                    <li
+                      key={task.task_id}
+                      className={`art-log-item${isSelected ? ' is-active' : ''}`}
+                    >
+                      <span className={`art-sem ${statusInfo.tone} art-sem-dot`} style={{ marginTop: 7 }} />
+                      <div className="art-log-main is-clickable" onClick={() => setSelectedTask(task)}>
+                        <div className="art-log-meta">
+                          <span className="art-log-level">{taskTypeLabel}</span>
+                          <span className={`art-sem ${statusInfo.tone} art-sem-text`}>{statusInfo.text}</span>
+                          <span className="art-log-host">{task.hs_name}</span>
+                          {task.vm_uuid && <span className="art-log-action">{task.vm_uuid}</span>}
+                          {task.username && <span className="art-log-action">{task.username}</span>}
+                          <span className="art-log-time">{formatTime(task.created_at)}</span>
+                        </div>
+                        {task.error_message ? <p className="art-log-message is-danger">{task.error_message}</p> : null}
+                      </div>
+                      <div className="art-row-actions">
+                        {canStop && (
+                          <Popconfirm
+                            title="确定要强行结束此任务吗？"
+                            onConfirm={() => handleStopTask(task.task_id)}
+                            okText="确定"
+                            cancelText="取消"
+                          >
+                            <Button size="small" type="text" danger icon={<StopOutlined />}>
+                              结束
+                            </Button>
+                          </Popconfirm>
+                        )}
+                        {canRetry && (
+                          <Popconfirm
+                            title="确定要重新运行此任务吗？"
+                            onConfirm={() => handleRetryTask(task.task_id)}
+                            okText="确定"
+                            cancelText="取消"
+                          >
+                            <Button size="small" type="text" icon={<RedoOutlined />}>
+                              重试
+                            </Button>
+                          </Popconfirm>
+                        )}
+                        <Button size="small" type="text" icon={<InfoCircleOutlined />} onClick={() => setSelectedTask(task)}>
+                          详情
+                        </Button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
           </div>
-        )}
+
+          {total > pageSize && (
+            <div className="art-panel-foot">
+              <Pagination
+                current={page}
+                pageSize={pageSize}
+                total={total}
+                onChange={(p, ps) => { setPage(p); setPageSize(ps) }}
+                showSizeChanger
+                showTotal={(t) => `共 ${t} 条`}
+                size="small"
+              />
+            </div>
+          )}
+        </section>
+
+        <section className="art-panel" aria-label="任务详情">
+          <header className="art-panel-head">
+            <span className="art-panel-title">
+              <InfoCircleOutlined />
+              任务详情
+            </span>
+            {selectedTask && <span className="art-muted is-mono">{selectedTask.task_id}</span>}
+          </header>
+          <div className="art-panel-body">
+            {selectedTask ? (
+              <div className="art-detail">
+                <div className="art-info-grid">
+                  <div>
+                    <div className="art-info-label">任务 ID</div>
+                    <div className="art-info-value is-mono">{selectedTask.task_id}</div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">状态</div>
+                    <div className="art-info-value">
+                      <span className={`art-sem ${getStatusInfo(selectedTask.status).tone} art-sem-pill`}>
+                        {getStatusInfo(selectedTask.status).text}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">任务类型</div>
+                    <div className="art-info-value">{TASK_TYPE_LABELS[selectedTask.task_type] || selectedTask.task_type}</div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">操作人</div>
+                    <div className="art-info-value">{selectedTask.username || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">主机</div>
+                    <div className="art-info-value is-mono">{selectedTask.hs_name}</div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">虚拟机</div>
+                    <div className="art-info-value is-mono">{selectedTask.vm_uuid || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">创建时间</div>
+                    <div className="art-info-value is-mono">{formatTime(selectedTask.created_at)}</div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">开始时间</div>
+                    <div className="art-info-value is-mono">{formatTime(selectedTask.started_at)}</div>
+                  </div>
+                  <div>
+                    <div className="art-info-label">完成时间</div>
+                    <div className="art-info-value is-mono">{formatTime(selectedTask.finished_at)}</div>
+                  </div>
+                </div>
+
+                {selectedTask.error_message && (
+                  <div className="art-subpanel is-danger">
+                    <div className="art-subpanel-head">
+                      <CloseCircleOutlined />
+                      错误信息
+                    </div>
+                    <pre className="art-code is-danger">{selectedTask.error_message}</pre>
+                  </div>
+                )}
+
+                {hasStructuredPayload(selectedTask.params) && (
+                  <div className="art-subpanel">
+                    <div className="art-subpanel-head">
+                      <SettingOutlined />
+                      执行参数
+                    </div>
+                    <div className="art-result-grid">
+                      {collectStructuredEntries(selectedTask.params).map((entry, index) => (
+                        <div className="art-result-item" key={`${entry.label}-${index}`}>
+                          <span className="art-result-label">{entry.label}</span>
+                          <span className={`art-result-value${entry.mono ? ' is-mono' : ''}`}>{entry.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {hasStructuredPayload(selectedTask.result) && (
+                  <div className="art-subpanel">
+                    <div className="art-subpanel-head">
+                      <CheckCircleOutlined />
+                      执行结果
+                    </div>
+                    <div className="art-result-grid">
+                      {collectStructuredEntries(selectedTask.result).map((entry, index) => (
+                        <div className="art-result-item" key={`${entry.label}-${index}`}>
+                          <span className="art-result-label">{entry.label}</span>
+                          <span className={`art-result-value${entry.mono ? ' is-mono' : ''}`}>{entry.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <EmptyState
+                icon={<InfoCircleOutlined />}
+                title="未选择任务"
+                description="从左侧列表中选择一条任务，这里会显示任务类型、执行时间、错误信息与执行结果。"
+              />
+            )}
+          </div>
+        </section>
       </div>
 
-      {/* 任务详情：字段用信息网格铺开，长文本收进代码块 */}
-      <Modal
-        title="任务详情"
-        open={modalVisible}
-        onCancel={() => setModalVisible(false)}
-        footer={null}
-        width={720}
-      >
-        {selectedTask && (
-          <div className="art-detail">
-            <div className="art-info-grid">
-              <div>
-                <div className="art-info-label">任务 ID</div>
-                <div className="art-info-value is-mono">{selectedTask.task_id}</div>
-              </div>
-              <div>
-                <div className="art-info-label">状态</div>
-                <div className="art-info-value">
-                  <span className={`art-sem ${getStatusInfo(selectedTask.status).tone} art-sem-pill`}>
-                    {getStatusInfo(selectedTask.status).text}
-                  </span>
-                </div>
-              </div>
-              <div>
-                <div className="art-info-label">任务类型</div>
-                <div className="art-info-value">{TASK_TYPE_LABELS[selectedTask.task_type] || selectedTask.task_type}</div>
-              </div>
-              <div>
-                <div className="art-info-label">操作人</div>
-                <div className="art-info-value">{selectedTask.username || '-'}</div>
-              </div>
-              <div>
-                <div className="art-info-label">主机</div>
-                <div className="art-info-value is-mono">{selectedTask.hs_name}</div>
-              </div>
-              <div>
-                <div className="art-info-label">虚拟机</div>
-                <div className="art-info-value is-mono">{selectedTask.vm_uuid || '-'}</div>
-              </div>
-              <div>
-                <div className="art-info-label">创建时间</div>
-                <div className="art-info-value is-mono">{formatTime(selectedTask.created_at)}</div>
-              </div>
-              <div>
-                <div className="art-info-label">开始时间</div>
-                <div className="art-info-value is-mono">{formatTime(selectedTask.started_at)}</div>
-              </div>
-              <div>
-                <div className="art-info-label">完成时间</div>
-                <div className="art-info-value is-mono">{formatTime(selectedTask.finished_at)}</div>
-              </div>
-            </div>
-
-            {selectedTask.error_message && (
-              <div className="art-subpanel is-danger">
-                <div className="art-subpanel-head">
-                  <CloseCircleOutlined />
-                  错误信息
-                </div>
-                <pre className="art-code is-danger">{selectedTask.error_message}</pre>
-              </div>
-            )}
-
-            {selectedTask.params && Object.keys(selectedTask.params).length > 0 && (
-              <div className="art-subpanel">
-                <div className="art-subpanel-head">
-                  <SettingOutlined />
-                  执行参数
-                </div>
-                <pre className="art-code">{JSON.stringify(selectedTask.params, null, 2)}</pre>
-              </div>
-            )}
-
-            {selectedTask.result && Object.keys(selectedTask.result).length > 0 && (
-              <div className="art-subpanel">
-                <div className="art-subpanel-head">
-                  <CheckCircleOutlined />
-                  执行结果
-                </div>
-                <pre className="art-code">{JSON.stringify(selectedTask.result, null, 2)}</pre>
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }

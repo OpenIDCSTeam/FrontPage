@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Table, Button, Space, Modal, Form, Input, Checkbox, InputNumber, message, Popconfirm, Divider, Row, Col, Tooltip } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, QuestionCircleOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, QuestionCircleOutlined, SearchOutlined } from '@ant-design/icons'
 import PageHeader from '@/components/PageHeader'
 import api from '@/utils/apis.ts'
 import type { ColumnsType } from 'antd/es/table'
@@ -24,6 +24,7 @@ function UserManage() {
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [searchText, setSearchText] = useState('')
   const [form] = Form.useForm()
 
   /**
@@ -263,6 +264,13 @@ function UserManage() {
       </div>
     )
   }
+  const keyword = searchText.trim().toLowerCase()
+  const filteredUsers = keyword
+    ? users.filter(user =>
+        (user.username || '').toLowerCase().includes(keyword) ||
+        (user.email || '').toLowerCase().includes(keyword))
+    : users
+
   return (
     <div className="art-stack">
       <PageHeader
@@ -301,21 +309,59 @@ function UserManage() {
         }
       />
 
-      <div className="art-panel">
-        <div className="art-panel-body is-flush">
-          <Table
-            columns={columns}
-            dataSource={users}
-            rowKey="id"
-            loading={loading}
-            expandable={{ expandedRowRender }}
-            pagination={{
-              showSizeChanger: true,
-              showTotal: (total) => `共 ${total} 条`,
-            }}
+      <section className="art-list-toolbar" aria-label="平台用户筛选">
+        <div className="art-list-toolbar-filters">
+          <Input
+            className="art-list-search"
+            prefix={<SearchOutlined />}
+            placeholder="搜索用户名或邮箱"
+            value={searchText}
+            onChange={event => setSearchText(event.target.value)}
+            allowClear
           />
         </div>
-      </div>
+        <div className="art-list-toolbar-actions">
+          <span className="art-list-result-count" aria-live="polite">
+            显示 <strong>{filteredUsers.length}</strong> / {users.length} 个
+          </span>
+        </div>
+      </section>
+
+      <section className="art-list-results" aria-label="平台用户清单">
+        <header className="art-list-results-head">
+          <div>
+            <h2>用户清单</h2>
+            <span>共 {users.length} 个账号</span>
+          </div>
+        </header>
+
+        <div className="art-table-panel">
+          <div className="art-panel-body is-flush">
+            <Table
+              columns={columns}
+              dataSource={filteredUsers}
+              rowKey="id"
+              loading={loading}
+              expandable={{ expandedRowRender }}
+              size="small"
+              scroll={{ x: 'max-content' }}
+              pagination={{
+                pageSize: 10,
+                showSizeChanger: true,
+                showTotal: (total) => `共 ${total} 条`,
+              }}
+              locale={{
+                emptyText: (
+                  <div className="art-table-empty">
+                    <UserOutlined />
+                    <p>{keyword ? '没有匹配的用户' : '暂无平台用户'}</p>
+                  </div>
+                ),
+              }}
+            />
+          </div>
+        </div>
+      </section>
       {/* 创建/编辑用户对话框 */}
       <Modal
         title={editingUser ? '编辑用户' : '添加用户'}

@@ -37,7 +37,7 @@ const DockPowerModal: React.FC<DockPowerModalProps> = ({
         const isDanger = ['stop', 'hard_stop', 'hard_reset'].includes(action)
         Modal.confirm({
             title: `确认${label}`,
-            icon: <ExclamationCircleOutlined style={{ color: isDanger ? '#ef4444' : '#faad14' }} />,
+            icon: <ExclamationCircleOutlined style={{ color: isDanger ? 'var(--art-danger)' : 'var(--art-warning)' }} />,
             content: `确定要对虚拟机 "${vmUuid}" 执行${label}操作吗？`,
             okText: `确认${label}`,
             okType: isDanger ? 'danger' : 'primary',
@@ -60,8 +60,7 @@ const DockPowerModal: React.FC<DockPowerModalProps> = ({
                 <Col span={12}>
                     <Button
                         block
-                        type="primary"
-                        className="bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700"
+                        className="vm-power-action vm-power-action--success"
                         icon={<PlayCircleOutlined/>}
                         onClick={() => confirmAction('start')}
                     >
@@ -71,7 +70,7 @@ const DockPowerModal: React.FC<DockPowerModalProps> = ({
                 <Col span={12}>
                     <Button
                         block
-                        className="bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white"
+                        className="vm-power-action vm-power-action--warning"
                         icon={<PauseCircleOutlined/>}
                         onClick={() => confirmAction('stop')}
                     >
@@ -81,7 +80,7 @@ const DockPowerModal: React.FC<DockPowerModalProps> = ({
                 <Col span={12}>
                     <Button
                         block
-                        type="primary"
+                        className="vm-power-action vm-power-action--primary"
                         icon={<RedoOutlined/>}
                         onClick={() => confirmAction('reset')}
                     >
@@ -91,7 +90,7 @@ const DockPowerModal: React.FC<DockPowerModalProps> = ({
                 <Col span={12}>
                     <Button
                         block
-                        className="bg-gray-500 hover:bg-gray-600 dark:bg-gray-600 dark:hover:bg-gray-700 text-white"
+                        className="vm-power-action vm-power-action--neutral"
                         icon={<PauseCircleOutlined/>}
                         onClick={() => confirmAction('pause')}
                     >
@@ -101,7 +100,7 @@ const DockPowerModal: React.FC<DockPowerModalProps> = ({
                 <Col span={12}>
                     <Button
                         block
-                        className="bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-800 text-white"
+                        className="vm-power-action vm-power-action--primary"
                         icon={<PlayCircleOutlined/>}
                         onClick={() => confirmAction('resume')}
                     >

@@ -1,5 +1,11 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+
+const ENGINE_LABELS: Record<string, string> = {
+  PromoxSetup: 'Proxmox VE',
+  OCInterface: 'OpenStack',
+  LxContainer: 'LXC',
+}
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   Button, message, Modal, Tag, Dropdown, Alert, Spin
 } from 'antd'
@@ -11,11 +17,15 @@ import {
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 import { useMmuiTheme } from '@/hooks/useMmuiTheme'
-import MmuiSidebar from '@/components/mmui/MmuiSidebar'
+import { useTheme } from '@/contexts/ThemeContext'
+import { getThemePalette } from '@/config/theme.config'
+import MmuiSidebar, { defaultSidebarItems } from '@/components/mmui/MmuiSidebar'
 import MmuiHeader from '@/components/mmui/MmuiHeader'
 import MmuiCard, { MmuiGaugeRing, MmuiLoginCard } from '@/components/mmui/MmuiCard'
 import api from '@/utils/apis.ts'
-import { VM_PERMISSION, hasPermission } from '@/types'
+import { useUserStore } from '@/utils/data'
+import { saveVMDetailLayout } from '@/utils/vmDetailLayout'
+import { VM_PERMISSION, hasPermission, isQuotaExhausted } from '@/types'
 import '@/styles/mmui-theme.css'
 import '@/styles/mmui-components.css'
 
@@ -43,6 +53,24 @@ interface HostConfig {
 }
 
 // ─── Utility ────────────────────────────────────────────────────────────
+const DETAIL_SECTION_PERMISSION: Record<string, number> = {
+  nic: VM_PERMISSION.NIC_EDITS,
+  disk: VM_PERMISSION.HDD_EDITS,
+  iso: VM_PERMISSION.ISO_EDITS,
+  nat: VM_PERMISSION.NET_EDITS,
+  proxy: VM_PERMISSION.WEB_EDITS,
+  pci: VM_PERMISSION.PCI_EDITS,
+  usb: VM_PERMISSION.USB_EDITS,
+  backup: VM_PERMISSION.VM_BACKUP,
+  boot: VM_PERMISSION.EFI_EDITS,
+  vnc: VM_PERMISSION.VNC_EDITS,
+}
+
+const DETAIL_SECTION_QUOTA: Record<string, string> = {
+  nic: 'nic_num', disk: 'dat_num', iso: 'iso_num', nat: 'nat_num',
+  proxy: 'web_num', pci: 'pci_num', usb: 'usb_num', backup: 'bak_num',
+}
+
 const formatMem = (mb: number) => {
   if (!mb) return '0 MB'
   if (mb < 1024) return `${mb} MB`
@@ -64,12 +92,32 @@ const formatMem = (mb: number) => {
 export default function DockDetailV2() {
   const { hostName, uuid } = useParams<{ hostName: string; uuid: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  const { user: currentUser } = useUserStore()
   const theme = useMmuiTheme()
+  const { theme: colorMode, themePreset, transparentMode } = useTheme()
+  const themePalette = getThemePalette(themePreset, colorMode === 'dark', transparentMode)
 
   // ── UI State ──────────────────────────────────────────────────────────
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
   const [activeSection, setActiveSection] = useState('panel')
+
+  useEffect(() => {
+    saveVMDetailLayout(currentUser?.username, 'vertical')
+  }, [currentUser?.username])
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 1023px)')
+    const syncViewport = () => {
+      setIsMobileViewport(media.matches)
+      if (!media.matches) setMobileMenuOpen(false)
+    }
+    syncViewport()
+    media.addEventListener('change', syncViewport)
+    return () => media.removeEventListener('change', syncViewport)
+  }, [])
 
   // ── Data State ────────────────────────────────────────────────────────
   const [vm, setVM] = useState<any>(null)
@@ -244,6 +292,31 @@ export default function DockDetailV2() {
 
   // ── Computed ────────────────────────────────────────────────────────
   const config = vm?.config || {}
+  const isAdminUser = Boolean(currentUser?.is_admin || vm?.is_admin)
+  const primaryOwner = Object.keys(config.own_all || {})[0]
+  const isOwnerOrAdmin = isAdminUser || primaryOwner === (currentUser?.username || vm?.current_user)
+  const hasVMPermission = (permission: number) => isAdminUser || hasPermission(userPermissions, permission)
+  const canManagePower = hasVMPermission(VM_PERMISSION.PWR_EDITS)
+  const canManageSystem = hasVMPermission(VM_PERMISSION.SYS_EDITS)
+  const visibleSidebarItems = useMemo(() => defaultSidebarItems.filter(item => {
+    if (item.key === 'panel' || item.key === 'monitor' || item.key === 'system' || item.key === 'network') return true
+    if (item.key === 'permission') return isOwnerOrAdmin
+    if (item.key === 'sysadmin') {
+      return hasVMPermission(VM_PERMISSION.PWR_EDITS) || hasVMPermission(VM_PERMISSION.SYS_EDITS)
+    }
+    if (item.key === 'vnc') return hasVMPermission(VM_PERMISSION.VNC_EDITS)
+    const requiredPermission = DETAIL_SECTION_PERMISSION[item.key]
+    if (requiredPermission && !hasVMPermission(requiredPermission)) return false
+    if (isAdminUser) return true
+    const quotaField = DETAIL_SECTION_QUOTA[item.key]
+    if (quotaField && config[quotaField] !== undefined && Number(config[quotaField]) === 0) return false
+    return true
+  }), [config, isAdminUser, isOwnerOrAdmin, userPermissions])
+
+  useEffect(() => {
+    if (!visibleSidebarItems.some(item => item.key === activeSection)) setActiveSection('panel')
+  }, [activeSection, visibleSidebarItems])
+
   const displayStatus = tempStatus || currentStatus.ac_status
 
   const cpuPercent = currentStatus.cpu_usage || 0
@@ -265,8 +338,14 @@ export default function DockDetailV2() {
     ON_OPEN: '启动中', ON_STOP: '关机中', ON_SAVE: '暂停中', ON_WAKE: '唤醒中'
   }
   const statusColor: Record<string, string> = {
-    STARTED: '#10b981', STOPPED: '#6b7280', SUSPEND: '#f59e0b', UNKNOWN: '#6b7280',
-    ON_OPEN: '#4460ff', ON_STOP: '#4460ff', ON_SAVE: '#4460ff', ON_WAKE: '#4460ff'
+    STARTED: themePalette.success,
+    STOPPED: themePalette.gray[500],
+    SUSPEND: themePalette.warning,
+    UNKNOWN: themePalette.gray[500],
+    ON_OPEN: themePalette.primary,
+    ON_STOP: themePalette.primary,
+    ON_SAVE: themePalette.primary,
+    ON_WAKE: themePalette.primary,
   }
 
   const expiryDate = config.exp_time
@@ -279,6 +358,10 @@ export default function DockDetailV2() {
   // ── Handlers ────────────────────────────────────────────────────────
   const handlePowerAction = async (action: string) => {
     if (!hostName || !uuid || !hostEnabled) return
+    if (!hasVMPermission(VM_PERMISSION.PWR_EDITS)) {
+      message.warning('当前账号没有电源操作权限')
+      return
+    }
     const actionNames: any = {
       start: '启动', stop: '关机', hard_stop: '强制关机', reset: '重启',
       hard_reset: '强制重启', pause: '暂停', resume: '恢复'
@@ -299,13 +382,17 @@ export default function DockDetailV2() {
 
   const handleOpenVNC = async () => {
     if (!hostName || !uuid || !hostEnabled) return
+    if (!hasVMPermission(VM_PERMISSION.VNC_EDITS)) {
+      message.warning('当前账号没有远程控制台权限')
+      return
+    }
     const hide = message.loading('获取控制台地址...', 0)
     try {
       const r = await api.getVMConsole(hostName, uuid)
       hide()
       const url = r.data?.console_url || (typeof r.data === 'string' ? r.data : null)
       if (url?.startsWith('http')) window.open(url, '_blank')
-      else message.error('获取控制台地址无效')
+      else message.error(r.data?.console_error || '获取控制台地址无效')
     } catch { hide(); message.error('连接失败') }
   }
 
@@ -314,7 +401,10 @@ export default function DockDetailV2() {
     message.success(`${label}已复制`)
   }
 
-  const goClassicPage = () => navigate(`/hosts/${hostName}/vms/${uuid}`)
+  const goHorizontalPage = () => {
+    saveVMDetailLayout(currentUser?.username, 'horizontal')
+    navigate({ pathname: `/hosts/${hostName}/vms/${uuid}`, search: location.search, hash: location.hash })
+  }
 
   const handleSidebarSelect = (key: string) => {
     setActiveSection(key)
@@ -370,10 +460,11 @@ export default function DockDetailV2() {
       <ReactECharts
         style={{ height: 220 }}
         option={{
-          tooltip: { trigger: 'axis', backgroundColor: 'var(--mmui-surface)', borderColor: 'var(--mmui-border)' },
+          backgroundColor: 'transparent',
+          tooltip: { trigger: 'axis', backgroundColor: themePalette.elevatedBg, borderColor: themePalette.cardBorder, textStyle: { color: themePalette.gray[900] } },
           grid: { left: '3%', right: '4%', bottom: '3%', top: '24px', containLabel: true },
-          xAxis: { type: 'category', boundaryGap: false, data: labels, axisLabel: { fontSize: 10, color: 'var(--mmui-text-muted)' } },
-          yAxis: { type: 'value', max: unit === '%' ? 100 : undefined, axisLabel: { formatter: `{value}${unit}`, fontSize: 10, color: 'var(--mmui-text-muted)' }, splitLine: { lineStyle: { color: 'var(--mmui-divider)' } } },
+          xAxis: { type: 'category', boundaryGap: false, data: labels, axisLabel: { fontSize: 10, color: themePalette.gray[600] }, axisLine: { lineStyle: { color: themePalette.cardBorder } }, axisTick: { show: false } },
+          yAxis: { type: 'value', max: unit === '%' ? 100 : undefined, axisLabel: { formatter: `{value}${unit}`, fontSize: 10, color: themePalette.gray[600] }, splitLine: { lineStyle: { color: themePalette.cardBorder } } },
           series: [{
             name: title, type: 'line', smooth: true, showSymbol: false, data: chartData,
             areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: color + '60' }, { offset: 1, color: color + '08' }] } },
@@ -393,25 +484,40 @@ export default function DockDetailV2() {
     </div>
   )
 
+  const engineRaw = hostConfig?.server_type || vm.config?.virt_type || 'Hyper-V'
+  const engineLabel = ENGINE_LABELS[engineRaw] || engineRaw
+  const activeNic = Object.values((config.nic_all || {}) as Record<string, any>)
+    .find((nic: any) => nic?.ip4_addr === vm.ipv4_address) as any
+  const ipv4Scope = activeNic?.nic_type === 'pub' ? '公网' : '内网'
+  const ipv6Address = vm.ipv6_address && vm.ipv6_address !== '-' ? vm.ipv6_address : ''
+  const hardwareSummary = `CPU ${config.cpu_num || 0} 核 · 内存 ${formatMem(config.mem_num || 0)} · 硬盘 ${formatMem(config.hdd_num || 0)} · 带宽 ${config.speed_u || 0} Mbps`
+
   // ═════════════════════════════════════════════════════════════════════
   // RENDER
   // ═════════════════════════════════════════════════════════════════════
   return (
     <div className="mmui-layout" data-mmui-theme={theme.mode}>
       {/* 移动端遮罩 */}
-      <div
+      <button
+        type="button"
         className="mmui-sidebar-overlay"
         data-visible={mobileMenuOpen || undefined}
+        aria-label="关闭导航菜单"
+        tabIndex={mobileMenuOpen ? 0 : -1}
         onClick={() => setMobileMenuOpen(false)}
       />
 
       {/* 侧边栏 */}
       <MmuiSidebar
         activeKey={activeSection}
-        collapsed={sidebarCollapsed}
+        items={visibleSidebarItems}
+        collapsed={isMobileViewport ? false : sidebarCollapsed}
+        mobileViewport={isMobileViewport}
+        mobileOpen={mobileMenuOpen}
+        onMobileClose={() => setMobileMenuOpen(false)}
         onSelect={handleSidebarSelect}
         onCollapse={setSidebarCollapsed}
-        onBack={() => navigate(-1)}
+        onBack={() => navigate(`/hosts/${hostName}/vms`)}
       />
 
       {/* 主内容区 */}
@@ -421,10 +527,11 @@ export default function DockDetailV2() {
           theme={theme}
           sidebarCollapsed={sidebarCollapsed}
           onToggleMobileMenu={() => setMobileMenuOpen(!mobileMenuOpen)}
+          mobileMenuOpen={mobileMenuOpen}
           extra={
             <Button
               size="small"
-              onClick={goClassicPage}
+              onClick={goHorizontalPage}
               style={{
                 background: 'var(--mmui-card-action-bg)',
                 borderColor: 'var(--mmui-card-action-border)',
@@ -432,7 +539,7 @@ export default function DockDetailV2() {
                 borderRadius: 'var(--mmui-radius-btn)',
               }}
             >
-              经典版
+              横版
             </Button>
           }
         />
@@ -452,29 +559,39 @@ export default function DockDetailV2() {
           {activeSection === 'panel' && (
             <div>
               {/* 顶部VM信息栏 - MMUI风格 */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 24, padding: '20px 24px', borderRadius: 'var(--mmui-radius-lg)', background: 'var(--mmui-card-surface)', border: '1px solid var(--mmui-card-border)', boxShadow: 'var(--mmui-card-shadow)' }}>
-                <div style={{ width: 60, height: 60, borderRadius: 12, background: 'linear-gradient(135deg, #4460ff 0%, #6b7dff 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(68, 96, 255, 0.25)', flexShrink: 0 }}>
-                  <DesktopOutlined style={{ fontSize: 28, color: '#fff' }} />
+              <div className="vm-detail-hero" style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 24, padding: '20px 24px', borderRadius: 'var(--mmui-radius-lg)', background: 'var(--mmui-card-surface)', border: '1px solid var(--mmui-card-border)', boxShadow: 'var(--mmui-card-shadow)' }}>
+                <div style={{ width: 60, height: 60, borderRadius: 12, background: `linear-gradient(135deg, ${themePalette.primary}, ${themePalette.primaryHover})`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px color-mix(in srgb, var(--main-color) 25%, transparent)', flexShrink: 0 }}>
+                  <DesktopOutlined style={{ fontSize: 28, color: themePalette.onPrimary }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--mmui-heading)', letterSpacing: '0.3px' }}>{config.vm_name || uuid}</span>
+                  <div className="vm-detail-hero-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span className="vm-detail-hero-name" style={{ fontSize: 22, fontWeight: 700, color: 'var(--mmui-heading)', letterSpacing: '0.3px' }}>{config.vm_name || uuid}</span>
+                    <Tag color="processing" style={{ borderRadius: 4, fontSize: 12, padding: '0 8px', lineHeight: '22px' }}>{engineLabel}</Tag>
                     <Tag color={statusColor[displayStatus]} style={{ borderRadius: 4, fontSize: 12, padding: '0 8px', lineHeight: '22px' }}>{statusText[displayStatus] || displayStatus}</Tag>
+                    <span className="vm-detail-hero-ip">
+                      <span className="vm-detail-hero-ip-label">IPv4</span>
+                      <code>{vm.ipv4_address || '未分配'}</code>
+                      <span className="vm-detail-hero-ip-scope">{ipv4Scope}</span>
+                      <CopyOutlined style={{ cursor: 'pointer', fontSize: 12, opacity: 0.6 }} onClick={() => handleCopy(vm.ipv4_address || '', 'IP')} />
+                    </span>
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--mmui-text-muted)', marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>📍 {hostName}</span>
-                    <span style={{ opacity: 0.4 }}>·</span>
-                    <span>IPv4 {vm.ipv4_address || '-'}</span>
-                    <CopyOutlined style={{ marginLeft: 4, cursor: 'pointer', fontSize: 12, opacity: 0.6 }} onClick={() => handleCopy(vm.ipv4_address || '', 'IP')} />
+                  <div className="vm-detail-hero-meta" style={{ fontSize: 13, color: 'var(--mmui-text-muted)', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>主机 <strong>{hostName}</strong></span>
+                    <span className="vm-detail-hero-sep">·</span>
+                    <span>系统 <strong>{getOSDisplayName(config.os_name || '')}</strong></span>
+                    <span className="vm-detail-hero-sep">·</span>
+                    {ipv6Address
+                      ? <span>IPv6 <code>{ipv6Address}</code></span>
+                      : <span className="vm-detail-hero-hardware">{hardwareSummary}</span>}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+                <div className="vm-detail-hero-actions" style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
                   <button className="mmui-page-btn mmui-page-btn--primary" onClick={() => setRemoteModalVisible(true)}
-                    disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS)}
+                    disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.VNC_EDITS)}
                     style={{ padding: '0 20px', minHeight: 38, borderRadius: 8, fontWeight: 500 }}>
                     <DesktopOutlined style={{ marginRight: 6 }} /> 远程
                   </button>
-                  <button className="mmui-page-btn" onClick={() => handlePowerAction('reset')} disabled={displayStatus !== 'STARTED'}
+                  <button className="mmui-page-btn" onClick={() => handlePowerAction('reset')} disabled={displayStatus !== 'STARTED' || !canManagePower}
                     style={{ padding: '0 16px', minHeight: 38, borderRadius: 8 }}>
                     <ReloadOutlined style={{ marginRight: 6 }} /> 重启
                   </button>
@@ -482,11 +599,11 @@ export default function DockDetailV2() {
                     <ReloadOutlined />
                   </button>
                   <Dropdown menu={{ items: [
-                    { key: 'start', label: '启动', onClick: () => handlePowerAction('start'), disabled: displayStatus === 'STARTED' },
-                    { key: 'stop', label: '关机', onClick: () => handlePowerAction('stop'), disabled: displayStatus !== 'STARTED' },
-                    { key: 'hard_stop', label: '强制关机', onClick: () => handlePowerAction('hard_stop'), danger: true },
-                    { key: 'hard_reset', label: '强制重启', onClick: () => handlePowerAction('hard_reset'), danger: true },
-                    { key: 'reinstall', label: '重装系统', onClick: () => {
+                    { key: 'start', label: '启动', onClick: () => handlePowerAction('start'), disabled: displayStatus === 'STARTED' || !canManagePower },
+                    { key: 'stop', label: '关机', onClick: () => handlePowerAction('stop'), disabled: displayStatus !== 'STARTED' || !canManagePower },
+                    { key: 'hard_stop', label: '强制关机', onClick: () => handlePowerAction('hard_stop'), danger: true, disabled: !canManagePower },
+                    { key: 'hard_reset', label: '强制重启', onClick: () => handlePowerAction('hard_reset'), danger: true, disabled: !canManagePower },
+                    { key: 'reinstall', label: '重装系统', disabled: !hostEnabled || !canManageSystem, onClick: () => {
                       const os = window.prompt('输入系统镜像名称:')
                       if (!os) return
                       const pass = window.prompt('输入新密码:')
@@ -504,28 +621,28 @@ export default function DockDetailV2() {
               </div>
 
               {/* 实例状态 + 实时资源 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20, marginBottom: 20 }}>
-                <MmuiCard title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>实例状态 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: statusColor[displayStatus] || '#6b7280' }} /> <span style={{ fontSize: 13, fontWeight: 400, color: statusColor[displayStatus] }}>{statusText[displayStatus]}</span> <span style={{ fontSize: 12, color: 'var(--mmui-accent-blue)', cursor: 'pointer', marginLeft: 8 }}>更改</span></span>}>
-                  <div style={{ display: 'flex', gap: 24 }}>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className="vm-detail-overview-grid" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20, marginBottom: 20 }}>
+                <MmuiCard title={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>实例概览 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: statusColor[displayStatus] || 'var(--art-gray-500)' }} /> <span style={{ fontSize: 13, fontWeight: 400, color: statusColor[displayStatus] }}>{statusText[displayStatus]}</span> <span style={{ fontSize: 12, color: 'var(--mmui-accent-blue)', cursor: 'pointer', marginLeft: 8 }}>更改</span></span>}>
+                  <div className="vm-detail-status-content" style={{ display: 'flex', gap: 24 }}>
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
                       {[
-                        { icon: '📍', label: '区域线路', value: `${hostName} | ${hostConfig?.server_type || ''}` },
+                        { icon: '📍', label: '区域线路', value: hostName },
                         { icon: '💻', label: '操作系统', value: getOSDisplayName(config.os_name || ''), extra: <span style={{ color: 'var(--mmui-accent-blue)', cursor: 'pointer', fontSize: 12, marginLeft: 8, fontWeight: 500 }}>重装</span> },
                         { icon: '⚡', label: '配置', value: `${config.cpu_num || 0}核    ${formatMem(config.mem_num || 0)}内存    ${formatMem(config.hdd_num || 0)}存储    ${config.speed_u || 0}Mbps` },
                         { icon: '🔑', label: '系统密码', value: showPassword ? config.os_pass : '••••••••••', toggle: () => setShowPassword(!showPassword), copy: config.os_pass },
-                        { icon: '📅', label: '到期时间', value: expiryDate, extra: <span style={{ color: '#10b981', fontSize: 12, marginLeft: 8 }}>(还有 {daysLeft} 天到期)</span> },
+                        { icon: '📅', label: '到期时间', value: expiryDate, extra: <span style={{ color: themePalette.success, fontSize: 12, marginLeft: 8 }}>(还有 {daysLeft} 天到期)</span> },
                       ].map((item, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div key={i} className="vm-detail-info-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           <span style={{ fontSize: 14 }}>{item.icon}</span>
                           <span style={{ fontSize: 13, color: 'var(--mmui-text-muted)', width: 64, flexShrink: 0 }}>{item.label}</span>
-                          <span style={{ fontSize: 14, color: 'var(--mmui-text)', fontWeight: 500 }}>{item.value}</span>
+                          <span className="vm-detail-info-value" style={{ fontSize: 14, color: 'var(--mmui-text)', fontWeight: 500 }}>{item.value}</span>
                           {item.extra}
                           {item.toggle && <EyeOutlined style={{ cursor: 'pointer', color: 'var(--mmui-text-muted)', fontSize: 13 }} onClick={item.toggle} />}
                           {item.copy && <CopyOutlined style={{ cursor: 'pointer', color: 'var(--mmui-text-muted)', fontSize: 13 }} onClick={() => handleCopy(item.copy!, '密码')} />}
                         </div>
                       ))}
                     </div>
-                    <div style={{ width: 200, height: 180, borderRadius: 12, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--mmui-fill-secondary)', flexShrink: 0 }}>
+                    <div className="vm-detail-screenshot" data-empty={!vmScreenshot || undefined} style={{ width: 200, height: 180, borderRadius: 'var(--mmui-radius)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--mmui-fill-secondary)', flexShrink: 0 }}>
                       {vmScreenshot ? <img src={vmScreenshot} alt="VM" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (
                         <div style={{ textAlign: 'center' }}><DesktopOutlined style={{ fontSize: 48, color: 'var(--mmui-accent-blue-soft)' }} /><div style={{ fontSize: 11, color: 'var(--mmui-text-muted)', marginTop: 10 }}>{displayStatus === 'STARTED' ? '获取截图中...' : '虚拟机未运行'}</div></div>
                       )}
@@ -533,21 +650,26 @@ export default function DockDetailV2() {
                   </div>
                 </MmuiCard>
 
-                <MmuiCard title="实例状态" extra={<span style={{ fontSize: 12, color: 'var(--mmui-text-muted)', cursor: 'pointer' }} onClick={() => loadVMDetail(true)}>实时更新 <ReloadOutlined /></span>}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '16px 0' }}>
-                    <MmuiGaugeRing percent={cpuPercent} color="#4460ff" size={96} label="CPU 占用" subLabel={`规格 ${config.cpu_num || 0} 核`} />
-                    <MmuiGaugeRing percent={memPercent} color="#f59e0b" size={96} label="内存占用" subLabel={`规格 ${formatMem(config.mem_num || 0)}`} />
-                    <MmuiGaugeRing percent={netLoad > 100 ? 100 : netLoad} color="#10b981" size={96} label="网络负载" subLabel={`峰值 ${config.speed_u || 0} Mbps`} />
+                <MmuiCard title="资源占用" extra={<span style={{ fontSize: 12, color: 'var(--mmui-text-muted)', cursor: 'pointer' }} onClick={() => loadVMDetail(true)}>实时更新 <ReloadOutlined /></span>}>
+                  <div className="vm-detail-gauges">
+                    <MmuiGaugeRing percent={cpuPercent} color={themePalette.chartColors[0]} size={isMobileViewport ? 82 : 96} label="CPU 占用" subLabel={`规格 ${config.cpu_num || 0} 核`} />
+                    <MmuiGaugeRing percent={memPercent} color={themePalette.chartColors[2]} size={isMobileViewport ? 82 : 96} label="内存占用" subLabel={`规格 ${formatMem(config.mem_num || 0)}`} />
+                    <MmuiGaugeRing percent={netLoad > 100 ? 100 : netLoad} color={themePalette.chartColors[1]} size={isMobileViewport ? 82 : 96} label="网络负载" subLabel={`峰值 ${config.speed_u || 0} Mbps`} />
+                  </div>
+                  <div className="vm-detail-gauge-foot">
+                    <span>已用 <b>{Math.round(cpuPercent)}%</b></span>
+                    <span><b>{formatMem(currentStatus.mem_usage || 0)}</b> / {formatMem(config.mem_num || 0)}</span>
+                    <span><b>{currentStatus.network_u || 0}</b> / {config.speed_u || 0} Mbps</span>
                   </div>
                 </MmuiCard>
               </div>
 
               {/* 远程登录 + 账号信息 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20 }}>
+              <div className="vm-detail-access-grid" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20 }}>
                 <MmuiCard title="远程登录" extra={<span style={{ fontSize: 12, color: 'var(--mmui-accent-blue)', cursor: 'pointer', fontWeight: 500 }} onClick={() => setRemoteModalVisible(true)}>查看更多方式 &gt;</span>}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-                    <MmuiLoginCard icon={<DesktopOutlined style={{ color: '#4460ff' }} />} title="RDP" badge={{ text: '推荐', color: '#4460ff' }}
-                      desc="Windows 下载 BAT，手机唤起 Remote App，其他设备下载 RDP 文件。" buttonText="下载文件" onClick={() => {
+                  <div className="vm-detail-login-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                    <MmuiLoginCard icon={<DesktopOutlined style={{ color: themePalette.primary }} />} title="RDP" badge={{ text: '推荐', color: themePalette.primary }}
+                      desc="下载 RDP 文件，手机可唤起 Remote App。" buttonText="下载文件" onClick={() => {
                         const addr = hostConfig?.public_addr?.[0] || vm?.ipv4_address || ''
                         const user = config.rdp_info?.ms_rdp?.user || 'Administrator'
                         const rdpContent = `full address:s:${addr}:3389\r\nusername:s:${user}\r\nprompt for credentials:i:1\r\nadministrative session:i:1`
@@ -560,26 +682,28 @@ export default function DockDetailV2() {
                         URL.revokeObjectURL(url)
                         message.success('RDP文件已下载')
                       }} />
-                    <MmuiLoginCard icon={<GlobalOutlined style={{ color: '#10b981' }} />} title="VNC" badge={{ text: '可用', color: '#10b981' }}
+                    <MmuiLoginCard icon={<GlobalOutlined style={{ color: themePalette.success }} />} title="VNC" badge={{ text: '可用', color: themePalette.success }}
                       desc="网页 VNC，适合救援排障。" buttonText="打开 VNC" onClick={handleOpenVNC}
-                      disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS)} />
+                      disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.VNC_EDITS)} />
                     {config.rdp_info?.todesk?.code && (config.os_name || '').toLowerCase().includes('win') && (
-                      <MmuiLoginCard icon={<GlobalOutlined style={{ color: '#f59e0b' }} />} title="ToDesk" badge={{ text: '就绪', color: '#f59e0b' }}
+                      <MmuiLoginCard icon={<GlobalOutlined style={{ color: themePalette.warning }} />} title="ToDesk" badge={{ text: '就绪', color: themePalette.warning }}
                         desc={`设备代码: ${config.rdp_info.todesk.code}`} buttonText="查看详情" onClick={() => setRemoteModalVisible(true)} />
                     )}
                   </div>
                 </MmuiCard>
 
-                <MmuiCard title="账号信息" extra={<span style={{ fontSize: 12, color: 'var(--mmui-accent-blue)', cursor: 'pointer', fontWeight: 500 }} onClick={() => message.info('登录凭据已复制')}>登录凭据 &gt;</span>}>
+                <MmuiCard title="账号信息" className="vm-detail-account-card" extra={<span style={{ fontSize: 12, color: 'var(--mmui-accent-blue)', cursor: 'pointer', fontWeight: 500 }} onClick={() => message.info('登录凭据已复制')}>登录凭据 &gt;</span>}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {[
-                      { label: '系统类型', value: getOSDisplayName(config.os_name || '') },
-                      { label: '远程地址', value: `${vm.ipv4_address || '-'}:${natRules.find(r => r.lan_port === 3389)?.wan_port || 3389}`, copy: true },
-                      { label: '系统用户', value: config.os_name?.toLowerCase().includes('windows') ? 'Administrator' : 'root', copy: true },
-                      { label: '系统密码', value: config.os_pass, hidden: !showPassword, copy: true, toggle: () => setShowPassword(!showPassword) },
-                      { label: '面板密码', value: config.vc_pass, hidden: !showVncPassword, copy: true, toggle: () => setShowVncPassword(!showVncPassword) },
-                    ].map((item, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  {[
+                  { label: '系统类型', value: getOSDisplayName(config.os_name || '') },
+                  { label: '主机', value: hostName },
+                  { label: '远程地址', value: `${vm.ipv4_address || '-'}:${natRules.find(r => r.lan_port === 3389)?.wan_port || 3389}`, copy: true },
+                  { label: '系统用户', value: config.os_name?.toLowerCase().includes('windows') ? 'Administrator' : 'root', copy: true },
+                  { label: '系统密码', value: config.os_pass, hidden: !showPassword, copy: true, toggle: () => setShowPassword(!showPassword) },
+                  { label: '面板密码', value: config.vc_pass, hidden: !showVncPassword, copy: true, toggle: () => setShowVncPassword(!showVncPassword) },
+                  { label: '到期时间', value: expiryDate },
+                  ].map((item, i) => (
+                      <div key={i} className="vm-detail-account-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <span style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)' }}>{item.label}</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 'var(--mmui-font-body)', fontFamily: 'monospace', color: 'var(--mmui-text)' }}>
@@ -600,7 +724,7 @@ export default function DockDetailV2() {
           {activeSection === 'nic' && (
             <MmuiCard title="网卡管理" extra={
               <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.NIC_EDITS) || (config.nic_num !== undefined && config.nic_all && Object.keys(config.nic_all).length >= (config.nic_num || 99))}
+                disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.NIC_EDITS) || isQuotaExhausted(config.nic_num, config.nic_all ? Object.keys(config.nic_all).length : 0)}
                 onClick={() => {
                   const nicName = window.prompt('网卡名称 (如 ethernet1):', `ethernet${config.nic_all ? Object.keys(config.nic_all).length : 0}`)
                   if (!nicName) return
@@ -612,8 +736,11 @@ export default function DockDetailV2() {
                     content: `将添加网卡 "${nicName}" (${nicType === 'pub' ? '公网' : '内网'})${ip4 ? `，IP: ${ip4}` : ''}，添加后需重启生效。`,
                     onOk: async () => {
                       try {
-                        await api.addIPAddress(hostName!, uuid!, { nic_name: nicName, nic_type: nicType, ip4_addr: ip4 })
-                        message.success('网卡添加成功，请重启虚拟机使其生效')
+                        const r = await api.addIPAddress(hostName!, uuid!, { nic_name: nicName, nic_type: nicType, ip4_addr: ip4 })
+                        const assigned = (r.data as any)?.nic?.ip4_addr
+                        message.success(assigned
+                          ? `网卡添加成功，已自动分配 IP ${assigned}，请重启虚拟机使其生效`
+                          : '网卡添加成功，请重启虚拟机使其生效')
                         loadVMDetail()
                       } catch (e: any) { message.error(e?.message || '添加失败') }
                     }
@@ -630,7 +757,7 @@ export default function DockDetailV2() {
                           <Tag color={nic.nic_type === 'pub' ? 'blue' : 'green'}>{nic.nic_type === 'pub' ? '公网' : '内网'}</Tag>
                         </div>
                         <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
-                          disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.NIC_EDITS)}
+                          disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.NIC_EDITS)}
                           onClick={() => Modal.confirm({
                             title: '删除网卡确认',
                             content: `确定要删除网卡 "${name}" 吗？删除后需重启虚拟机才能生效。`,
@@ -644,7 +771,7 @@ export default function DockDetailV2() {
                             }
                           })}>删除</button>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 10, fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)' }}>
+                      <div className="vm-detail-nic-primary" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 10, fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)' }}>
                         <div>IPv4: <span style={{ color: 'var(--mmui-text)', fontFamily: 'monospace' }}>{nic.ip4_addr || '-'}</span></div>
                         <div>IPv6: <span style={{ color: 'var(--mmui-text)', fontFamily: 'monospace' }}>{nic.ip6_addr || '-'}</span></div>
                         <div>MAC: <span style={{ color: 'var(--mmui-text)', fontFamily: 'monospace' }}>{nic.mac_addr || '-'}</span></div>
@@ -668,7 +795,7 @@ export default function DockDetailV2() {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={{ fontSize: 12, color: 'var(--mmui-text-muted)' }}>总容量 {formatMem(config.hdd_num || 0)}</span>
                 <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                  disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.HDD_EDITS)}
+                  disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.HDD_EDITS)}
                   onClick={() => {
                     const size = window.prompt('磁盘大小 (GB):', '20')
                     if (!size || isNaN(Number(size))) return
@@ -701,7 +828,7 @@ export default function DockDetailV2() {
                       </div>
                       {info.hdd_flag !== 1 && (
                         <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
-                          disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.HDD_EDITS)}
+                          disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.HDD_EDITS)}
                           onClick={() => Modal.confirm({
                             title: '删除磁盘',
                             content: `确定删除磁盘 "${path}" 吗？数据将不可恢复！`,
@@ -730,7 +857,7 @@ export default function DockDetailV2() {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={{ fontSize: 12, color: 'var(--mmui-text-muted)' }}>已挂载 {config.iso_all ? Object.keys(config.iso_all).length : 0}</span>
                 <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                  disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.ISO_EDITS)}
+                  disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.ISO_EDITS)}
                   onClick={() => {
                     const isoImages = hostConfig?.images_maps || []
                     if (Array.isArray(isoImages) && isoImages.length > 0) {
@@ -783,7 +910,7 @@ export default function DockDetailV2() {
                         </div>
                       </div>
                       <button className="mmui-page-btn" style={{ minWidth: 60, minHeight: 28, fontSize: 12, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
-                        disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.ISO_EDITS)}
+                        disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.ISO_EDITS)}
                         onClick={() => Modal.confirm({ title: '卸载ISO', content: `确定卸载 "${name}" 吗？`, okButtonProps: { danger: true }, onOk: async () => { try { await api.deleteISO(hostName!, uuid!, name); message.success('已卸载'); loadVMDetail() } catch (e: any) { message.error(e?.message || '失败') } } })}>
                         卸载
                       </button>
@@ -796,50 +923,11 @@ export default function DockDetailV2() {
             </MmuiCard>
           )}
 
-          {/* ═══ 端口映射 ═══ */}
-          {activeSection === 'nat' && (
-            <MmuiCard title="端口映射" extra={
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)' }}>已用 {natRules.length} / {config.nat_num || 0}</span>
-                <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                  disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.NET_EDITS)}
-                  onClick={() => {
-                    const protocol = window.prompt('协议 (tcp/udp):', 'tcp'); if (!protocol) return
-                    const wanPort = window.prompt('外部端口:'); if (!wanPort) return
-                    const lanPort = window.prompt('内部端口:', wanPort); if (!lanPort) return
-                    const tips = window.prompt('备注 (可选):') || ''
-                    api.addNATRule(hostName!, uuid!, { protocol, wan_port: Number(wanPort), lan_port: Number(lanPort), nat_tips: tips } as any)
-                      .then(() => { message.success('添加成功'); loadNATRules() }).catch((e: any) => message.error(e?.message || '失败'))
-                  }}>添加规则</button>
-              </div>
-            }>
-              {natRules.length > 0 ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead><tr>{['协议', '外部端口', '内部端口', '备注', '操作'].map(h => (<th key={h} style={{ padding: '12px 16px', textAlign: 'left', color: 'var(--mmui-card-title)', fontSize: 'var(--mmui-text-caption-size)', fontWeight: 'var(--mmui-font-weight-semibold)', borderBottom: '1px solid var(--mmui-divider)' }}>{h}</th>))}</tr></thead>
-                    <tbody>{natRules.map((rule, i) => (
-                      <tr key={i}>
-                        <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--mmui-divider)' }}><Tag color={rule.protocol === 'tcp' ? 'blue' : 'green'}>{rule.protocol?.toUpperCase()}</Tag></td>
-                        <td style={{ padding: '12px 16px', fontFamily: 'monospace', color: 'var(--mmui-text)', borderBottom: '1px solid var(--mmui-divider)' }}>{rule.wan_port}</td>
-                        <td style={{ padding: '12px 16px', fontFamily: 'monospace', color: 'var(--mmui-text)', borderBottom: '1px solid var(--mmui-divider)' }}>{rule.lan_port}</td>
-                        <td style={{ padding: '12px 16px', color: 'var(--mmui-text-muted)', borderBottom: '1px solid var(--mmui-divider)' }}>{rule.nat_tips || '-'}</td>
-                        <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--mmui-divider)' }}>
-                          <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
-                            onClick={() => Modal.confirm({ title: '删除规则', content: `删除 ${rule.protocol}:${rule.wan_port}→${rule.lan_port}？`, okButtonProps: { danger: true }, onOk: async () => { try { await api.deleteNATRule(hostName!, uuid!, rule.id); message.success('已删除'); loadNATRules() } catch (e: any) { message.error(e?.message || '失败') } } })}>删除</button>
-                        </td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              ) : (<div style={{ padding: 40, textAlign: 'center', color: 'var(--mmui-text-muted)' }}>暂无端口映射规则</div>)}
-            </MmuiCard>
-          )}
-
           {/* ═══ 反向代理 ═══ */}
           {activeSection === 'proxy' && (
             <MmuiCard title="反向代理" extra={
               <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                disabled={!hostEnabled}
+                disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.WEB_EDITS)}
                 onClick={() => {
                   const domain = window.prompt('域名:'); if (!domain) return
                   const port = window.prompt('内部端口:'); if (!port) return
@@ -860,6 +948,7 @@ export default function DockDetailV2() {
                         // 删除接口按「数组下标」定位规则（后端返回 proxy_index），
                         // 不能依赖 rule.id / rule.proxy_id —— 后端不返回这两个字段，
                         // 取值会得到 undefined 并导致删除失败。
+                        disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.WEB_EDITS)}
                         onClick={() => Modal.confirm({ title: '删除代理', content: `删除 ${rule.domain || rule.proxy_domain}？`, okButtonProps: { danger: true }, onOk: async () => { try { await api.deleteProxyConfig(hostName!, uuid!, rule.proxy_index ?? i); message.success('已删除'); loadProxyRules() } catch (e: any) { message.error(e?.message || '失败') } } })}>删除</button>
                     </div>
                   ))}
@@ -872,7 +961,7 @@ export default function DockDetailV2() {
           {activeSection === 'pci' && (
             <MmuiCard title="PCI设备直通" extra={
               <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                disabled={!hostEnabled || displayStatus === 'STARTED'}
+                disabled={!hostEnabled || displayStatus === 'STARTED' || !hasVMPermission(VM_PERMISSION.PCI_EDITS)}
                 onClick={async () => {
                   try {
                     const res = await api.getPCIList(hostName!)
@@ -913,9 +1002,9 @@ export default function DockDetailV2() {
                           <div style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', marginTop: 4, fontFamily: 'monospace' }}>UUID: {info.gpu_uuid || '-'}</div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <Tag color={info.gpu_mdev ? 'purple' : 'blue'}>{info.gpu_mdev ? 'vGPU' : 'Passthrough'}</Tag>
+                          <Tag color={info.gpu_mdev ? 'processing' : 'default'}>{info.gpu_mdev ? 'vGPU' : 'Passthrough'}</Tag>
                           <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
-                            disabled={displayStatus === 'STARTED'}
+                            disabled={displayStatus === 'STARTED' || !hostEnabled || !hasVMPermission(VM_PERMISSION.PCI_EDITS)}
                             onClick={() => Modal.confirm({
                               title: '移除PCI设备', content: `确定移除 "${info.gpu_hint || key}" 吗？需要重启虚拟机生效。`,
                               okButtonProps: { danger: true },
@@ -940,7 +1029,7 @@ export default function DockDetailV2() {
           {activeSection === 'usb' && (
             <MmuiCard title="USB设备" extra={
               <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                disabled={!hostEnabled}
+                disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.USB_EDITS)}
                 onClick={async () => {
                   try {
                     const res = await api.getUSBList(hostName!)
@@ -975,6 +1064,7 @@ export default function DockDetailV2() {
                           <div style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', marginTop: 4, fontFamily: 'monospace' }}>设备ID: {key}{info.vid_uuid ? ` (${info.vid_uuid}:${info.pid_uuid})` : ''}</div>
                         </div>
                         <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
+                          disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.USB_EDITS)}
                           onClick={() => Modal.confirm({
                             title: '移除USB设备', content: `确定移除 "${typeof info === 'string' ? info : (info.usb_name || info.usb_hint || key)}" 吗？`,
                             okButtonProps: { danger: true },
@@ -994,45 +1084,12 @@ export default function DockDetailV2() {
             </MmuiCard>
           )}
 
-          {/* ═══ 备份管理 ═══ */}
-          {activeSection === 'backup' && (
-            <MmuiCard title="备份管理" extra={
-              <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.VM_BACKUP)}
-                onClick={() => {
-                  const tips = window.prompt('请输入备份说明：')
-                  if (tips) Modal.confirm({ title: '创建备份', content: '备份可能需要数十分钟，确定继续？', onOk: async () => { try { await api.createVMBackup(hostName!, uuid!, { vm_tips: tips }); message.success('备份指令已发送'); loadBackups() } catch (e: any) { message.error(e?.message || '失败') } } })
-                }}>创建备份</button>
-            }>
-              {backups.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {backups.map((backup, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 'var(--mmui-radius)', border: '1px solid var(--mmui-divider)', background: 'var(--mmui-fill-secondary)' }}>
-                      <div>
-                        <div style={{ color: 'var(--mmui-text)', fontFamily: 'monospace' }}>{backup.backup_name}</div>
-                        <div style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', marginTop: 4 }}>
-                          {backup.backup_hint && <span>{backup.backup_hint} · </span>}
-                          {backup.backup_time ? new Date(backup.backup_time * 1000).toLocaleString('zh-CN') : backup.created_time}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11 }}
-                          onClick={() => Modal.confirm({ title: '恢复备份', content: '将覆盖当前数据！', okButtonProps: { danger: true }, onOk: async () => { try { await api.restoreVMBackup(hostName!, uuid!, backup.backup_name); message.success('恢复指令已发送'); setTimeout(() => window.location.reload(), 3000) } catch (e: any) { message.error(e?.message || '失败') } } })}>恢复</button>
-                        <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
-                          onClick={() => Modal.confirm({ title: '删除备份', content: '不可恢复！', okButtonProps: { danger: true }, onOk: async () => { try { await api.deleteVMBackup(hostName!, uuid!, backup.backup_name); message.success('已删除'); loadBackups() } catch (e: any) { message.error(e?.message || '失败') } } })}>删除</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (<div style={{ padding: 40, textAlign: 'center', color: 'var(--mmui-text-muted)' }}>暂无备份</div>)}
-            </MmuiCard>
-          )}
-
           {/* ═══ 启动顺序 ═══ */}
           {activeSection === 'boot' && (
             <MmuiCard title="启动顺序" extra={
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="mmui-page-btn" style={{ minHeight: 28, fontSize: 12 }}
+                  disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.EFI_EDITS)}
                   onClick={async () => {
                     try {
                       const r = await api.getEFIList(hostName!, uuid!)
@@ -1045,7 +1102,7 @@ export default function DockDetailV2() {
                   <ReloadOutlined /> 刷新
                 </button>
                 <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                  disabled={!hostEnabled || !vm?.efi_list || vm.efi_list.length === 0}
+                  disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.EFI_EDITS) || !vm?.efi_list || vm.efi_list.length === 0}
                   onClick={async () => {
                     try {
                       await api.setupEFI(hostName!, uuid!, vm.efi_list)
@@ -1063,21 +1120,21 @@ export default function DockDetailV2() {
                   </p>
                   {vm.efi_list.map((item: any, i: number) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--mmui-radius)', border: '1px solid var(--mmui-divider)', background: 'var(--mmui-fill-secondary)' }}>
-                      <span style={{ width: 24, height: 24, borderRadius: '50%', background: i === 0 ? 'var(--mmui-accent-blue)' : 'var(--mmui-text-muted)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
+                      <span style={{ width: 24, height: 24, borderRadius: '50%', background: i === 0 ? 'var(--mmui-accent-blue)' : 'var(--mmui-fill-secondary)', color: i === 0 ? themePalette.onPrimary : 'var(--mmui-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
                       <div style={{ flex: 1 }}>
                         <div style={{ color: 'var(--mmui-heading)', fontWeight: 500 }}>{item.efi_name || `启动项 ${i + 1}`}</div>
                         <div style={{ fontSize: 11, color: 'var(--mmui-text-muted)', marginTop: 2 }}>{item.efi_type ? 'UEFI' : 'Legacy'}</div>
                       </div>
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button className="mmui-page-btn" style={{ minWidth: 32, minHeight: 28, padding: 0, fontSize: 12 }}
-                          disabled={i === 0}
+                          disabled={i === 0 || !hostEnabled || !hasVMPermission(VM_PERMISSION.EFI_EDITS)}
                           onClick={() => {
                             const list = [...vm.efi_list]
                             ;[list[i - 1], list[i]] = [list[i], list[i - 1]]
                             setVM((prev: any) => ({ ...prev, efi_list: list }))
                           }}>↑</button>
                         <button className="mmui-page-btn" style={{ minWidth: 32, minHeight: 28, padding: 0, fontSize: 12 }}
-                          disabled={i === vm.efi_list.length - 1}
+                          disabled={i === vm.efi_list.length - 1 || !hostEnabled || !hasVMPermission(VM_PERMISSION.EFI_EDITS)}
                           onClick={() => {
                             const list = [...vm.efi_list]
                             ;[list[i], list[i + 1]] = [list[i + 1], list[i]]
@@ -1094,7 +1151,7 @@ export default function DockDetailV2() {
                   </p>
                   {Object.entries(config.efi_all).map(([key, info]: [string, any], i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--mmui-radius)', border: '1px solid var(--mmui-divider)', background: 'var(--mmui-fill-secondary)' }}>
-                      <span style={{ width: 24, height: 24, borderRadius: '50%', background: i === 0 ? 'var(--mmui-accent-blue)' : 'var(--mmui-text-muted)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
+                      <span style={{ width: 24, height: 24, borderRadius: '50%', background: i === 0 ? 'var(--mmui-accent-blue)' : 'var(--mmui-fill-secondary)', color: i === 0 ? themePalette.onPrimary : 'var(--mmui-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
                       <div>
                         <div style={{ color: 'var(--mmui-heading)' }}>{typeof info === 'string' ? info : (info.boot_name || key)}</div>
                         <div style={{ fontSize: 11, color: 'var(--mmui-text-muted)' }}>{key}</div>
@@ -1105,7 +1162,7 @@ export default function DockDetailV2() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div style={{ padding: '12px 16px', borderRadius: 'var(--mmui-radius)', border: '1px solid var(--mmui-divider)', background: 'var(--mmui-fill-secondary)', display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--mmui-accent-blue)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>1</span>
+                    <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--mmui-accent-blue)', color: themePalette.onPrimary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>1</span>
                     <span style={{ color: 'var(--mmui-heading)' }}>硬盘启动 (默认)</span>
                   </div>
                   <p style={{ fontSize: 12, color: 'var(--mmui-text-muted)', margin: 0 }}>当前使用默认启动顺序，点击"刷新"获取可调整的启动项列表。</p>
@@ -1118,7 +1175,7 @@ export default function DockDetailV2() {
           {activeSection === 'permission' && (
             <MmuiCard title="用户权限" extra={
               <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
-                disabled={!hostEnabled}
+                disabled={!hostEnabled || !isOwnerOrAdmin}
                 onClick={() => {
                   const username = window.prompt('输入要添加的用户名:')
                   if (username) api.addVMOwner(hostName!, uuid!, { username } as any)
@@ -1137,6 +1194,7 @@ export default function DockDetailV2() {
                       </div>
                       {!owner.is_admin && (
                         <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
+                          disabled={!hostEnabled || !isOwnerOrAdmin}
                           onClick={() => Modal.confirm({ title: '移除用户', content: `移除 ${owner.username}？`, okButtonProps: { danger: true }, onOk: async () => { try { await api.deleteVMOwner(hostName!, uuid!, owner.username); message.success('已移除'); loadOwners() } catch (e: any) { message.error(e?.message || '失败') } } })}>移除</button>
                       )}
                     </div>
@@ -1161,13 +1219,13 @@ export default function DockDetailV2() {
                 ))}
               </div>
               {/* 图表网格 */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
-                {renderMonitorChart('CPU 使用率', monitorData.cpu, monitorData.labels, '#4460ff', '%')}
-                {renderMonitorChart('内存使用率', monitorData.memory, monitorData.labels, '#f59e0b', '%')}
-                {renderMonitorChart('上行带宽', monitorData.netUp, monitorData.labels, '#10b981', 'Mbps')}
-                {renderMonitorChart('下行带宽', monitorData.netDown, monitorData.labels, '#8b5cf6', 'Mbps')}
-                {renderMonitorChart('磁盘使用率', monitorData.disk, monitorData.labels, '#ef4444', '%')}
-                {renderMonitorChart('GPU 使用率', monitorData.gpu, monitorData.labels, '#06b6d4', '%')}
+              <div className="vm-detail-chart-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+                {renderMonitorChart('CPU 使用率', monitorData.cpu, monitorData.labels, themePalette.chartColors[0], '%')}
+                {renderMonitorChart('内存使用率', monitorData.memory, monitorData.labels, themePalette.chartColors[2], '%')}
+                {renderMonitorChart('上行带宽', monitorData.netUp, monitorData.labels, themePalette.chartColors[1], 'Mbps')}
+                {renderMonitorChart('下行带宽', monitorData.netDown, monitorData.labels, themePalette.chartColors[3], 'Mbps')}
+                {renderMonitorChart('磁盘使用率', monitorData.disk, monitorData.labels, themePalette.chartColors[4], '%')}
+                {renderMonitorChart('GPU 使用率', monitorData.gpu, monitorData.labels, themePalette.chartColors[5], '%')}
               </div>
             </div>
           )}
@@ -1175,7 +1233,7 @@ export default function DockDetailV2() {
           {/* 系统信息视图 */}
           {activeSection === 'system' && (
             <MmuiCard title="系统信息">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24 }}>
+              <div className="vm-detail-system-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {[
                     { label: 'UUID', value: uuid },
@@ -1186,7 +1244,7 @@ export default function DockDetailV2() {
                     { label: '内存大小', value: formatMem(config.mem_num || 0) },
                     { label: '磁盘大小', value: formatMem(config.hdd_num || 0) },
                   ].map((item, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div key={i} className="vm-detail-info-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <span style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', width: 80, flexShrink: 0 }}>{item.label}</span>
                       <span style={{ fontSize: 'var(--mmui-font-body)', color: 'var(--mmui-text)', fontFamily: 'monospace' }}>{item.value || '-'}</span>
                       <CopyOutlined style={{ cursor: 'pointer', color: 'var(--mmui-text-muted)', fontSize: 12 }}
@@ -1204,7 +1262,7 @@ export default function DockDetailV2() {
                     { label: 'IPv4 地址', value: vm.ipv4_address || '未分配' },
                     { label: '当前状态', value: statusText[displayStatus] || displayStatus },
                   ].map((item, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div key={i} className="vm-detail-info-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <span style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', width: 80, flexShrink: 0 }}>{item.label}</span>
                       <span style={{ fontSize: 'var(--mmui-font-body)', color: 'var(--mmui-text)' }}>{item.value || '-'}</span>
                     </div>
@@ -1221,30 +1279,32 @@ export default function DockDetailV2() {
               <MmuiCard title="电源操作">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <button className="mmui-page-btn mmui-page-btn--primary" onClick={() => handlePowerAction('start')}
-                    disabled={displayStatus === 'STARTED'}>
+                    disabled={!hostEnabled || displayStatus === 'STARTED' || !canManagePower}>
                     <PlayCircleOutlined /> 启动
                   </button>
                   <button className="mmui-page-btn" onClick={() => handlePowerAction('stop')}
-                    disabled={displayStatus !== 'STARTED'}>
+                    disabled={!hostEnabled || displayStatus !== 'STARTED' || !canManagePower}>
                     <PoweroffOutlined /> 关机
                   </button>
                   <button className="mmui-page-btn" onClick={() => handlePowerAction('reset')}
-                    disabled={displayStatus !== 'STARTED'}>
+                    disabled={!hostEnabled || displayStatus !== 'STARTED' || !canManagePower}>
                     <ReloadOutlined /> 重启
                   </button>
                   <button className="mmui-page-btn" onClick={() => handlePowerAction('pause')}
-                    disabled={displayStatus !== 'STARTED'}>
+                    disabled={!hostEnabled || displayStatus !== 'STARTED' || !canManagePower}>
                     <PauseCircleOutlined /> 暂停
                   </button>
                   <button className="mmui-page-btn" onClick={() => handlePowerAction('resume')}
-                    disabled={displayStatus !== 'SUSPEND'}>
+                    disabled={!hostEnabled || displayStatus !== 'SUSPEND' || !canManagePower}>
                     <PlayCircleOutlined /> 恢复
                   </button>
                   <button className="mmui-page-btn" style={{ borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
+                    disabled={!hostEnabled || !canManagePower}
                     onClick={() => handlePowerAction('hard_stop')}>
                     <PoweroffOutlined /> 强制关机
                   </button>
                   <button className="mmui-page-btn" style={{ borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
+                    disabled={!hostEnabled || !canManagePower}
                     onClick={() => handlePowerAction('hard_reset')}>
                     <ReloadOutlined /> 强制重启
                   </button>
@@ -1272,7 +1332,7 @@ export default function DockDetailV2() {
                     <input className="mmui-page-field" style={{ width: 200 }} type="password"
                       placeholder="新系统密码" value={reinstallPass} onChange={e => setReinstallPass(e.target.value)} />
                     <button className="mmui-page-btn" style={{ borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
-                      disabled={!reinstallOS || !reinstallPass || !hostEnabled}
+                      disabled={!reinstallOS || !reinstallPass || !hostEnabled || !canManageSystem}
                       onClick={() => {
                         Modal.confirm({
                           title: '重装系统确认', content: '此操作将清空系统盘数据，确定继续？',
@@ -1302,7 +1362,7 @@ export default function DockDetailV2() {
                 <p style={{ color: 'var(--mmui-text-soft)', margin: 0 }}>点击下方按钮打开远程控制台窗口</p>
                 <div style={{ display: 'flex', gap: 12 }}>
                   <button className="mmui-page-btn mmui-page-btn--primary" onClick={handleOpenVNC}
-                    disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.VNC_EDITS)}>
+                    disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.VNC_EDITS)}>
                     <DesktopOutlined /> 打开 VNC 控制台
                   </button>
                 </div>
@@ -1418,10 +1478,13 @@ export default function DockDetailV2() {
               <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 30, fontSize: 12 }}
                 disabled={!hostEnabled || !hasPermission(userPermissions, VM_PERMISSION.VM_BACKUP)}
                 onClick={() => {
-                  const tips = window.prompt('请输入备份说明：')
-                  if (tips) {
+                  const now = new Date()
+                  const pad = (n: number) => String(n).padStart(2, '0')
+                  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+                  const tips = `${uuid}-backup-${stamp}`
+                  {
                     Modal.confirm({
-                      title: '创建备份', content: '备份可能需要数十分钟，确定继续？',
+                      title: '创建备份', content: `备份名称：${tips}，备份可能需要数十分钟，确定继续？`,
                       okText: '确认', cancelText: '取消',
                       onOk: async () => {
                         try {
@@ -1506,7 +1569,7 @@ export default function DockDetailV2() {
                   { label: '流量限制', value: config.flu_num ? `${config.flu_num} GB` : '无限制' },
                   { label: '已用流量', value: currentStatus.flu_usage ? `${currentStatus.flu_usage.toFixed(2)} GB` : '0 GB' },
                 ].map((item, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div key={i} className="vm-detail-info-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', width: 80, flexShrink: 0 }}>{item.label}</span>
                     <span style={{ fontSize: 'var(--mmui-font-body)', color: 'var(--mmui-text)', fontFamily: 'monospace' }}>{item.value}</span>
                     {item.copy && (
@@ -1628,7 +1691,7 @@ export default function DockDetailV2() {
                             {info.gpu_hint || info.gpu_uuid || '设备直通'}
                           </div>
                         </div>
-                        <Tag color="blue">{info.gpu_mdev ? 'vGPU' : 'Passthrough'}</Tag>
+                        <Tag color="processing">{info.gpu_mdev ? 'vGPU' : 'Passthrough'}</Tag>
                       </div>
                     </div>
                   ))
@@ -1655,16 +1718,16 @@ export default function DockDetailV2() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '8px 0' }}>
           {/* 1. VNC/TTY 一键连接 */}
           {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' && (
-            <div style={{ border: '1px solid var(--mmui-border, #e5e7eb)', borderRadius: 8, padding: 16 }}>
+            <div style={{ border: '1px solid var(--mmui-border)', borderRadius: 8, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--mmui-text)' }}>
-                    <DesktopOutlined style={{ marginRight: 8, color: '#6366f1' }} />
+                    <DesktopOutlined style={{ marginRight: 8, color: themePalette.chartColors[3] }} />
                     VNC / TTY 控制台
                   </div>
                   <div style={{ color: 'var(--mmui-text-muted)', fontSize: 13, marginTop: 4 }}>网页远程控制台，适合救援排障</div>
                 </div>
-                <button className="mmui-page-btn mmui-page-btn--primary" onClick={handleOpenVNC} disabled={!hostEnabled}
+                <button className="mmui-page-btn mmui-page-btn--primary" onClick={handleOpenVNC} disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.VNC_EDITS)}
                   style={{ padding: '0 16px', minHeight: 32, borderRadius: 6 }}>
                   一键连接
                 </button>
@@ -1675,23 +1738,23 @@ export default function DockDetailV2() {
           {/* 2. ToDesk远程桌面 - 仅Windows */}
           {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' &&
            (config.os_name || '').toLowerCase().includes('win') && (
-            <div style={{ border: '1px solid var(--mmui-border, #e5e7eb)', borderRadius: 8, padding: 16 }}>
+            <div style={{ border: '1px solid var(--mmui-border)', borderRadius: 8, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--mmui-text)' }}>
-                    <GlobalOutlined style={{ marginRight: 8, color: '#10b981' }} />
+                    <GlobalOutlined style={{ marginRight: 8, color: themePalette.success }} />
                     ToDesk 远程桌面
                   </div>
                   <div style={{ color: 'var(--mmui-text-muted)', fontSize: 13, marginTop: 4 }}>高性能远程桌面，适合日常使用</div>
                 </div>
                 {config.rdp_info?.todesk?.code ? (
-                  <span style={{ padding: '2px 8px', borderRadius: 4, background: '#d1fae5', color: '#065f46', fontSize: 12 }}>已就绪</span>
+                  <span style={{ padding: '2px 8px', borderRadius: 4, background: 'var(--art-success-soft)', color: 'var(--art-success)', fontSize: 12 }}>已就绪</span>
                 ) : (
-                  <span style={{ padding: '2px 8px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280', fontSize: 12 }}>未就绪</span>
+                  <span style={{ padding: '2px 8px', borderRadius: 4, background: 'var(--mmui-bg-soft)', color: 'var(--mmui-text-muted)', fontSize: 12 }}>未就绪</span>
                 )}
               </div>
               {config.rdp_info?.todesk?.code ? (
-                <div style={{ marginTop: 12, background: 'var(--mmui-bg-soft, #f9fafb)', borderRadius: 6, padding: 12 }}>
+                <div style={{ marginTop: 12, background: 'var(--mmui-bg-soft)', borderRadius: 6, padding: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ color: 'var(--mmui-text-muted)', fontSize: 13 }}>设备代码</span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1720,17 +1783,17 @@ export default function DockDetailV2() {
           {/* 3. RDP - 仅Windows */}
           {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' &&
            (config.os_name || '').toLowerCase().includes('win') && (
-            <div style={{ border: '1px solid var(--mmui-border, #e5e7eb)', borderRadius: 8, padding: 16 }}>
+            <div style={{ border: '1px solid var(--mmui-border)', borderRadius: 8, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--mmui-text)' }}>
-                    <WindowsOutlined style={{ marginRight: 8, color: '#3b82f6' }} />
+                    <WindowsOutlined style={{ marginRight: 8, color: themePalette.primary }} />
                     Microsoft RDP 远程桌面
                   </div>
                   <div style={{ color: 'var(--mmui-text-muted)', fontSize: 13, marginTop: 4 }}>Windows原生远程桌面协议</div>
                 </div>
               </div>
-              <div style={{ marginTop: 12, background: 'var(--mmui-bg-soft, #f9fafb)', borderRadius: 6, padding: 12 }}>
+              <div style={{ marginTop: 12, background: 'var(--mmui-bg-soft)', borderRadius: 6, padding: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ color: 'var(--mmui-text-muted)', fontSize: 13 }}>连接地址</span>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1779,17 +1842,17 @@ export default function DockDetailV2() {
           {/* 4. SSH - 仅Linux/macOS */}
           {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' &&
            !(config.os_name || '').toLowerCase().includes('win') && (
-            <div style={{ border: '1px solid var(--mmui-border, #e5e7eb)', borderRadius: 8, padding: 16 }}>
+            <div style={{ border: '1px solid var(--mmui-border)', borderRadius: 8, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--mmui-text)' }}>
-                    <CodeOutlined style={{ marginRight: 8, color: '#f59e0b' }} />
+                    <CodeOutlined style={{ marginRight: 8, color: themePalette.warning }} />
                     SSH 远程连接
                   </div>
                   <div style={{ color: 'var(--mmui-text-muted)', fontSize: 13, marginTop: 4 }}>命令行远程连接，适合Linux/macOS</div>
                 </div>
               </div>
-              <div style={{ marginTop: 12, background: 'var(--mmui-bg-soft, #f9fafb)', borderRadius: 6, padding: 12 }}>
+              <div style={{ marginTop: 12, background: 'var(--mmui-bg-soft)', borderRadius: 6, padding: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ color: 'var(--mmui-text-muted)', fontSize: 13 }}>连接地址</span>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

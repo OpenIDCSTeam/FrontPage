@@ -16,6 +16,7 @@ import {
   HddOutlined,
   GlobalOutlined,
   ApiOutlined,
+  SwapOutlined,
   MinusCircleOutlined,
   TeamOutlined,
   SyncOutlined,
@@ -102,6 +103,8 @@ interface VMConfig {
   nat_num: number
   web_num: number
   nic_all: Record<string, any>
+  nat_all?: Record<string, any> | any[]
+  web_all?: Record<string, any> | any[]
 }
 
 /**
@@ -252,7 +255,8 @@ function Dashboards() {
             const vms = Object.entries(vmsResult.data || {})
             vms.forEach(([uuid, vm]: [string, any]) => {
               allVMs.push({ uuid, ...vm, host: hostName })
-              if (vm.power === 'powered_on') runningCount++
+              const status = vm.status?.[0]?.ac_status || vm.power
+              if (status === 'STARTED' || status === 'powered_on') runningCount++
             })
           }
         } catch (error) {
@@ -612,7 +616,13 @@ function Dashboards() {
    */
   const renderAdminView = () => (
     <>
-      {/* 核心指标 */}
+      <div className="dashboard-section-heading">
+        <div>
+          <span className="dashboard-section-eyebrow">CLUSTER OVERVIEW</span>
+          <h2>核心资源态势</h2>
+        </div>
+        <span className="dashboard-section-note"><span className="dashboard-live-dot" />{loading ? '正在同步' : lastUpdate ? `更新于 ${lastUpdate}` : '集群监控'}</span>
+      </div>
       <div className="art-stat-grid">
         <StatCard
           icon={<CloudServerOutlined />}
@@ -670,12 +680,11 @@ function Dashboards() {
       </div>
 
       {/* 主机列表：面板 + 紧凑表格，资源列共用同一个用量单元格 */}
-      <div className="art-panel">
+      <section className="art-panel dashboard-host-panel" aria-label="主机资源状态">
         <div className="art-panel-head">
           <span className="art-panel-title"><CloudServerOutlined />主机列表</span>
           <Space size={8}>
             <Button icon={<SaveOutlined />} onClick={handleSaveAll}>保存配置</Button>
-            <Button icon={<SyncOutlined />} onClick={loadDashboard}>刷新</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/hosts')}>管理主机</Button>
           </Space>
         </div>
@@ -772,12 +781,19 @@ function Dashboards() {
             },
           ]}
           pagination={false}
-          scroll={{ x: 960 }}
-          size="middle"
-          locale={{ emptyText: '暂无主机数据' }}
+          scroll={{ x: 'max-content' }}
+          size="small"
+          locale={{
+            emptyText: (
+              <div className="art-table-empty">
+                <CloudServerOutlined />
+                <p>暂无主机数据</p>
+              </div>
+            ),
+          }}
         />
         </div>
-      </div>
+      </section>
 
     </>
   )
@@ -796,9 +812,47 @@ function Dashboards() {
       )
     }
 
+    const natSummaries = myVMs.flatMap(vm => Object.entries(vm.config?.nat_all || {}).map(([key, rule]: [string, any]) => ({
+      key: `${vm.host}-${vm.uuid}-${key}`,
+      vm,
+      name: rule.nat_tips || rule.description || `端口映射 ${rule.wan_port || key}`,
+      protocol: (rule.protocol || rule.nat_type || 'TCP').toUpperCase(),
+      publicPort: rule.wan_port || rule.outer_port || rule.public_port || '-',
+      privatePort: rule.lan_port || rule.inner_port || rule.private_port || '-',
+    })))
+    const proxySummaries = myVMs.flatMap(vm => Object.entries(vm.config?.web_all || {}).map(([key, rule]: [string, any]) => ({
+      key: `${vm.host}-${vm.uuid}-${key}`,
+      vm,
+      domain: rule.domain || rule.web_domain || rule.proxy_domain || '未配置域名',
+      port: rule.backend_port || rule.inner_port || rule.proxy_port || 80,
+      https: rule.ssl_enabled || rule.https || rule.proxy_type === 'https',
+    })))
+    const runningPercent = myVMCount ? Math.round(myRunningVMCount / myVMCount * 100) : 0
+
     return (
       <>
-        {/* 核心配额：只保留 4 个带进度条的关键指标 */}
+        <div className="dashboard-section-heading">
+          <div>
+            <span className="dashboard-section-eyebrow">YOUR RESOURCES</span>
+            <h2>资源与配额</h2>
+          </div>
+          <span className="dashboard-section-note">{lastUpdate ? `更新于 ${lastUpdate}` : '按当前账号实时汇总'}</span>
+        </div>
+        <section className="dashboard-user-summary" aria-label="实例运行摘要">
+          <div className="dashboard-user-summary-stat">
+            <span>实例总数</span>
+            <div><strong>{myVMCount}</strong><small>台</small></div>
+          </div>
+          <div className="dashboard-user-summary-stat is-running">
+            <span>运行中</span>
+            <div><strong>{myRunningVMCount}</strong><small>/ {myVMCount}</small></div>
+          </div>
+          <div className="dashboard-user-summary-uptime">
+            <div><span>实例运行比例</span><strong>{runningPercent}%</strong></div>
+            <Progress percent={runningPercent} showInfo={false} size="small" strokeColor="var(--art-success)" />
+          </div>
+          <Button type="link" onClick={() => navigate('/user/vms')}>管理全部实例</Button>
+        </section>
         <div className="art-stat-grid">
           <StatCard
             icon={<ThunderboltOutlined />}
@@ -835,7 +889,7 @@ function Dashboards() {
         </div>
 
         {/* 次级配额：不收进指标层，压缩成一格一字段的明细网格 */}
-        <div className="art-panel" style={{ marginTop: 16 }}>
+        <div className="art-panel dashboard-data-panel">
           <div className="art-panel-head">
             <span className="art-panel-title"><ApiOutlined />配额明细</span>
             <span className="art-muted">NAT / 代理 / 带宽 / 显存</span>
@@ -866,15 +920,70 @@ function Dashboards() {
           </div>
         </div>
 
+        <div className="dashboard-service-grid">
+          <section className="art-panel dashboard-data-panel">
+            <div className="art-panel-head">
+              <span className="art-panel-title"><SwapOutlined />端口映射</span>
+              <span className="art-muted">已用 {userQuota.used_nat_ports} / {userQuota.quota_nat_ports}</span>
+              <Button type="link" onClick={() => navigate('/user/nat')}>管理规则</Button>
+            </div>
+            <div className="art-panel-body is-flush">
+              {natSummaries.length ? (
+                <ul className="art-log-list">
+                  {natSummaries.slice(0, 4).map(item => (
+                    <li className="art-log-item" key={item.key}>
+                      <span className="dashboard-service-mark is-network">{item.protocol === 'UDP' ? 'U' : 'T'}</span>
+                      <div className="art-log-main is-clickable" onClick={() => navigate(`/hosts/${item.vm.host}/vms/${item.vm.uuid}`)}>
+                        <div className="art-log-meta">
+                          <span className="art-cell-title">{item.name}</span>
+                          <span className="art-muted">{item.vm.display_name || item.vm.uuid}</span>
+                        </div>
+                        <p className="art-log-message is-mono">{item.publicPort} <span>→</span> {item.privatePort}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="dashboard-service-empty">暂无端口映射规则</div>
+              )}
+            </div>
+          </section>
+
+          <section className="art-panel dashboard-data-panel">
+            <div className="art-panel-head">
+              <span className="art-panel-title"><GlobalOutlined />反向代理</span>
+              <span className="art-muted">已用 {userQuota.used_web_proxy} / {userQuota.quota_web_proxy}</span>
+              <Button type="link" onClick={() => navigate('/user/proxys')}>管理代理</Button>
+            </div>
+            <div className="art-panel-body is-flush">
+              {proxySummaries.length ? (
+                <ul className="art-log-list">
+                  {proxySummaries.slice(0, 4).map(item => (
+                    <li className="art-log-item" key={item.key}>
+                      <span className={`dashboard-service-mark ${item.https ? 'is-secure' : 'is-proxy'}`}>{item.https ? 'S' : 'W'}</span>
+                      <div className="art-log-main is-clickable" onClick={() => navigate(`/hosts/${item.vm.host}/vms/${item.vm.uuid}`)}>
+                        <div className="art-log-meta">
+                          <span className="art-cell-title">{item.domain}</span>
+                          <span className="art-muted">{item.vm.display_name || item.vm.uuid}</span>
+                        </div>
+                        <p className="art-log-message is-mono">{item.https ? 'HTTPS' : 'HTTP'} → :{item.port}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="dashboard-service-empty">暂无反向代理规则</div>
+              )}
+            </div>
+          </section>
+        </div>
+
         {/* 我的虚拟机：面板 + 事件行。一行 = 状态点 + 名称/规格 + 地址 + 操作 */}
-        <div className="art-panel" style={{ marginTop: 16 }}>
+        <div className="art-panel dashboard-data-panel">
           <div className="art-panel-head">
             <span className="art-panel-title"><DesktopOutlined />我的虚拟机</span>
             <span className="art-muted">共 {myVMCount} 台 · 运行中 {myRunningVMCount}</span>
             <span style={{ flex: 1 }} />
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreateVM}>
-              创建虚拟机
-            </Button>
           </div>
           <div className="art-panel-body is-flush">
             {myVMs.length === 0 ? (
@@ -934,7 +1043,7 @@ function Dashboards() {
   }
 
   return (
-    <div className="art-stack">
+    <div className={`art-stack dashboard-page${isAdmin ? ' is-admin' : ' is-user'}`}>
       {/* 页面标题 */}
       <PageHeader
         icon={isAdmin ? <CloudServerOutlined /> : <DesktopOutlined />}
@@ -997,7 +1106,7 @@ function Dashboards() {
               <Form.Item label="虚拟机UUID" required>
                 <Input.Group compact>
                   <Input 
-                    style={{ width: '40%', textAlign: 'right', color: '#000', cursor: 'default' }}
+                    style={{ width: '40%', textAlign: 'right', color: 'var(--art-gray-700)', cursor: 'default' }}
                     value={uuidPrefix} 
                     disabled 
                     placeholder="前缀"
@@ -1080,17 +1189,17 @@ function Dashboards() {
                           })
                         }}
                         style={{
-                          border: selectedPlanName === planName ? '2px solid #1677ff' : '1px solid #d9d9d9',
-                          borderRadius: 8,
+                          border: selectedPlanName === planName ? '2px solid var(--main-color)' : '1px solid var(--art-card-border)',
+                          borderRadius: 'var(--art-radius-md)',
                           padding: 12,
                           cursor: isExceeded ? 'not-allowed' : 'pointer',
                           transition: 'all 0.2s',
-                          background: isExceeded ? '#f5f5f5' : selectedPlanName === planName ? '#e6f4ff' : 'transparent',
+                          background: isExceeded ? 'var(--art-sunken-bg)' : selectedPlanName === planName ? 'var(--art-primary-softer)' : 'transparent',
                           opacity: isExceeded ? 0.6 : 1,
                         }}
                       >
                         <div style={{ fontWeight: 600, marginBottom: 6 }}>{planName}</div>
-                        <div className="text-xs" style={{ color: isExceeded ? '#999' : '#666' }}>
+                        <div className="text-xs" style={{ color: isExceeded ? 'var(--art-gray-500)' : 'var(--art-gray-700)' }}>
                           <div>CPU: {planCfg.cpu_num}核 {planCfg.cpu_per ? `(可用率${planCfg.cpu_per}%)` : ''}</div>
                           <div>内存: {Math.round(planCfg.mem_num / 1024)}GB / GPU: {planCfg.gpu_mem ? `${planCfg.gpu_mem}MB` : '无'}</div>
                           <div>硬盘: {Math.round(planCfg.hdd_num / 1024)}GB / IOPS: {planCfg.hdd_iop ?? 1000}</div>
@@ -1102,7 +1211,7 @@ function Dashboards() {
                           <div>数据盘: {planCfg.dat_num ?? 1}个 / 空间: {planCfg.dat_all ? (planCfg.dat_all >= 1024 ? `${Math.round(planCfg.dat_all / 1024)}GB` : `${planCfg.dat_all}MB`) : '0MB'}</div>
                         </div>
                         {isExceeded && (
-                          <div style={{ marginTop: 4, color: '#ff4d4f', fontSize: 11 }}>
+                          <div style={{ marginTop: 4, color: 'var(--art-danger)', fontSize: 11 }}>
                             配额不足: {exceedReasons.join('、')}
                           </div>
                         )}
@@ -1224,27 +1333,27 @@ function Dashboards() {
       >
         <Row gutter={[16, 16]}>
           <Col span={12}>
-            <Button block type="primary" className="bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700" onClick={() => handlePowerAction('start')}>
+            <Button block className="vm-power-action vm-power-action--success" onClick={() => handlePowerAction('start')}>
               启动
             </Button>
           </Col>
           <Col span={12}>
-            <Button block className="bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-white" onClick={() => handlePowerAction('stop')}>
+            <Button block className="vm-power-action vm-power-action--warning" onClick={() => handlePowerAction('stop')}>
               关机
             </Button>
           </Col>
           <Col span={12}>
-            <Button block type="primary" onClick={() => handlePowerAction('reset')}>
+            <Button block className="vm-power-action vm-power-action--primary" onClick={() => handlePowerAction('reset')}>
               重启
             </Button>
           </Col>
           <Col span={12}>
-            <Button block onClick={() => handlePowerAction('pause')}>
+            <Button block className="vm-power-action vm-power-action--neutral" onClick={() => handlePowerAction('pause')}>
               暂停
             </Button>
           </Col>
           <Col span={12}>
-            <Button block type="primary" className="bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700" onClick={() => handlePowerAction('resume')}>
+            <Button block className="vm-power-action vm-power-action--primary" onClick={() => handlePowerAction('resume')}>
               恢复
             </Button>
           </Col>

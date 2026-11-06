@@ -15,7 +15,8 @@ import {
     Tooltip,
     Progress,
     Table,
-    Spin
+    Spin,
+    Segmented
 } from 'antd'
 import EmptyState from '@/components/EmptyState'
 import {
@@ -35,6 +36,7 @@ import {
     ExclamationCircleOutlined,
     AppstoreOutlined,
     UnorderedListOutlined,
+    SearchOutlined,
     EyeOutlined,
     EyeInvisibleOutlined,
     ClearOutlined,
@@ -73,6 +75,7 @@ interface HostConfig {
     i_kuai_addr?: string
     i_kuai_user?: string
     i_kuai_pass?: string
+    i_kuai_token?: string
     ports_start?: number
     ports_close?: number
     remote_port?: number
@@ -212,6 +215,8 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         status: hostsStatus[name],
     }))
 
+    const hasGpu = dataSource.some((record: any) => (record.status?.gpu_total || 0) > 0)
+
     const columns = [
         {
             title: '主机名称',
@@ -220,15 +225,15 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
             fixed: 'left' as const,
             render: (_: any, record: any) => {
                 const isActive = record.host.status === 'active'
-                const dotColor = isActive ? '#10b981' : '#ef4444'
+                const dotColor = isActive ? 'var(--art-success)' : 'var(--art-danger)'
                 return (
                     <div>
-                        <div className="flex items-center gap-2">
-                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0, boxShadow: isActive ? '0 0 4px #10b981' : undefined }} />
-                            <CloudServerOutlined className="text-blue-500" />
-                            <a className="font-medium text-blue-600 hover:underline cursor-pointer" onClick={() => navigate(`/hosts/${record.name}/vms`)}>{record.name}</a>
+                        <div className="art-table-identity">
+                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0, boxShadow: isActive ? '0 0 4px var(--art-success)' : undefined }} />
+                            <CloudServerOutlined style={{ color: 'var(--art-accent-text)' }} />
+                            <a className="art-table-link" title={record.name} onClick={() => navigate(`/hosts/${record.name}/vms`)}>{record.name}</a>
                         </div>
-                        <div className="flex items-center gap-1 mt-1">
+                        <div className="art-table-meta">
                             <Tag color={isActive ? 'success' : 'error'} style={{ margin: 0, fontSize: 11 }}>
                                 {isActive ? '已启用' : '已禁用'}
                             </Tag>
@@ -238,21 +243,34 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
             },
         },
         {
-            title: '类型',
+            title: '引擎',
             key: 'type',
-            width: 100,
+            width: 140,
             render: (_: any, record: any) => {
                 const typeInfo = engineTypes[record.host.type] || {}
-                return <span className="text-xs">{typeInfo.description || record.host.type}</span>
+                const engineDetail = [record.host.type, record.host.config?.server_user].filter(Boolean).join(' · ')
+                return (
+                    <div className="art-cell-stack" title={engineDetail}>
+                        <span className="art-cell-title" style={{ fontSize: 12 }}>{typeInfo.description || record.host.type}</span>
+                        <span className="art-cell-sub">{engineDetail || '未配置登录用户'}</span>
+                    </div>
+                )
             },
         },
         {
-            title: 'IP地址',
-            key: 'ip',
-            width: 140,
-            render: (_: any, record: any) => (
-                <span className="text-xs">{record.host.addr || record.host.config?.server_addr || '未配置'}</span>
-            ),
+            title: '连接地址',
+            key: 'connection',
+            width: 160,
+            render: (_: any, record: any) => {
+                const address = record.host.addr || record.host.config?.server_addr || ''
+                const port = record.host.config?.server_port
+                if (!address) return <span className="art-table-muted">未配置</span>
+                return (
+                    <span className="art-table-mono" title={port ? `${address}:${port}` : address}>
+                        {address}{port ? `:${port}` : ''}
+                    </span>
+                )
+            },
         },
         {
             title: '公网地址',
@@ -261,13 +279,13 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
             render: (_: any, record: any) => {
                 const publicAddrs = record.host.config?.public_addr || []
                 const showPublic = visiblePublicAddr[record.name]
-                if (publicAddrs.length === 0) return <span className="text-xs" style={{ color: '#999' }}>-</span>
+                if (publicAddrs.length === 0) return <span className="text-xs" style={{ color: 'var(--art-gray-500)' }}>-</span>
                 return (
                     <div className="flex items-center gap-1">
                         {showPublic ? (
                             <span className="text-xs">{publicAddrs.join(', ')}</span>
                         ) : (
-                            <span className="text-xs" style={{ color: '#999' }}>••••••</span>
+                            <span className="text-xs" style={{ color: 'var(--art-gray-500)' }}>••••••</span>
                         )}
                         <Tooltip title={showPublic ? '隐藏' : '查看'}>
                             <Button
@@ -293,12 +311,12 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: 'CPU',
             key: 'cpu',
-            width: 130,
+            width: 120,
             render: (_: any, record: any) => {
                 const status = record.status
                 const cpuPercent = status ? Math.min(status.cpu_usage || 0, 100) : 0
                 return (
-                    <div>
+                    <div title={status?.cpu_model || 'CPU 型号未上报'}>
                         <div className="text-xs mb-1">
                             {status?.cpu_total || 0}核 {cpuPercent.toFixed(1)}%
                         </div>
@@ -306,7 +324,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
                             percent={Number(cpuPercent.toFixed(0))}
                             size="small"
                             showInfo={false}
-                            strokeColor={cpuPercent > 80 ? '#ef4444' : cpuPercent > 50 ? '#f59e0b' : '#3b82f6'}
+                            strokeColor={cpuPercent > 80 ? 'var(--art-danger)' : cpuPercent > 50 ? 'var(--art-warning)' : 'var(--main-color)'}
                         />
                     </div>
                 )
@@ -315,7 +333,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '内存',
             key: 'mem',
-            width: 130,
+            width: 110,
             render: (_: any, record: any) => {
                 const status = record.status
                 const memPercent = status && status.mem_total ? Math.min((status.mem_usage || 0) / status.mem_total * 100, 100) : 0
@@ -329,7 +347,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
                             percent={Number(memPercent.toFixed(0))}
                             size="small"
                             showInfo={false}
-                            strokeColor={memPercent > 80 ? '#ef4444' : memPercent > 50 ? '#f59e0b' : '#8b5cf6'}
+                            strokeColor={memPercent > 80 ? 'var(--art-danger)' : memPercent > 50 ? 'var(--art-warning)' : 'var(--art-chart-4)'}
                         />
                     </div>
                 )
@@ -338,7 +356,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '磁盘',
             key: 'hdd',
-            width: 130,
+            width: 110,
             render: (_: any, record: any) => {
                 const status = record.status
                 const hddPercent = status && status.hdd_total ? Math.min((status.hdd_usage || 0) / status.hdd_total * 100, 100) : 0
@@ -352,8 +370,66 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
                             percent={Number(hddPercent.toFixed(0))}
                             size="small"
                             showInfo={false}
-                            strokeColor={hddPercent > 80 ? '#ef4444' : hddPercent > 50 ? '#f59e0b' : '#10b981'}
+                            strokeColor={hddPercent > 80 ? 'var(--art-danger)' : hddPercent > 50 ? 'var(--art-warning)' : 'var(--art-success)'}
                         />
+                    </div>
+                )
+            },
+        },
+        ...(hasGpu ? [{
+            title: '显卡',
+            key: 'gpu',
+            width: 96,
+            render: (_: any, record: any) => {
+                const status = record.status
+                if (!status?.gpu_total) return <span className="art-table-muted">-</span>
+                const peak = status.gpu_usage
+                    ? Math.max(...Object.values(status.gpu_usage as Record<string, number>).map(value => Number(value) || 0))
+                    : 0
+                return (
+                    <div className="art-cell-stack">
+                        <span className="art-table-mono">{status.gpu_total} 张</span>
+                        <span className="art-cell-sub">峰值 {peak.toFixed(0)}%</span>
+                    </div>
+                )
+            },
+        }] : []),
+        {
+            title: '网络',
+            key: 'network',
+            width: 120,
+            render: (_: any, record: any) => {
+                const status = record.status
+                if (!status) return <span className="art-table-muted">-</span>
+                const rate = (value?: number) => ((value || 0) / 1024).toFixed(1)
+                return (
+                    <div className="art-cell-stack">
+                        <span className="art-table-mono">↑ {rate(status.network_u)} / ↓ {rate(status.network_d)}</span>
+                        <span className="art-cell-sub">MB/s</span>
+                    </div>
+                )
+            },
+        },
+        {
+            title: '区域',
+            key: 'area',
+            width: 96,
+            render: (_: any, record: any) => {
+                const area = record.host.config?.server_area
+                return area ? <span className="art-table-strong">{area}</span> : <span className="art-table-muted">-</span>
+            },
+        },
+        {
+            title: '端口',
+            key: 'ports',
+            width: 130,
+            render: (_: any, record: any) => {
+                const { ports_start, ports_close, remote_port } = record.host.config || {}
+                const range = ports_start && ports_close ? `${ports_start}–${ports_close}` : '-'
+                return (
+                    <div className="art-cell-stack">
+                        <span className="art-table-mono">TCP {range}</span>
+                        <span className="art-cell-sub">VNC {remote_port || '-'}</span>
                     </div>
                 )
             },
@@ -361,27 +437,29 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '操作',
             key: 'actions',
-            width: 140,
+            width: 104,
             fixed: 'right' as const,
             render: (_: any, record: any) => {
                 const isActive = record.host.status === 'active'
                 return (
-                    <Space size="small">
+                    <div className="art-table-actions">
                         <Tooltip title="管理虚拟机">
-                            <Button type="text" size="small" icon={<CloudServerOutlined />} onClick={() => navigate(`/hosts/${record.name}/vms`)} disabled={!isActive} />
+                            <Button aria-label="管理虚拟机" className="art-table-icon-btn" type="text" size="small" icon={<CloudServerOutlined />} onClick={() => navigate(`/hosts/${record.name}/vms`)} disabled={!isActive} />
                         </Tooltip>
                         <Tooltip title="编辑">
-                            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record.name)} disabled={!isActive} />
+                            <Button aria-label="编辑主机" className="art-table-icon-btn" type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record.name)} disabled={!isActive} />
                         </Tooltip>
                         <Tooltip title={isActive ? '禁用' : '启用'}>
                             <Button
+                                aria-label={isActive ? '禁用主机' : '启用主机'}
+                                className="art-table-icon-btn"
                                 type="text"
                                 size="small"
-                                icon={isActive ? <StopOutlined style={{ color: '#faad14' }} /> : <PlayCircleOutlined style={{ color: '#52c41a' }} />}
+                                icon={isActive ? <StopOutlined style={{ color: 'var(--art-warning)' }} /> : <PlayCircleOutlined style={{ color: 'var(--art-success)' }} />}
                                 onClick={() => handleToggle(record.name, !isActive)}
                             />
                         </Tooltip>
-                    </Space>
+                    </div>
                 )
             },
         },
@@ -391,9 +469,22 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         <Table
             dataSource={dataSource}
             columns={columns}
-            pagination={false}
             size="small"
-            scroll={{ x: 1200 }}
+            scroll={{ x: 'max-content' }}
+            pagination={{
+                pageSize: 10,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50],
+                showTotal: (total) => `共 ${total} 条`,
+            }}
+            locale={{
+                emptyText: (
+                    <div className="art-table-empty">
+                        <CloudServerOutlined />
+                        <p>暂无主机数据</p>
+                    </div>
+                ),
+            }}
         />
     )
 }
@@ -413,6 +504,17 @@ function HostManage() {
     const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
         return (localStorage.getItem('hostManage_viewMode') as 'card' | 'table') || 'card'
     })
+    const [hostSearch, setHostSearch] = useState('')
+    const filteredHosts = Object.fromEntries(Object.entries(hosts).filter(([name, host]) => {
+        const query = hostSearch.trim().toLocaleLowerCase()
+        if (!query) return true
+        const typeName = engineTypes[host.type]?.description || host.type || ''
+        return [name, host.type, host.addr, host.config?.server_addr, typeName]
+            .filter(Boolean)
+            .join(' ')
+            .toLocaleLowerCase()
+            .includes(query)
+    }))
     const [modalVisible, setModalVisible] = useState(false)
     const [editMode, setEditMode] = useState<'add' | 'edit'>('add')
     const [currentHost, setCurrentHost] = useState<string>('')
@@ -449,6 +551,27 @@ function HostManage() {
         }
     }
 
+    // 状态加载与列表渲染解耦：
+    // 采集主机状态要访问平台 API（PVE/ESXi/云），慢的时候要几秒；
+    // 打开页面时如果等所有主机状态返回，列表会一直转圈。
+    // 现在先渲染列表，状态到达后再增量填充。
+    const loadHostsStatus = (names: string[]) => {
+        if (!names.length) return
+        const statusPromises = names.map(name =>
+            api.getHostStatus(name).catch(() => null)
+        )
+        Promise.all(statusPromises).then(statusResults => {
+            const statusMap: Record<string, HostStatus> = {}
+            names.forEach((name, index) => {
+                const statusResult = statusResults[index] as any
+                if (statusResult && statusResult.code === 200 && statusResult.data?.status) {
+                    statusMap[name] = statusResult.data.status
+                }
+            })
+            setHostsStatus(prev => ({ ...prev, ...statusMap }))
+        })
+    }
+
     // 加载主机列表
     const loadHosts = async () => {
         try {
@@ -461,20 +584,9 @@ function HostManage() {
                 const enabledNames = Object.keys(result.data).filter(name =>
                     (result.data as any)[name].status === 'active'
                 )
-                const statusPromises = enabledNames.map(name =>
-                    api.getHostStatus(name).catch(() => null)
-                )
-                const statusResults = await Promise.all(statusPromises)
-
-                // 构建状态映射
-                const statusMap: Record<string, HostStatus> = {}
-                enabledNames.forEach((name, index) => {
-                    const statusResult = statusResults[index] as any
-                    if (statusResult && statusResult.code === 200 && statusResult.data?.status) {
-                        statusMap[name] = statusResult.data.status
-                    }
-                })
-                setHostsStatus(statusMap)
+                // 列表已经可用，先结束 loading，再后台补状态
+                setLoading(false)
+                loadHostsStatus(enabledNames)
             }
         } catch (error) {
             message.error('加载主机列表失败')
@@ -497,27 +609,13 @@ function HostManage() {
                 const hostsResult = await api.getHosts()
                 if (hostsResult.code === 200 && hostsResult.data) {
                     setHosts(hostsResult.data as unknown as Record<string, Host>)
-                    
-                    // 2. 仅对已启用的主机刷新状态，禁用主机不调用getHostStatus
+
+                    // 2. 仅对已启用的主机刷新状态，禁用主机不调用getHostStatus；
+                    //    状态异步补，不阻塞下一次轮询
                     const enabledNames = Object.keys(hostsResult.data).filter(name =>
                         (hostsResult.data as any)[name].status === 'active'
                     )
-                    if (enabledNames.length > 0) {
-                        const statusPromises = enabledNames.map(name =>
-                            api.getHostStatus(name).catch(() => null)
-                        )
-                        const statusResults = await Promise.all(statusPromises)
-
-                        // 构建状态映射
-                        const statusMap: Record<string, HostStatus> = {}
-                        enabledNames.forEach((name, index) => {
-                            const statusResult = statusResults[index] as any
-                            if (statusResult && statusResult.code === 200 && statusResult.data?.status) {
-                                statusMap[name] = statusResult.data.status
-                            }
-                        })
-                        setHostsStatus(statusMap)
-                    }
+                    loadHostsStatus(enabledNames)
                 }
             } catch (error) {
                 console.error('刷新主机数据失败:', error)
@@ -596,6 +694,7 @@ function HostManage() {
                     i_kuai_addr: config.i_kuai_addr,
                     i_kuai_user: config.i_kuai_user,
                     i_kuai_pass: config.i_kuai_pass,
+                    i_kuai_token: config.i_kuai_token,
                     ports_start: config.ports_start,
                     ports_close: config.ports_close,
                     remote_port: config.remote_port,
@@ -834,6 +933,7 @@ function HostManage() {
                 i_kuai_addr: values.i_kuai_addr,
                 i_kuai_user: values.i_kuai_user,
                 i_kuai_pass: values.i_kuai_pass,
+                i_kuai_token: values.i_kuai_token,
                 ports_start: values.ports_start,
                 ports_close: values.ports_close,
                 remote_port: values.remote_port,
@@ -895,7 +995,7 @@ function HostManage() {
         if (!enable) {
             Modal.confirm({
                 title: '确认禁用主机',
-                icon: <ExclamationCircleOutlined style={{color: '#faad14'}}/>,
+                icon: <ExclamationCircleOutlined style={{color: 'var(--art-warning)'}}/>,
                 content: (
                     <div>
                         <p>确定要禁用主机 <strong>"{name}"</strong> 吗？</p>
@@ -927,7 +1027,7 @@ function HostManage() {
             // 启用操作也需要二次确认
             Modal.confirm({
                 title: '确认启用主机',
-                icon: <ExclamationCircleOutlined style={{color: '#52c41a'}}/>,
+                icon: <ExclamationCircleOutlined style={{color: 'var(--art-success)'}}/>,
                 content: (
                     <div>
                         <p>确定要启用主机 <strong>"{name}"</strong> 吗？</p>
@@ -991,14 +1091,14 @@ function HostManage() {
             const shown = items.slice(0, 10).join('、')
             Modal.confirm({
                 title: '清理不匹配前缀的虚拟机记录',
-                icon: <DeleteOutlined style={{color: '#faad14'}}/>,
+                icon: <DeleteOutlined style={{color: 'var(--art-warning)'}}/>,
                 content: (
                     <div>
-                        <p>将移除 <strong style={{color: '#faad14'}}>{count}</strong> 条不匹配过滤器名称「<strong>{prefix}</strong>」的记录：</p>
+                        <p>将移除 <strong style={{color: 'var(--art-warning)'}}>{count}</strong> 条不匹配过滤器名称「<strong>{prefix}</strong>」的记录：</p>
                         <p style={{color: 'var(--text-secondary)', wordBreak: 'break-all'}}>
                             {shown}{items.length > 10 ? ` 等共 ${items.length} 条` : ''}
                         </p>
-                        <p style={{color: '#faad14'}}>仅移除本机纳管记录，不会删除平台上的虚拟机。</p>
+                        <p style={{color: 'var(--art-warning)'}}>仅移除本机纳管记录，不会删除平台上的虚拟机。</p>
                     </div>
                 ),
                 okText: '确认清理',
@@ -1044,14 +1144,14 @@ function HostManage() {
                 .join('；')
             Modal.confirm({
                 title: '合并重复虚拟机记录',
-                icon: <MergeCellsOutlined style={{color: '#faad14'}}/>,
+                icon: <MergeCellsOutlined style={{color: 'var(--art-warning)'}}/>,
                 content: (
                     <div>
-                        <p>发现 <strong style={{color: '#faad14'}}>{groups.length}</strong> 组重复记录（同一台虚拟机因 "-"/"_" 形式不同被重复纳管）：</p>
+                        <p>发现 <strong style={{color: 'var(--art-warning)'}}>{groups.length}</strong> 组重复记录（同一台虚拟机因 "-"/"_" 形式不同被重复纳管）：</p>
                         <p style={{color: 'var(--text-secondary)', wordBreak: 'break-all'}}>
                             {detail}{groups.length > 10 ? ` 等共 ${groups.length} 组` : ''}
                         </p>
-                        <p style={{color: '#faad14'}}>将保留数据更完整的一条并补齐缺失字段，仅移除本机记录，不会删除平台上的虚拟机。</p>
+                        <p style={{color: 'var(--art-warning)'}}>将保留数据更完整的一条并补齐缺失字段，仅移除本机记录，不会删除平台上的虚拟机。</p>
                     </div>
                 ),
                 okText: '确认合并',
@@ -1092,243 +1192,316 @@ function HostManage() {
     const renderHostCard = (name: string, host: Host) => {
         const status = hostsStatus[name]
         const typeInfo = engineTypes[host.type] || {}
+        const isActive = host.status === 'active'
+        const hostAddress = host.addr || host.config?.server_addr || '未配置'
+        const serverPort = host.config?.server_port
+        const connection = serverPort && serverPort > 0 ? `${hostAddress}:${serverPort}` : hostAddress
+        const vmCount = host.vm_count || 0
+        const vmLimit = host.config?.limits_nums || 0
+        const portRange = host.config?.ports_start && host.config?.ports_close
+            ? `${host.config.ports_start}–${host.config.ports_close}`
+            : '未配置'
+        const clampPercent = (value: number) => Math.max(0, Math.min(value, 100))
+        const cpuPercent = status ? clampPercent(status.cpu_usage || 0) : 0
+        const memPercent = status?.mem_total
+            ? clampPercent((status.mem_usage || 0) / status.mem_total * 100)
+            : 0
+        const memUsageGB = ((status?.mem_usage || 0) / 1024).toFixed(1)
+        const memTotalGB = ((status?.mem_total || 0) / 1024).toFixed(1)
 
-        // 计算资源使用率
-        const cpuPercent = status ? Math.min(status.cpu_usage || 0, 100) : 0
-        const memPercent = status && status.mem_total ? Math.min((status.mem_usage || 0) / status.mem_total * 100, 100) : 0
-        const memUsageGB = status ? ((status.mem_usage || 0) / 1024).toFixed(1) : '0.0'
-        const memTotalGB = status ? ((status.mem_total || 0) / 1024).toFixed(1) : '0.0'
-
-        // 获取磁盘使用率：优先使用 hdd_total/hdd_usage，备用 ext_usage
         let diskPercent = 0
         let diskUsageGB = 0
         let diskTotalGB = 0
         if (status?.hdd_total && status.hdd_total > 0) {
-            diskTotalGB = (status.hdd_total / 1024)
-            diskUsageGB = ((status.hdd_usage || 0) / 1024)
-            diskPercent = Math.min((status.hdd_usage || 0) / status.hdd_total * 100, 100)
+            diskTotalGB = status.hdd_total / 1024
+            diskUsageGB = (status.hdd_usage || 0) / 1024
+            diskPercent = clampPercent((status.hdd_usage || 0) / status.hdd_total * 100)
         } else if (status?.ext_usage) {
-            const disks = Object.entries(status.ext_usage)
-            if (disks.length > 0) {
-                const [_name, [total, used]] = disks[0]
-                diskTotalGB = (total / 1024)
-                diskUsageGB = (used / 1024)
-                diskPercent = total > 0 ? Math.min((used / total * 100), 100) : 0
+            const firstDisk = Object.values(status.ext_usage)[0]
+            if (firstDisk) {
+                const [total, used] = firstDisk
+                diskTotalGB = total / 1024
+                diskUsageGB = used / 1024
+                diskPercent = total > 0 ? clampPercent(used / total * 100) : 0
             }
         }
 
-        // 网络带宽
-        const networkA = status?.network_a || 1000 // Mbps
-        const maxBandwidth = networkA * 1024 / 8 // KB/s
-        const networkU = status?.network_u || 0 // KB/s
-        const networkD = status?.network_d || 0 // KB/s
-        const networkUPercent = Math.min((networkU / maxBandwidth * 100), 100)
-        const networkDPercent = Math.min((networkD / maxBandwidth * 100), 100)
-
-        // GPU使用率
-        let gpuPercent = 0
-        if (status?.gpu_usage) {
-            const gpuKeys = Object.keys(status.gpu_usage)
-            if (gpuKeys.length > 0) {
-                gpuPercent = Math.min(status.gpu_usage[gpuKeys[0]] || 0, 100)
-            }
-        }
-
-        // CPU温度和功耗
-        // const cpuTemp = status?.cpu_heats || 0  // 暂未使用
-        // const cpuPower = status?.cpu_power || 0  // 暂未使用
-        // const cpuTempPercent = Math.min((cpuTemp / 100 * 100), 100)  // 暂未使用
-
-        const isActive = host.status === 'active'
-        const serverPort = host.config?.server_port
-        const portRange = host.config?.ports_start && host.config?.ports_close
-            ? `${host.config.ports_start}-${host.config.ports_close}`
-            : '未配置'
-
-        // 资源用量条：常态单强调色，越阈值才切换警告/危险
+        const networkA = status?.network_a || 1000
+        const maxBandwidth = Math.max(networkA * 1024 / 8, 1)
+        const networkU = status?.network_u || 0
+        const networkD = status?.network_d || 0
+        const networkUPercent = clampPercent(networkU / maxBandwidth * 100)
+        const networkDPercent = clampPercent(networkD / maxBandwidth * 100)
+        const gpuPercent = status?.gpu_usage
+            ? clampPercent(Object.values(status.gpu_usage).reduce((peak, usage) => Math.max(peak, usage || 0), 0))
+            : 0
         const usageStroke = (pct: number) =>
             pct > 80 ? 'var(--art-danger)' : pct > 60 ? 'var(--art-warning)' : 'var(--main-color)'
-
-        const metric = (label: string, value: string, pct: number, title?: string) => (
-            <div className="art-metric" title={title}>
-                <div className="art-metric-head">
-                    <span className="art-metric-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                    <span className="art-metric-value">{value}</span>
-                </div>
-                <Progress percent={Math.min(pct, 100)} size="small" showInfo={false} strokeColor={usageStroke(pct)} />
+        const metric = (label: string, value: React.ReactNode, detail: string, pct: number, title?: string) => (
+            <div className="host-resource-metric" title={title}>
+                <div className="host-resource-metric-label">{label}</div>
+                <div className="host-resource-metric-value">{value}</div>
+                <div className="host-resource-metric-detail">{detail}</div>
+                <Progress
+                    percent={clampPercent(pct)}
+                    size="small"
+                    showInfo={false}
+                    strokeColor={usageStroke(pct)}
+                    trailColor="var(--art-gray-200)"
+                />
             </div>
         )
 
         return (
-            <div className="art-panel" key={name} style={{ marginBottom: 16 }}>
-                {/* 头部：图标块 + 名称/类型 + 状态 + 主操作 */}
-                <div className="art-dockcard-head">
-                    <span className={`art-icon-tile${isActive ? ' is-accent' : ''}`}>
-                        <CloudServerOutlined />
-                    </span>
-                    <div className="art-dockcard-titles">
-                        <div className="art-dockcard-name-row">
-                            <h3 className="art-dockcard-name">{name}</h3>
-                            <span className={`art-sem art-sem-pill${isActive ? ' is-success' : ' is-danger'}`}>
-                                {isActive ? '已启用' : '已禁用'}
+            <article
+                className={`art-panel host-resource-card${isActive ? ' is-active' : ' is-disabled'}`}
+                key={name}
+                aria-label={`主机 ${name} 资源卡片`}
+            >
+                <header className="host-resource-head">
+                    <div className="host-resource-identity">
+                        <span className="host-resource-icon" aria-hidden="true">
+                            <CloudServerOutlined />
+                        </span>
+                        <div className="host-resource-title-block">
+                            <div className="host-resource-title-row">
+                                <h3 className="host-resource-name" title={name}>{name}</h3>
+                                <span className={`host-resource-status${isActive ? ' is-active' : ''}`}>
+                                    <span className="host-resource-status-dot" aria-hidden="true" />
+                                    {isActive ? '已启用' : '已禁用'}
+                                </span>
+                            </div>
+                            <div className="host-resource-subtitle" title={typeInfo.description || host.type}>
+                                <span>{typeInfo.description || host.type}</span>
+                                <span className="host-resource-engine-type">{host.type}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="host-resource-primary-actions">
+                        <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(name)} disabled={!isActive}>
+                            编辑配置
+                        </Button>
+                        <Button size="small" type="primary" icon={<CloudServerOutlined />} onClick={() => navigate(`/hosts/${name}/vms`)} disabled={!isActive}>
+                            管理虚拟机
+                        </Button>
+                    </div>
+                </header>
+
+                <div className="host-resource-main">
+                    <section className="host-resource-facts" aria-label="主机连接与配置信息">
+                        <div className="host-resource-fact">
+                            <span className="host-resource-fact-label">连接地址</span>
+                            <span className="host-resource-fact-value is-mono" title={connection}>{connection}</span>
+                        </div>
+                        <div className="host-resource-fact">
+                            <span className="host-resource-fact-label">虚拟机</span>
+                            <span className="host-resource-fact-value">{vmCount} 台 <span className="host-resource-fact-muted">/ {vmLimit > 0 ? `${vmLimit} 台` : '不限'}</span></span>
+                        </div>
+                        <div className="host-resource-fact">
+                            <span className="host-resource-fact-label">网络桥接</span>
+                            <span className="host-resource-fact-value host-resource-bridges" title={`NAT ${host.config?.network_nat || '-'} / 公网 ${host.config?.network_pub || '-'}`}>
+                                <span>NAT <b>{host.config?.network_nat || '-'}</b></span>
+                                <span>公网 <b>{host.config?.network_pub || '-'}</b></span>
                             </span>
                         </div>
-                        <div className="art-dockcard-sub">
-                            <span>{typeInfo.description || host.type}</span>
-                            <span className="art-dockcard-uuid">{host.addr || '未配置连接地址'}</span>
+                        <div className="host-resource-fact">
+                            <span className="host-resource-fact-label">端口配置</span>
+                            <span className="host-resource-fact-value is-mono">TCP {portRange}</span>
+                            <span className="host-resource-fact-hint">VNC {host.config?.remote_port || '未配置'}</span>
                         </div>
-                    </div>
-                    <div className="art-row-actions">
-                        <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(name)} disabled={!isActive}>
-                            编辑
-                        </Button>
-                        <Button size="small" type="primary" onClick={() => navigate(`/hosts/${name}/vms`)} disabled={!isActive}>
-                            管理
-                        </Button>
-                    </div>
-                </div>
+                    </section>
 
-                {/* 主体：连接信息一行 + 资源指标网格 */}
-                <div className="art-dockcard-body">
-                    <div className="art-quota-line">
-                        <span>连接 {host.addr || '-'}:{serverPort && serverPort > 0 ? serverPort : '-'}</span>
-                        <span>桌面端口 {host.config?.remote_port || '-'}</span>
-                        <span>前缀 {host.config?.filter_name || '-'}</span>
-                        <span>虚拟机 {host.vm_count || 0}/{host.config?.limits_nums || 0}</span>
-                        <span>网桥 {host.config?.network_nat || '-'} / {host.config?.network_pub || '-'}</span>
-                        <span>端口 {portRange}</span>
-                        {host.config?.i_kuai_addr ? <span>爱快 {host.config.i_kuai_addr}</span> : null}
-                    </div>
+                    {(host.config?.filter_name || host.config?.server_area || host.config?.i_kuai_addr) && (
+                        <div className="host-resource-meta" aria-label="主机补充信息">
+                            {host.config?.filter_name && <span><b>前缀</b><code>{host.config.filter_name}</code></span>}
+                            {host.config?.server_area && <span><b>区域</b><span>{host.config.server_area}</span></span>}
+                            {host.config?.i_kuai_addr && <span><GlobalOutlined aria-hidden="true" /><b>爱快</b><span className="host-resource-meta-address" title={host.config.i_kuai_addr}>{host.config.i_kuai_addr}</span></span>}
+                        </div>
+                    )}
+
                     {host.config?.public_addr && host.config.public_addr.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {host.config.public_addr.map((ip, idx) => (
-                                <Tooltip title="点击复制" key={idx}>
-                                    <span className="art-chip" style={{ cursor: 'pointer' }} onClick={() => copyToClipboard(ip)}>{ip}</span>
-                                </Tooltip>
-                            ))}
+                        <div className="host-resource-addresses">
+                            <span className="host-resource-address-label">公网地址</span>
+                            <div className="host-resource-address-list">
+                                {host.config.public_addr.map((ip, idx) => (
+                                    <Tooltip title="点击复制" key={`${ip}-${idx}`}>
+                                        <button type="button" className="host-resource-address" onClick={() => copyToClipboard(ip)}>
+                                            {ip}
+                                        </button>
+                                    </Tooltip>
+                                ))}
+                            </div>
                         </div>
                     )}
-                    {status ? (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-                            {metric(status.cpu_model || 'CPU', `${status.cpu_total || 0}核 ${cpuPercent.toFixed(1)}%`, cpuPercent, status.cpu_model)}
-                            {metric('内存', `${memUsageGB}GB/${memTotalGB}GB ${memPercent.toFixed(1)}%`, memPercent)}
-                            {metric('硬盘', `${diskUsageGB.toFixed(1)}GB/${diskTotalGB.toFixed(1)}GB ${diskPercent.toFixed(1)}%`, diskPercent)}
-                            {metric('网络', `↑${(networkU / 1024).toFixed(1)} ↓${(networkD / 1024).toFixed(1)} MB/s`, Math.max(networkUPercent, networkDPercent))}
-                            {metric('显卡', `${status.gpu_total || 0}个 ${gpuPercent.toFixed(1)}%`, gpuPercent)}
+
+                    <section className="host-resource-telemetry" aria-label="主机资源使用情况">
+                        <div className="host-resource-section-head">
+                            <h4>资源使用</h4>
+                            <span>{status ? '状态已获取' : isActive ? '等待状态数据' : '主机已禁用'}</span>
                         </div>
-                    ) : (
-                        <div className="art-muted" style={{ padding: '8px 0', textAlign: 'center' }}>暂无状态数据</div>
-                    )}
+                        {status ? (
+                            <div className="host-resource-metrics">
+                                {metric('CPU', `${status.cpu_total || 0} 核`, `${cpuPercent.toFixed(1)}% 使用`, cpuPercent, status.cpu_model || 'CPU 型号未上报')}
+                                {metric('内存', `${memUsageGB} / ${memTotalGB} GB`, `${memPercent.toFixed(1)}% 已用`, memPercent)}
+                                {metric('磁盘', `${diskUsageGB.toFixed(1)} / ${diskTotalGB.toFixed(1)} GB`, `${diskPercent.toFixed(1)}% 已用`, diskPercent)}
+                                {metric(
+                                    '网络吞吐',
+                                    <span className="host-resource-network-value">
+                                        <span><b>↑</b> {(networkU / 1024).toFixed(1)}</span>
+                                        <span><b>↓</b> {(networkD / 1024).toFixed(1)}</span>
+                                    </span>,
+                                    `MB/s · ${networkA >= 1000 ? `${(networkA / 1000).toFixed(1)} Gbps` : `${networkA} Mbps`}`,
+                                    Math.max(networkUPercent, networkDPercent),
+                                )}
+                                {metric('显卡', `${status.gpu_total || 0} 张`, `${gpuPercent.toFixed(1)}% 最高使用`, gpuPercent)}
+                            </div>
+                        ) : (
+                            <div className="host-resource-empty" role="status">
+                                <span className="host-resource-empty-mark" aria-hidden="true">—</span>
+                                <span>{isActive ? '暂未获取到资源状态，请检查主机连接或稍后刷新。' : '主机已禁用，启用后将显示资源状态。'}</span>
+                            </div>
+                        )}
+                    </section>
                 </div>
 
-                {/* 尾部操作：全部中性按钮，语义只靠 danger */}
-                <div className="art-card-actions">
-                    <span className="art-card-actions-spacer" />
-                    <Button size="small" icon={<CloudSyncOutlined />} onClick={() => handleScanBackups(name)} disabled={!isActive}>
-                        扫描备份
-                    </Button>
-                    <Button size="small" icon={<ScanOutlined />} onClick={() => handleScanVMs(name)} disabled={!isActive}>
-                        扫描虚拟机
-                    </Button>
-                    <Tooltip title="清理无效记录（仅移除不匹配前缀的纳管记录，不删除平台虚拟机）">
-                        <Button size="small" type="text" icon={<ClearOutlined />} onClick={() => handleCleanupRecords(name)} />
-                    </Tooltip>
-                    <Tooltip title="合并重复记录（同一虚拟机因 -/_ 命名差异被重复纳管，仅移除本机记录）">
-                        <Button size="small" type="text" icon={<MergeCellsOutlined />} onClick={() => handleDedupeRecords(name)} />
-                    </Tooltip>
-                    <Button size="small" icon={isActive ? <StopOutlined /> : <PlayCircleOutlined />} onClick={() => handleToggle(name, !isActive)}>
-                        {isActive ? '禁用' : '启用'}
-                    </Button>
-                    <Button
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={() => {
-                            Modal.confirm({
-                                title: '确认删除',
-                                content: `确定要删除主机 "${name}" 吗？此操作不可恢复。`,
-                                okText: '确认删除',
-                                okType: 'danger',
-                                cancelText: '取消',
-                                mask: false,
-                                onOk: () => handleDelete(name)
-                            })
-                        }}
-                    >
-                        删除
-                    </Button>
-                </div>
-            </div>
+                <footer className="host-resource-footer">
+                    <span className="host-resource-footer-label">运维操作</span>
+                    <div className="host-resource-maintenance-actions">
+                        <Button size="small" icon={<CloudSyncOutlined />} onClick={() => handleScanBackups(name)} disabled={!isActive}>
+                            扫描备份
+                        </Button>
+                        <Button size="small" icon={<ScanOutlined />} onClick={() => handleScanVMs(name)} disabled={!isActive}>
+                            扫描虚拟机
+                        </Button>
+                        <Tooltip title="仅移除不匹配前缀的纳管记录，不删除平台虚拟机">
+                            <Button size="small" icon={<ClearOutlined />} onClick={() => handleCleanupRecords(name)}>
+                                清理记录
+                            </Button>
+                        </Tooltip>
+                        <Tooltip title="合并因 -/_ 命名差异重复的纳管记录，仅移除本机记录">
+                            <Button size="small" icon={<MergeCellsOutlined />} onClick={() => handleDedupeRecords(name)}>
+                                合并重复
+                            </Button>
+                        </Tooltip>
+                    </div>
+                    <div className="host-resource-lifecycle-actions">
+                        <Button size="small" icon={isActive ? <StopOutlined /> : <PlayCircleOutlined />} onClick={() => handleToggle(name, !isActive)}>
+                            {isActive ? '禁用主机' : '启用主机'}
+                        </Button>
+                        <Button
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={() => {
+                                Modal.confirm({
+                                    title: '确认删除',
+                                    content: `确定要删除主机 "${name}" 吗？此操作不可恢复。`,
+                                    okText: '确认删除',
+                                    okType: 'danger',
+                                    cancelText: '取消',
+                                    mask: false,
+                                    onOk: () => handleDelete(name)
+                                })
+                            }}
+                        >
+                            删除主机
+                        </Button>
+                    </div>
+                </footer>
+            </article>
         )
     }
 
     return (
-        <div className="p-6">
+        <div className="art-stack host-manage-page">
             {/* 页面标题 */}
             <PageHeader
                 icon={<CloudServerOutlined />}
                 title="物理主机管理"
-                subtitle="管理所有虚拟化主机"
+                subtitle="查看主机运行状态、资源用量及纳管配置"
                 actions={
-                    <>
-                        <Button.Group>
-                            <Tooltip title="卡片视图">
-                                <Button
-                                    icon={<AppstoreOutlined />}
-                                    type={viewMode === 'card' ? 'primary' : 'default'}
-                                    onClick={() => { setViewMode('card'); localStorage.setItem('hostManage_viewMode', 'card') }}
-                                />
-                            </Tooltip>
-                            <Tooltip title="列表视图">
-                                <Button
-                                    icon={<UnorderedListOutlined />}
-                                    type={viewMode === 'table' ? 'primary' : 'default'}
-                                    onClick={() => { setViewMode('table'); localStorage.setItem('hostManage_viewMode', 'table') }}
-                                />
-                            </Tooltip>
-                        </Button.Group>
-                        <Button icon={<ReloadOutlined/>} onClick={loadHosts}>
-                            刷新
-                        </Button>
+                    <Space wrap className="host-manage-header-actions">
+                        <Button icon={<ReloadOutlined />} onClick={loadHosts} loading={loading}>刷新</Button>
                         <HostConfigBackupActions hostNames={Object.keys(hosts)} onRestored={loadHosts} />
-                        <Button type="primary" icon={<PlusOutlined/>} onClick={handleAdd}>
-                            添加主机
-                        </Button>
-                    </>
+                        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加主机</Button>
+                    </Space>
                 }
             />
 
-            {/* 主机列表 */}
-            {loading ? (
-                <div className="art-loading">
-                    <Spin size="large" />
-                    <span>正在加载主机列表…</span>
+            <section className="art-list-toolbar host-manage-toolbar" aria-label="主机筛选与列表操作">
+                <div className="art-list-toolbar-filters">
+                    <Input
+                        className="art-list-search host-manage-search"
+                        prefix={<SearchOutlined />}
+                        placeholder="搜索主机名、类型或连接地址"
+                        value={hostSearch}
+                        onChange={event => setHostSearch(event.target.value)}
+                        allowClear
+                    />
                 </div>
-            ) : Object.keys(hosts).length === 0 ? (
-                <EmptyState
-                    icon={<CloudServerOutlined />}
-                    title="暂无主机"
-                    description="还没有纳管任何虚拟化主机。添加主机后即可在此查看资源占用并管理其实例。"
-                    actions={<Button type="primary" onClick={handleAdd}>添加第一个主机</Button>}
-                />
-            ) : viewMode === 'card' ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(500px,1fr))] gap-4">
-                    {Object.entries(hosts).map(([name, host]) => (
-                        <div key={name}>
-                            {renderHostCard(name, host)}
+                <div className="art-list-toolbar-actions">
+                    <span className="art-list-result-count" aria-live="polite">
+                        显示 <strong>{Object.keys(filteredHosts).length}</strong> / {Object.keys(hosts).length} 台
+                    </span>
+                    <Segmented
+                        aria-label="主机显示方式"
+                        size="small"
+                        value={viewMode}
+                        onChange={value => {
+                            const nextMode = value as 'card' | 'table'
+                            setViewMode(nextMode)
+                            localStorage.setItem('hostManage_viewMode', nextMode)
+                        }}
+                        options={[
+                            { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
+                            { value: 'table', icon: <UnorderedListOutlined />, label: '列表' },
+                        ]}
+                    />
+                </div>
+            </section>
+
+            <section className="art-list-results host-manage-results" aria-label="主机列表">
+                <header className="art-list-results-head">
+                    <div>
+                        <h2>{viewMode === 'card' ? '主机概览' : '主机清单'}</h2>
+                        <span>管理主机资源与运行状态</span>
+                    </div>
+                </header>
+                {loading ? (
+                    <div className="art-loading">
+                        <Spin size="large" />
+                        <span>正在加载主机列表…</span>
+                    </div>
+                ) : Object.keys(hosts).length === 0 ? (
+                    <EmptyState
+                        icon={<CloudServerOutlined />}
+                        title="暂无主机"
+                        description="还没有纳管任何虚拟化主机。添加主机后即可在此查看资源占用并管理其实例。"
+                        actions={<Button type="primary" onClick={handleAdd}>添加第一个主机</Button>}
+                    />
+                ) : Object.keys(filteredHosts).length === 0 ? (
+                    <EmptyState icon={<SearchOutlined />} title="没有符合条件的主机" description="调整关键词，或清除搜索后重试。" />
+                ) : viewMode === 'card' ? (
+                    <div className="host-resource-grid">
+                        {Object.entries(filteredHosts).map(([name, host]) => (
+                            <div key={name}>{renderHostCard(name, host)}</div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="art-table-panel host-manage-table">
+                        <div className="art-panel-body is-flush">
+                            <HostTableView
+                                hosts={filteredHosts}
+                                hostsStatus={hostsStatus}
+                                engineTypes={engineTypes}
+                                navigate={navigate}
+                                handleEdit={handleEdit}
+                                handleToggle={handleToggle}
+                            />
                         </div>
-                    ))}
-                </div>
-            ) : (
-                <HostTableView
-                    hosts={hosts}
-                    hostsStatus={hostsStatus}
-                    engineTypes={engineTypes}
-                    navigate={navigate}
-                    handleEdit={handleEdit}
-                    handleToggle={handleToggle}
-                />
-            )}
+                    </div>
+                )}
+            </section>
 
             {/* 添加/编辑主机对话框 */}
             <Modal
@@ -1336,7 +1509,8 @@ function HostManage() {
                 open={modalVisible}
                 onCancel={() => setModalVisible(false)}
                 onOk={() => form.submit()}
-                width={900}
+                width="min(920px, calc(100vw - 32px))"
+                rootClassName="host-config-modal"
                 okText="保存"
                 cancelText="取消"
             >
@@ -1347,7 +1521,7 @@ function HostManage() {
                                 key: 'basic',
                                 label: <span><SettingOutlined/> 基本配置</span>,
                                 children: (
-                                    <div className="max-h-[500px] overflow-y-auto pr-2">
+                                    <div className="host-config-tab-panel max-h-[min(65dvh,600px)] overflow-y-auto pr-2">
                                         <Row gutter={16}>
                                             <Col span={12}>
                                                 <Form.Item name="name" label="服务器名称"
@@ -1475,7 +1649,7 @@ function HostManage() {
                                 key: 'storage',
                                 label: <span><FolderOutlined/> 存储路径</span>,
                                 children: (
-                                    <div className="max-h-[500px] overflow-y-auto pr-2">
+                                    <div className="host-config-tab-panel max-h-[min(65dvh,600px)] overflow-y-auto pr-2">
                                         <Row gutter={16}>
                                             <Col span={12}>
                                                 <Form.Item name="images_path" label="模板存储路径">
@@ -1521,22 +1695,31 @@ function HostManage() {
                                 key: 'network',
                                 label: <span><GlobalOutlined/> 网络配置</span>,
                                 children: (
-                                    <div className="max-h-[500px] overflow-y-auto pr-2">
+                                    <div className="host-config-tab-panel max-h-[min(65dvh,600px)] overflow-y-auto pr-2">
                                         <h4 className="font-medium mb-3">爱快OS配置</h4>
                                         <Row gutter={16}>
-                                            <Col span={8}>
+                                            <Col span={6}>
                                                 <Form.Item name="i_kuai_addr" label="爱快OS地址">
                                                     <Input placeholder="例如: http://192.168.1.1"/>
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={8}>
+                                            <Col span={6}>
                                                 <Form.Item name="i_kuai_user" label="爱快OS用户名">
                                                     <Input placeholder="爱快OS管理员用户名"/>
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={8}>
+                                            <Col span={6}>
                                                 <Form.Item name="i_kuai_pass" label="爱快OS密码">
                                                     <Input.Password placeholder="爱快OS管理员密码"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item
+                                                    name="i_kuai_token"
+                                                    label="爱快 API Token"
+                                                    tooltip="爱快 4.0 及以上已下线账号密码登录，必须填写：设备设置 → 登录管理 → 个人 API 令牌。3.x 可留空。"
+                                                >
+                                                    <Input placeholder="4.0+ 必填，3.x 可留空"/>
                                                 </Form.Item>
                                             </Col>
                                         </Row>
@@ -1579,7 +1762,7 @@ function HostManage() {
                                 key: 'advanced',
                                 label: <span><DatabaseOutlined/> 高级配置</span>,
                                 children: (
-                                    <div className="max-h-[500px] overflow-y-auto pr-2">
+                                    <div className="host-config-tab-panel max-h-[min(65dvh,600px)] overflow-y-auto pr-2">
                                         <h4 className="font-medium mb-3">售价配置</h4>
                                         <Row gutter={8} className="mb-4">
                                             <Col span={6}>
@@ -1931,7 +2114,7 @@ function HostManage() {
                                 key: 'plan',
                                 label: <span><DatabaseOutlined/> 套餐配置</span>,
                                 children: (
-                                    <div className="max-h-[500px] overflow-y-auto pr-2">
+                                    <div className="host-config-tab-panel max-h-[min(65dvh,600px)] overflow-y-auto pr-2">
                                         <h4 className="font-medium mb-3">套餐列表（套餐名称 → 虚拟机资源配置）</h4>
                                         <div className="space-y-3 mb-4">
                                             {serverPlans.map((row, index) => (

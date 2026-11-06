@@ -7,13 +7,14 @@ interface MmuiHeaderProps {
   theme: UseMmuiThemeReturn;
   sidebarCollapsed: boolean;
   onToggleMobileMenu?: () => void;
+  mobileMenuOpen?: boolean;
   title?: string;
   extra?: React.ReactNode;
 }
 
 /** MMUI 风格顶部栏组件 */
 export default function MmuiHeader({
-  theme, sidebarCollapsed, onToggleMobileMenu, extra
+  theme, sidebarCollapsed, onToggleMobileMenu, mobileMenuOpen = false, extra
 }: MmuiHeaderProps) {
   const [scrollProgress, setScrollProgress] = useState(0);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -50,7 +51,9 @@ export default function MmuiHeader({
         <button
           className="mmui-header__hamburger"
           onClick={onToggleMobileMenu}
-          aria-label="切换菜单"
+          aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="vm-detail-navigation"
         >
           <MenuOutlined />
         </button>

@@ -338,7 +338,12 @@ export const scanVMs = (hsName: string): Promise<ApiResponse> => {
 /**
  * 获取控制台访问地址
  */
-export const getVMConsole = (hsName: string, vmUuid: string): Promise<ApiResponse<{ console_url: string; terminal_url: string }>> => {
+export const getVMConsole = (hsName: string, vmUuid: string): Promise<ApiResponse<{
+  console_url: string;
+  terminal_url: string;
+  /** 后端无法生成控制台地址时给出的具体原因（如该平台仅提供命令行控制台） */
+  console_error?: string;
+}>> => {
   return http.get(`/api/client/remote/${hsName}/${vmUuid}`);
 };
 
@@ -434,7 +439,8 @@ export const getVMISOs = (hsName: string, vmUuid: string): Promise<ApiResponse<a
 /**
  * 挂载ISO
  */
-export const addISO = (hsName: string, vmUuid: string, data: { iso_name: string; iso_file: string; iso_hint?: string }): Promise<ApiResponse> => {
+// iso_name 由后端自动生成，调用方通常不需要传
+export const addISO = (hsName: string, vmUuid: string, data: { iso_file: string; iso_name?: string; iso_hint?: string }): Promise<ApiResponse> => {
   return http.post(`/api/client/iso/mount/${hsName}/${vmUuid}`, data);
 };
 
@@ -495,7 +501,8 @@ export const getVMHDDs = (hsName: string, vmUuid: string): Promise<ApiResponse<a
 /**
  * 添加硬盘
  */
-export const addHDD = (hsName: string, vmUuid: string, data: { hdd_size: number; hdd_name: string; hdd_type?: number }): Promise<ApiResponse> => {
+// hdd_name 由后端自动生成，调用方通常不需要传
+export const addHDD = (hsName: string, vmUuid: string, data: { hdd_size: number; hdd_name?: string; hdd_type?: number }): Promise<ApiResponse> => {
   return http.post(`/api/client/hdd/mount/${hsName}/${vmUuid}`, data);
 };
 

@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { useTheme } from '@/contexts/ThemeContext';
+import { getThemePalette } from '@/config/theme.config';
 import { Card, Row, Col, Progress, Spin, message, Tag, Button, Empty, Tooltip } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '@/utils/data.ts';
@@ -29,6 +31,8 @@ import {
 const UserPanels: React.FC = () => {
   const navigate = useNavigate();
   const { user, setUser } = useUserStore();
+  const { theme, themePreset, transparentMode } = useTheme();
+  const themePalette = getThemePalette(themePreset, theme === 'dark', transparentMode);
   const [loading, setLoading] = useState(false);
   const [vmsLoading, setVmsLoading] = useState(false);
   const [vms, setVMs] = useState<Record<string, any>>({});
@@ -213,39 +217,40 @@ const UserPanels: React.FC = () => {
     return `${Math.round(cores)} 核`;
   };
 
-  // 资源项数据
+  // 资源项数据：以当前主题色板区分资源类型。
+  const chartColors = themePalette.chartColors;
   const computeResources = [
     {
       title: 'CPU',
       used: user.used_cpu || 0,
       quota: user.quota_cpu || 0,
       unit: '核',
-      icon: <CpuChipIcon style={{ width: '18px', height: '18px', color: '#3b82f6' }} />,
-      color: '#3b82f6',
+      icon: <CpuChipIcon style={{ width: '18px', height: '18px', color: chartColors[0] }} />,
+      color: chartColors[0],
       formatter: formatCpuCores
     },
     {
       title: '内存',
       used: user.used_ram || 0,
       quota: user.quota_ram || 0,
-      icon: <CircleStackIcon style={{ width: '18px', height: '18px', color: '#10b981' }} />,
-      color: '#10b981',
+      icon: <CircleStackIcon style={{ width: '18px', height: '18px', color: chartColors[1] }} />,
+      color: chartColors[1],
       formatter: formatStorage
     },
     {
       title: '磁盘',
       used: user.used_ssd || 0,
       quota: user.quota_ssd || 0,
-      icon: <ServerIcon style={{ width: '18px', height: '18px', color: '#8b5cf6' }} />,
-      color: '#8b5cf6',
+      icon: <ServerIcon style={{ width: '18px', height: '18px', color: chartColors[2] }} />,
+      color: chartColors[2],
       formatter: formatStorage
     },
     ...(user.quota_gpu > 0 ? [{
       title: 'GPU',
       used: user.used_gpu || 0,
       quota: user.quota_gpu || 0,
-      icon: <CubeIcon style={{ width: '18px', height: '18px', color: '#ec4899' }} />,
-      color: '#ec4899',
+      icon: <CubeIcon style={{ width: '18px', height: '18px', color: chartColors[3] }} />,
+      color: chartColors[3],
       formatter: formatStorage
     }] : [])
   ];
@@ -255,32 +260,32 @@ const UserPanels: React.FC = () => {
       title: 'NAT',
       used: user.used_nat_ports || 0,
       quota: user.quota_nat_ports || 0,
-      icon: <GlobeAltIcon style={{ width: '18px', height: '18px', color: '#6366f1' }} />,
-      color: '#6366f1',
+      icon: <GlobeAltIcon style={{ width: '18px', height: '18px', color: chartColors[4] }} />,
+      color: chartColors[4],
       formatter: (val: number) => formatCount(val, '')
     },
     {
       title: 'Web',
       used: user.used_web_proxy || 0,
       quota: user.quota_web_proxy || 0,
-      icon: <GlobeAltIcon style={{ width: '18px', height: '18px', color: '#14b8a6' }} />,
-      color: '#14b8a6',
+      icon: <GlobeAltIcon style={{ width: '18px', height: '18px', color: chartColors[5] }} />,
+      color: chartColors[5],
       formatter: (val: number) => formatCount(val, '')
     },
     {
       title: '上行',
       used: user.used_bandwidth_up || 0,
       quota: user.quota_bandwidth_up || 0,
-      icon: <ArrowUpIcon style={{ width: '18px', height: '18px', color: '#ef4444' }} />,
-      color: '#ef4444',
+      icon: <ArrowUpIcon style={{ width: '18px', height: '18px', color: chartColors[6] }} />,
+      color: chartColors[6],
       formatter: formatBandwidth
     },
     {
       title: '下行',
       used: user.used_bandwidth_down || 0,
       quota: user.quota_bandwidth_down || 0,
-      icon: <ArrowDownIcon style={{ width: '18px', height: '18px', color: '#06b6d4' }} />,
-      color: '#06b6d4',
+      icon: <ArrowDownIcon style={{ width: '18px', height: '18px', color: chartColors[7] }} />,
+      color: chartColors[7],
       formatter: formatBandwidth
     }
   ];
@@ -350,7 +355,7 @@ const UserPanels: React.FC = () => {
               {portName}
             </span>
           </Tooltip>
-          <Tag color="blue" className="m-0 text-xs">{protocol}</Tag>
+          <Tag color="processing" className="m-0 text-xs">{protocol}</Tag>
         </div>
         <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
           外:{outerPort} → 内:{innerPort}
@@ -388,7 +393,7 @@ const UserPanels: React.FC = () => {
             </span>
           </Tooltip>
           <div className="flex items-center gap-1">
-            <Tag color={sslEnabled ? 'green' : 'orange'} className="m-0 text-xs">
+            <Tag color={sslEnabled ? 'success' : 'warning'} className="m-0 text-xs">
               {sslEnabled ? 'HTTPS' : 'HTTP'}
             </Tag>
             <Tooltip title={`访问 ${fullUrl}`}>
@@ -500,14 +505,14 @@ const UserPanels: React.FC = () => {
                 <span className="text-gray-500">CPU</span>
                 <span className="font-semibold">{cpuPercent}%</span>
               </div>
-              <Progress percent={cpuPercent} size="small" strokeColor="#3b82f6" showInfo={false} />
+              <Progress percent={cpuPercent} size="small" strokeColor={themePalette.chartColors[0]} showInfo={false} />
             </div>
             <div className="p-2 rounded-lg ">
               <div className="flex items-center justify-between text-xs mb-1">
                 <span className="text-gray-500">内存</span>
                 <span className="font-semibold">{memPercent}%</span>
               </div>
-              <Progress percent={memPercent} size="small" strokeColor="#10b981" showInfo={false} />
+              <Progress percent={memPercent} size="small" strokeColor={themePalette.chartColors[1]} showInfo={false} />
             </div>
           </div>
 
@@ -575,7 +580,7 @@ const UserPanels: React.FC = () => {
   }).length;
 
   return (
-    <div className="p-6 min-h-screen">
+    <div className="art-stack">
       {/* 页面标题 */}
       <PageHeader
         icon={<CubeIcon style={{ width: '24px', height: '24px' }} />}
@@ -600,7 +605,7 @@ const UserPanels: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <span className="text-lg font-semibold text-gray-800 dark:text-gray-200">🔗 端口转发</span>
-              <Tag color="blue">{allNatPorts.length} 个</Tag>
+              <Tag color="processing">{allNatPorts.length} 个</Tag>
             </div>
           </div>
           {allNatPorts.length === 0 ? (
@@ -629,7 +634,7 @@ const UserPanels: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <span className="text-lg font-semibold text-gray-800 dark:text-gray-200">🌐 反向代理</span>
-              <Tag color="purple">{allWebProxies.length} 个</Tag>
+              <Tag color="processing">{allWebProxies.length} 个</Tag>
             </div>
           </div>
           {allWebProxies.length === 0 ? (
@@ -658,7 +663,7 @@ const UserPanels: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <span className="text-lg font-semibold text-gray-800 dark:text-gray-200">🖥️ 实例概要</span>
-              <Tag color="blue">{vmCount} 台</Tag>
+              <Tag color="processing">{vmCount} 台</Tag>
               <Tag color="green">{runningCount} 运行中</Tag>
             </div>
             <Button 

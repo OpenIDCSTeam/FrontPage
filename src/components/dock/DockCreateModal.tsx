@@ -979,18 +979,18 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                                     }
                                                 }}
                                                 style={{
-                                                    border: selectedPlanName === planName ? '2px solid #1677ff' : isExceeded ? '1px solid #d9d9d9' : '1px solid #d9d9d9',
-                                                    borderRadius: 8,
+                                                    border: `1px solid ${selectedPlanName === planName ? 'var(--main-color)' : 'var(--art-card-border)'}`,
+                                                    borderRadius: 'var(--art-radius-card)',
                                                     padding: 16,
                                                     cursor: isExceeded ? 'not-allowed' : 'pointer',
                                                     transition: 'all 0.2s',
-                                                    background: isExceeded ? '#f5f5f5' : selectedPlanName === planName ? '#e6f4ff' : 'transparent',
-                                                    boxShadow: selectedPlanName === planName ? '0 2px 8px rgba(22,119,255,0.15)' : 'none',
+                                                    background: isExceeded ? 'var(--art-sunken-bg)' : selectedPlanName === planName ? 'var(--art-primary-softer)' : 'transparent',
+                                                    boxShadow: selectedPlanName === planName ? 'var(--art-shadow-sm)' : 'none',
                                                     opacity: isExceeded ? 0.6 : 1,
                                                 }}
                                             >
                                                 <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>{planName}</div>
-                                                <div className="space-y-1 text-xs" style={{ color: isExceeded ? '#999' : '#666' }}>
+                                                <div className="space-y-1 text-xs" style={{ color: isExceeded ? 'var(--art-gray-500)' : 'var(--art-gray-700)' }}>
                                                     <div>CPU: {planCfg.cpu_num}核 {planCfg.cpu_per ? `(可用率${planCfg.cpu_per}%)` : ''}</div>
                                                     <div>RAM: {planCfg.mem_num >= 1024 ? `${Math.round(planCfg.mem_num / 1024)}GB` : `${planCfg.mem_num}MB`} / GPU: {planCfg.gpu_mem ? `${planCfg.gpu_mem}MB` : '无'}</div>
                                                     <div>HDD: {planCfg.hdd_num >= 1024 ? `${Math.round(planCfg.hdd_num / 1024)}GB` : `${planCfg.hdd_num}MB`} / IOPS: {planCfg.hdd_iop ?? 1000}</div>
@@ -1003,7 +1003,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                                     <div>数据盘: {planCfg.dat_num ?? 1}个 / 可用空间: {planCfg.dat_all ? (planCfg.dat_all >= 1024 ? `${Math.round(planCfg.dat_all / 1024)}GB` : `${planCfg.dat_all}MB`) : '0MB'}</div>
                                                 </div>
                                                 {isExceeded && (
-                                                    <div style={{ marginTop: 6, color: '#ff4d4f', fontSize: 11 }}>
+                                                    <div style={{ marginTop: 6, color: 'var(--art-danger)', fontSize: 11 }}>
                                                         配额不足: {exceedReasons.join('、')}
                                                     </div>
                                                 )}
@@ -1279,7 +1279,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                             </div>
                             <span>网卡配置</span>
                             {!canFreeConfig && selectedPlanName && serverPlans[selectedPlanName] && (
-                                <span className="text-xs" style={{ color: '#999', marginLeft: 8 }}>
+                                <span className="text-xs" style={{ color: 'var(--art-gray-500)', marginLeft: 8 }}>
                                     (公网{serverPlans[selectedPlanName].nic_pub ?? 0}张 + 内网{serverPlans[selectedPlanName].nic_pri ?? 1}张，
                                     IPv4最多{serverPlans[selectedPlanName].ip4_max ?? 1}个，
                                     IPv6最多{serverPlans[selectedPlanName].ip6_max ?? 0}个)

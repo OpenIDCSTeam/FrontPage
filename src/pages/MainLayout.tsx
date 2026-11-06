@@ -1,7 +1,6 @@
 import {useState, useEffect, useMemo, useCallback} from 'react'
-import type {CSSProperties} from 'react'
 import {Outlet, useNavigate, useLocation} from 'react-router-dom'
-import {Layout, Menu, Avatar, Dropdown, Badge, Button, Input, Tooltip, Modal, Form, Space, Popconfirm, message, Breadcrumb, Drawer} from 'antd'
+import {Layout, Menu, Avatar, Dropdown, Badge, Button, Input, Tooltip, Breadcrumb, Drawer} from 'antd'
 import {
     DashboardOutlined,
     CloudServerOutlined,
@@ -16,27 +15,15 @@ import {
     GlobalOutlined,
     SwapOutlined,
     TranslationOutlined,
-    SunOutlined,
-    MoonOutlined,
-    BgColorsOutlined,
-    RadiusSettingOutlined,
-    FormatPainterOutlined,
     CheckOutlined,
     SearchOutlined,
     QuestionCircleOutlined,
-    AppstoreOutlined,
-    PictureOutlined,
-    PlusOutlined,
-    EditOutlined,
-    DeleteOutlined,
     CloseOutlined,
 } from '@ant-design/icons'
-import { addCustomAnimeTheme, updateCustomAnimeTheme, deleteCustomAnimeTheme, AnimeTheme, isSolidTheme } from '@/config/animeThemes.config'
-import { FONT_OPTIONS } from '@/config/fonts.config'
 import {useUserStore} from '@/utils/data.ts'
 import api from '@/utils/apis.ts'
-import { changeLanguage, getAvailableLanguages, getCurrentLanguage } from '@/utils/i18n.ts'
-import { useTheme } from '@/contexts/ThemeContext'
+import { changeLanguage, getAvailableLanguages, getCurrentLanguage, SUPPORTED_LANGUAGES } from '@/utils/i18n.ts'
+import AppearanceMenu from '@/components/AppearanceMenu'
 import type {MenuProps} from 'antd'
 
 const {Header, Sider, Content} = Layout
@@ -44,25 +31,19 @@ const {Header, Sider, Content} = Layout
 /**
  * 主布局组件
  * ------------------------------------------------------------------
- * 结构：品牌侧边栏（桌面端固定 / 移动端抽屉） + 玻璃顶栏 + 内容区
- * 视觉令牌全部来自 src/styles/art-design.css，组件内不写业务配色，
- * 保证「亮色 / 暗色 / 透明 / 壁纸」四种模式共用同一套结构。
+ * 结构：品牌侧边栏（桌面端固定 / 移动端抽屉） + 主题化顶栏 + 内容区
+ * 视觉由 ThemeContext 的三套预设 token 统一驱动，管理端与用户端共用同一套结构。
  */
 function MainLayout() {
     const navigate = useNavigate()
     const location = useLocation()
     const {user, logout, setUser} = useUserStore()
-    const { theme: currentTheme, toggleTheme, transparentMode, toggleTransparentMode, roundedMode, toggleRoundedMode, liquidMode, toggleLiquidMode, fontId, setFontId, animeThemeId, setAnimeTheme, animeThemes, refreshAnimeThemes, animeBlurMode, toggleAnimeBlurMode } = useTheme()
-    const [collapsed, setCollapsed] = useState(false)
+    const [collapsed, setCollapsed] = useState(() => window.location.pathname.endsWith('/v2'))
     const [isMobile, setIsMobile] = useState(false)
     const [drawerOpen, setDrawerOpen] = useState(false)
     const [notifications, setNotifications] = useState(0)
     const [currentLang, setCurrentLang] = useState('zh-cn')
     const [languages, setLanguages] = useState<any[]>([])
-    // 二次元主题管理弹窗
-    const [animeModalOpen, setAnimeModalOpen] = useState(false)
-    const [editingTheme, setEditingTheme] = useState<AnimeTheme | null>(null)
-    const [themeForm] = Form.useForm()
 
     useEffect(() => {
         if (!user || user.is_admin === undefined) {
@@ -105,11 +86,15 @@ function MainLayout() {
     // 路由切换后自动收起移动端抽屉
     useEffect(() => { setDrawerOpen(false) }, [location.pathname])
 
+    const isVerticalDetail = location.pathname.endsWith('/v2')
+
+    // 进入竖版详情时默认折叠主菜单，用户仍可通过侧栏底部按钮展开
+    useEffect(() => {
+        if (isVerticalDetail) setCollapsed(true)
+    }, [isVerticalDetail])
+
     // 语言菜单项
-    const languageMenuItems: MenuProps['items'] = (languages.length > 0 ? languages : [
-        { code: 'zh-cn', native: '简体中文' },
-        { code: 'en-us', native: 'English' }
-    ]).map(lang => ({
+    const languageMenuItems: MenuProps['items'] = (languages.length > 0 ? languages : SUPPORTED_LANGUAGES).map(lang => ({
         key: lang.code,
         label: lang.native || lang.name,
         icon: lang.code === currentLang ? <CheckOutlined /> : undefined,
@@ -193,7 +178,6 @@ function MainLayout() {
             proxys: '反向代理',
             nat: '端口转发',
             profile: '个人资料',
-            v2: '新版面板',
         }
         const root = user?.is_admin ? '管理控制台' : '用户空间'
         const items: { title: string }[] = [{ title: root }]
@@ -219,104 +203,6 @@ function MainLayout() {
         navigate(user?.is_admin ? '/dashboard' : '/user/dashboard')
     }, [navigate, user?.is_admin])
 
-    // ---------- 主题设置面板 ----------
-    // 五个开关共用同一个强调色，不再各配一种色相（单一强调色约束）
-    const themeToggles = [
-        { key: 'mode',    label: currentTheme === 'dark' ? '浅色' : '深色', active: currentTheme === 'dark', icon: currentTheme === 'dark' ? <SunOutlined /> : <MoonOutlined />, onClick: toggleTheme },
-        { key: 'glass',   label: '透明', active: transparentMode, icon: <BgColorsOutlined />, onClick: toggleTransparentMode },
-        { key: 'rounded', label: '圆角', active: roundedMode,     icon: <RadiusSettingOutlined />, onClick: toggleRoundedMode },
-        { key: 'liquid',  label: '玻璃', active: liquidMode,      icon: <AppstoreOutlined />, onClick: toggleLiquidMode },
-        { key: 'blur',    label: '模糊', active: animeBlurMode,   icon: <FormatPainterOutlined />, onClick: toggleAnimeBlurMode },
-    ]
-
-    const themePanelContent = (
-        <div className="art-theme-panel">
-            {/* 显示开关 */}
-            <div className="art-theme-panel-label">
-                <span>显示</span>
-            </div>
-            <div className="art-theme-toggle-grid">
-                {themeToggles.map(item => (
-                    <div
-                        key={item.key}
-                        className={`art-theme-toggle${item.active ? ' is-active' : ''}`}
-                        onClick={item.onClick}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') item.onClick() }}
-                    >
-                        <span className="art-theme-toggle-icon">{item.icon}</span>
-                        <span className="art-theme-toggle-text">{item.label}</span>
-                    </div>
-                ))}
-            </div>
-
-            <div className="art-theme-divider" />
-
-            {/* 字体 */}
-            <div className="art-theme-panel-label">
-                <span>字体</span>
-            </div>
-            <div className="art-font-list">
-                {FONT_OPTIONS.map(option => (
-                    <div
-                        key={option.id}
-                        className={`art-font-item${fontId === option.id ? ' is-active' : ''}`}
-                        onClick={() => setFontId(option.id)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setFontId(option.id) }}
-                    >
-                        <span className="art-font-item-sample" style={{ fontFamily: option.previewStack }}>
-                            {option.sample}
-                        </span>
-                        <span className="art-font-item-body">
-                            <span className="art-font-item-name">{option.name}</span>
-                            <span className="art-font-item-desc">{option.desc}</span>
-                        </span>
-                    </div>
-                ))}
-            </div>
-
-            <div className="art-theme-divider" />
-
-            {/* 壁纸 */}
-            <div className="art-theme-panel-label">
-                <span>壁纸</span>
-                <span
-                    className="art-theme-panel-action"
-                    onClick={(e) => { e.stopPropagation(); setAnimeModalOpen(true) }}
-                >管理</span>
-            </div>
-            <div className="art-wallpaper-grid">
-                {animeThemes.map(t => (
-                    <div
-                        key={t.id}
-                        className={`art-wallpaper-item${animeThemeId === t.id ? ' is-active' : ''}`}
-                        style={{ '--tile-color': t.primaryColor } as CSSProperties}
-                        onClick={() => setAnimeTheme(t.id)}
-                        title={t.description || t.name}
-                    >
-                        <div
-                            className="art-wallpaper-thumb"
-                            style={{
-                                background: isSolidTheme(t)
-                                    ? t.solidColor!
-                                    : (t.thumbnail
-                                        ? `url(${t.thumbnail}) center/cover no-repeat`
-                                        : `linear-gradient(135deg, ${t.primaryColor}, ${t.accentColor})`),
-                                border: isSolidTheme(t) && t.solidColor === '#ffffff' ? '1px solid #e0e0e0' : 'none',
-                            }}
-                        >
-                            {!isSolidTheme(t) && !t.thumbnail && <PictureOutlined style={{ fontSize: 16, color: '#fff' }} />}
-                        </div>
-                        <span className="art-wallpaper-name">{t.name}</span>
-                    </div>
-                ))}
-            </div>
-        </div>
-    )
-
     // ---------- 侧边栏内容（桌面 Sider 与移动抽屉共用） ----------
     // 品牌标记已上移到深色全局顶栏，侧边栏只承载导航与折叠开关
     const sideContent = (
@@ -339,16 +225,34 @@ function MainLayout() {
         </>
     )
 
-    // 检测是否为 V2 详情页（MMUI 风格），如果是则隐藏系统侧边栏和顶栏
-    const isV2Page = location.pathname.endsWith('/v2')
-
-    // V2 页面：全屏模式
-    if (isV2Page) {
+    if (isVerticalDetail && isMobile) {
         return (
-            <Layout style={{ minHeight: '100vh', height: '100vh', overflow: 'hidden' }}>
-                <Content style={{ overflow: 'auto', height: '100vh' }}>
+            <Layout style={{ minHeight: '100dvh', height: '100dvh', overflow: 'hidden' }}>
+                <Content style={{ minHeight: 0, overflow: 'hidden' }}>
                     <Outlet />
                 </Content>
+            </Layout>
+        )
+    }
+
+    if (isVerticalDetail) {
+        return (
+            <Layout style={{ minHeight: '100dvh', height: '100dvh', overflow: 'hidden' }}>
+                <Sider
+                    trigger={null}
+                    collapsible
+                    collapsed={collapsed}
+                    width={208}
+                    collapsedWidth={56}
+                    className="art-sidebar"
+                >
+                    {sideContent}
+                </Sider>
+                <Layout className="art-main" style={{ minWidth: 0 }}>
+                    <Content style={{ minHeight: 0, overflow: 'hidden' }}>
+                        <Outlet />
+                    </Content>
+                </Layout>
             </Layout>
         )
     }
@@ -386,23 +290,7 @@ function MainLayout() {
                             prefix={<SearchOutlined style={{ fontSize: 14 }} />}
                         />
 
-                        {/* 主题切换 */}
-                        <Dropdown
-                            placement="bottomRight"
-                            overlayStyle={{ zIndex: 1050 }}
-                            getPopupContainer={() => document.body}
-                            popupRender={() => themePanelContent}
-                        >
-                            <Tooltip title="主题设置">
-                                <Button
-                                    type="text"
-                                    className={`art-header-btn${
-                                        (currentTheme === 'dark' || transparentMode || roundedMode || liquidMode) ? ' is-active' : ''
-                                    }`}
-                                    icon={<FormatPainterOutlined />}
-                                />
-                            </Tooltip>
-                        </Dropdown>
+                        <AppearanceMenu />
 
                         {/* 语言切换 */}
                         <Dropdown
@@ -411,7 +299,7 @@ function MainLayout() {
                             overlayStyle={{ zIndex: 1050 }}
                             getPopupContainer={() => document.body}
                         >
-                            <Tooltip title="切换语言">
+                            <Tooltip title={`切换语言 · ${SUPPORTED_LANGUAGES.find(lang => lang.code === currentLang)?.native || ''}`}>
                                 <Button
                                     type="text"
                                     className="art-header-btn"
@@ -424,8 +312,8 @@ function MainLayout() {
                         <Tooltip title="帮助">
                             <Button
                                 type="text"
-                                className="art-header-btn"
-                                icon={<QuestionCircleOutlined />}
+                                className="art-header-btn art-header-btn-help"
+                                                                    icon={<QuestionCircleOutlined />}
                             />
                         </Tooltip>
 
@@ -434,7 +322,7 @@ function MainLayout() {
                             <Badge count={notifications} size="small" offset={[-4, 4]}>
                                 <Button
                                     type="text"
-                                    className="art-header-btn"
+                                    className="art-header-btn art-header-btn-notifications"
                                     icon={<BellOutlined />}
                                     onClick={() => setNotifications(0)}
                                 />
@@ -525,140 +413,6 @@ function MainLayout() {
                 </Layout>
             </Layout>
 
-            {/* 二次元主题管理弹窗 */}
-            <Modal
-                title="二次元主题管理"
-                open={animeModalOpen}
-                onCancel={() => { setAnimeModalOpen(false); setEditingTheme(null); themeForm.resetFields(); }}
-                footer={null}
-                width={640}
-                styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
-            >
-                {/* 添加/编辑表单 */}
-                <div className="art-theme-editor">
-                    <div className="art-theme-editor-title">
-                        {editingTheme ? '编辑主题' : '添加自定义主题'}
-                    </div>
-                    <Form
-                        form={themeForm}
-                        layout="vertical"
-                        size="small"
-                        onFinish={(values) => {
-                            if (editingTheme) {
-                                updateCustomAnimeTheme(editingTheme.id, values);
-                                message.success('主题已更新');
-                            } else {
-                                addCustomAnimeTheme(values);
-                                message.success('主题已添加');
-                            }
-                            refreshAnimeThemes();
-                            themeForm.resetFields();
-                            setEditingTheme(null);
-                        }}
-                    >
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                            <Form.Item name="name" label="主题名称" rules={[{ required: true, message: '请输入名称' }]}>
-                                <Input placeholder="如：三月七" />
-                            </Form.Item>
-                            <Form.Item name="description" label="描述">
-                                <Input placeholder="如：崩坏：星穹铁道" />
-                            </Form.Item>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                            <Form.Item name="pcBackground" label="PC端背景图URL" rules={[{ required: true, message: '请输入URL' }]}>
-                                <Input placeholder="https://..." />
-                            </Form.Item>
-                            <Form.Item name="mobileBackground" label="手机端背景图URL" rules={[{ required: true, message: '请输入URL' }]}>
-                                <Input placeholder="https://..." />
-                            </Form.Item>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                            <Form.Item name="primaryColor" label="主色调" rules={[{ required: true }]}>
-                                <Input type="color" style={{ height: 32, padding: 2 }} />
-                            </Form.Item>
-                            <Form.Item name="accentColor" label="强调色" rules={[{ required: true }]}>
-                                <Input type="color" style={{ height: 32, padding: 2 }} />
-                            </Form.Item>
-                            <Form.Item name="thumbnail" label="缩略图URL">
-                                <Input placeholder="可选" />
-                            </Form.Item>
-                        </div>
-                        <Space>
-                            <Button type="primary" htmlType="submit" icon={editingTheme ? <EditOutlined /> : <PlusOutlined />}>
-                                {editingTheme ? '保存修改' : '添加主题'}
-                            </Button>
-                            {editingTheme && (
-                                <Button onClick={() => { setEditingTheme(null); themeForm.resetFields(); }}>
-                                    取消编辑
-                                </Button>
-                            )}
-                        </Space>
-                    </Form>
-                </div>
-
-                {/* 主题列表 */}
-                <div className="art-theme-editor-title">
-                    主题列表（{animeThemes.length}）
-                </div>
-                <div className="art-theme-collection">
-                    {animeThemes.map(t => (
-                        <div
-                            key={t.id}
-                            className={`art-theme-item${animeThemeId === t.id ? ' is-active' : ''}`}
-                            style={{ '--tile-color': t.primaryColor } as CSSProperties}
-                            onClick={() => setAnimeTheme(t.id)}
-                        >
-                            <div
-                                className="art-theme-item-thumb"
-                                style={{
-                                    background: isSolidTheme(t)
-                                        ? t.solidColor!
-                                        : (t.thumbnail
-                                            ? `url(${t.thumbnail}) center/cover no-repeat`
-                                            : `linear-gradient(135deg, ${t.primaryColor}, ${t.accentColor})`),
-                                }}
-                            >
-                                {!isSolidTheme(t) && !t.thumbnail && (
-                                    <PictureOutlined style={{ fontSize: 22, color: '#fff' }} />
-                                )}
-                                {animeThemeId === t.id && (
-                                    <span className="art-theme-item-check">
-                                        <CheckOutlined style={{ fontSize: 10, color: '#fff' }} />
-                                    </span>
-                                )}
-                            </div>
-                            <div className="art-theme-item-body">
-                                <div className="art-theme-item-name">{t.name}</div>
-                                <div className="art-theme-item-desc">{t.description}</div>
-                                {!t.builtin ? (
-                                    <div className="art-theme-item-actions" onClick={e => e.stopPropagation()}>
-                                        <Button
-                                            size="small" type="text" icon={<EditOutlined />}
-                                            onClick={() => {
-                                                setEditingTheme(t);
-                                                themeForm.setFieldsValue(t);
-                                            }}
-                                        />
-                                        <Popconfirm
-                                            title="确定删除此主题？"
-                                            onConfirm={() => {
-                                                if (animeThemeId === t.id) setAnimeTheme(null);
-                                                deleteCustomAnimeTheme(t.id);
-                                                refreshAnimeThemes();
-                                                message.success('已删除');
-                                            }}
-                                        >
-                                            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-                                        </Popconfirm>
-                                    </div>
-                                ) : (
-                                    <div className="art-theme-item-builtin">内置主题</div>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </Modal>
         </Layout>
     )
 }

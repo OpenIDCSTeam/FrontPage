@@ -10,6 +10,8 @@ import {
   CloseCircleOutlined
 } from '@ant-design/icons'
 import api from '@/utils/apis.ts'
+import { useTheme } from '@/contexts/ThemeContext'
+import { getThemePalette } from '@/config/theme.config'
 import type { User } from '@/types'
 import PageHeader from '@/components/PageHeader'
 
@@ -17,6 +19,8 @@ import PageHeader from '@/components/PageHeader'
  * 个人设置页面
  */
 function UserConfig() {
+  const { theme, themePreset, transparentMode } = useTheme()
+  const themePalette = getThemePalette(themePreset, theme === 'dark', transparentMode)
   const [userProfile, setUserProfile] = useState<User | null>(null)
   const [loading, setLoading] = useState(false)
   const [emailForm] = Form.useForm()
@@ -94,9 +98,9 @@ function UserConfig() {
    * 获取进度条颜色
    */
   const getProgressColor = (percent: number): string => {
-    if (percent > 90) return '#ef4444'
-    if (percent > 70) return '#f59e0b'
-    return '#3b82f6'
+    if (percent > 90) return themePalette.danger
+    if (percent > 70) return themePalette.warning
+    return themePalette.primary
   }
 
   if (!userProfile) {
@@ -104,7 +108,7 @@ function UserConfig() {
   }
 
   return (
-    <div className="p-6 min-h-screen">
+    <div className="art-stack">
       {/* 页面标题 */}
       <PageHeader
         icon={<UserOutlined />}
@@ -281,7 +285,7 @@ function UserConfig() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm">管理员</span>
-                    <Tag color={userProfile.is_admin ? 'purple' : 'default'}>
+                    <Tag color={userProfile.is_admin ? 'processing' : 'default'}>
                       {userProfile.is_admin ? '是' : '否'}
                     </Tag>
                   </div>

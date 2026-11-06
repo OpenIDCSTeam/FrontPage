@@ -7,7 +7,7 @@ import ResetPassword from './pages/UserPasswd'
 import Dashboard from './pages/Dashboards'
 import VMs from './pages/DockManage'
 import VMDetail from './pages/DockDetail'
-import VMDetailV2 from './pages/DockDetailV2'
+import VMDetailVertical from './pages/DockDetailV2'
 import Hosts from './pages/HostManage'
 import Users from './pages/UserManage'
 import Tasks from './pages/TaskManage'
@@ -15,7 +15,6 @@ import Logs from './pages/LogsManage'
 import Settings from './pages/CoreConfig'
 import Profile from './pages/UserConfig'
 import WebProxys from './pages/HttpProxys'
-import UserDashboard from './user/UserPanels'
 import UserVMs from './pages/DockManage'
 import UserNAT from './user/PortManage'
 import { useUserStore } from '@/utils/data.ts'
@@ -56,7 +55,7 @@ function App() {
           <Route path="hosts" element={<Hosts />} />
           <Route path="hosts/:hostName/vms" element={<VMs />} />
           <Route path="hosts/:hostName/vms/:uuid" element={<VMDetail />} />
-          <Route path="hosts/:hostName/vms/:uuid/v2" element={<VMDetailV2 />} />
+          <Route path="hosts/:hostName/vms/:uuid/v2" element={<VMDetailVertical />} />
           <Route path="vms" element={<UserVMs />} /> {/* 全局容器管理 */}
           <Route path="users" element={<Users />} />
           <Route path="tasks" element={<Tasks />} />
@@ -67,7 +66,7 @@ function App() {
 
           {/* 用户界面 */}
           <Route path="user">
-            <Route path="dashboard" element={<UserDashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="vms" element={<UserVMs />} />
             <Route path="proxys" element={<WebProxys userMode={true} />} />
             <Route path="nat" element={<UserNAT />} />

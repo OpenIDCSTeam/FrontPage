@@ -130,7 +130,12 @@ export interface CreateVMRequest {
 }
 
 // 虚拟机电源操作
-export type VMPowerAction = 'S_START' | 'H_CLOSE' | 'S_RESET' | 'S_PAUSE' | 'S_RESUME';
+// 后端同时接受驱动指令常量（S_START/S_CLOSE/...）与前端语义值
+// （start/stop/hard_stop/...），并在 API 入口统一归一化。
+// 注意后端使用 A_PAUSE / A_WAKED 表示暂停与恢复（没有 S_PAUSE / S_RESUME）。
+export type VMPowerAction =
+  | 'S_START' | 'S_CLOSE' | 'S_RESET' | 'H_CLOSE' | 'H_RESET' | 'A_PAUSE' | 'A_WAKED'
+  | 'start' | 'stop' | 'hard_stop' | 'reset' | 'hard_reset' | 'pause' | 'resume';
 
 // NAT规则
 export interface NATRule {
@@ -300,6 +305,25 @@ export const TAB_QUOTA_MAP: Record<string, string> = {
   efi: 'efi_edits',    // 启动顺序 - 无配额限制，仅权限控制
   owners: 'owners',    // 用户权限 - 无配额限制，仅权限控制
 };
+
+/**
+ * 判断某个资源的「添加」按钮是否应禁用。
+ *
+ * 语义：额度小于 1 表示**不允许添加**（套餐里把该项配成 0 就是为了禁用）；
+ * 已用数量达到额度时同样禁用。
+ *
+ * 之前的写法是 `quota > 0 && used >= quota`，把 0 当成「不限制」，
+ * 结果套餐把 PCI/USB/数据盘/光盘/备份 配成 0 时按钮仍然可点，
+ * 用户还能继续添加。
+ *
+ * 未设置（undefined / null）仍视为不限制，避免历史数据被误锁。
+ */
+export function isQuotaExhausted(quota: number | null | undefined, used: number): boolean {
+  if (quota === undefined || quota === null) return false;
+  const limit = Number(quota);
+  if (!Number.isFinite(limit)) return false;
+  return limit < 1 || used >= limit;
+}
 
 /**
  * 获取Tab对应的配额值（配额为0时应隐藏该Tab）

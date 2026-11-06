@@ -629,7 +629,7 @@ function UserLogins() {
                 justifyContent: 'center',
               }}
             >
-              <MailOutlined style={{ color: 'white', fontSize: 20 }} />
+              <MailOutlined style={{ color: 'var(--art-on-primary)', fontSize: 20 }} />
             </div>
             <div>
               <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>找回密码</div>

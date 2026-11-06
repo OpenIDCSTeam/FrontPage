@@ -20,7 +20,7 @@ function UserPasswd() {
   const [passwordStrength, setPasswordStrength] = useState({
     score: 0,
     text: '-',
-    color: '#d9d9d9',
+    color: 'var(--art-gray-300)',
     percent: 0
   })
   const [confirmPasswordError, setConfirmPasswordError] = useState<string>('')
@@ -43,10 +43,10 @@ function UserPasswd() {
   const calculatePasswordStrength = (password: string) => {
     let strength = 0
     let strengthText = '-'
-    let strengthColor = '#d9d9d9'
+    let strengthColor = 'var(--art-gray-300)'
     
     if (!password) {
-      setPasswordStrength({ score: 0, text: '-', color: '#d9d9d9', percent: 0 })
+      setPasswordStrength({ score: 0, text: '-', color: 'var(--art-gray-300)', percent: 0 })
       return
     }
     
@@ -68,17 +68,17 @@ function UserPasswd() {
       case 0:
       case 1:
         strengthText = '弱'
-        strengthColor = '#ff4d4f'
+        strengthColor = 'var(--art-danger)'
         break
       case 2:
       case 3:
         strengthText = '中等'
-        strengthColor = '#faad14'
+        strengthColor = 'var(--art-warning)'
         break
       case 4:
       case 5:
         strengthText = '强'
-        strengthColor = '#52c41a'
+        strengthColor = 'var(--art-success)'
         break
     }
 

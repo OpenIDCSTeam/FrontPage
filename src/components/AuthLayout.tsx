@@ -3,9 +3,6 @@ import type { ReactNode } from 'react'
 import { Button, Dropdown } from 'antd'
 import {
   TranslationOutlined,
-  BgColorsOutlined,
-  BulbOutlined,
-  BulbFilled,
   CheckOutlined,
   CloudServerOutlined,
   SafetyCertificateOutlined,
@@ -13,19 +10,17 @@ import {
   GlobalOutlined,
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
-import { useTheme } from '@/contexts/ThemeContext'
+import AppearanceMenu from '@/components/AppearanceMenu'
 import { changeLanguage, getAvailableLanguages, getCurrentLanguage } from '@/utils/i18n.ts'
 
 /**
  * 认证页外壳（登录 / 注册 / 重置密码共用）
  * ------------------------------------------------------------------
  * 布局：桌面端为「品牌侧 + 表单侧」左右分栏；< 1024px 退化为单列。
- * 右上角统一提供 语言 / 透明模式 / 暗黑模式 三个切换按钮，
- * 与主控制台顶栏的能力保持一致。
+ * 右上角语言与外观入口复用主控制台的三套主题、明暗、透明和圆角设置。
  * 样式定义在 src/styles/art-design.css 的 .art-auth-* 中。
  */
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  const { theme, toggleTheme, transparentMode, toggleTransparentMode } = useTheme()
   const [currentLang, setCurrentLang] = useState(getCurrentLanguage())
   const [languages, setLanguages] = useState<any[]>([])
 
@@ -110,19 +105,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             <Button className="art-auth-tool-btn" icon={<TranslationOutlined />} title="切换语言" />
           </Dropdown>
 
-          <Button
-            className={`art-auth-tool-btn${transparentMode ? ' is-active' : ''}`}
-            onClick={toggleTransparentMode}
-            icon={<BgColorsOutlined />}
-            title={transparentMode ? '关闭透明模式' : '开启透明模式'}
-          />
-
-          <Button
-            className={`art-auth-tool-btn${theme === 'dark' ? ' is-active' : ''}`}
-            onClick={toggleTheme}
-            icon={theme === 'dark' ? <BulbFilled /> : <BulbOutlined />}
-            title={theme === 'dark' ? '切换到浅色模式' : '切换到暗黑模式'}
-          />
+          <AppearanceMenu />
         </div>
 
         {children}

@@ -1,12 +1,21 @@
 import { useState, useEffect } from 'react'
-import { Card, Form, Input, Button, Switch, message, InputNumber, Alert, Tooltip, Radio } from 'antd'
-import { EyeOutlined, EyeInvisibleOutlined, CopyOutlined, ReloadOutlined, SaveOutlined, FolderOpenOutlined, MailOutlined, SettingOutlined, SafetyCertificateOutlined, QuestionCircleOutlined, SyncOutlined } from '@ant-design/icons'
+import { Form, Input, Button, Switch, message, InputNumber, Alert, Tooltip, Radio } from 'antd'
+import { DatabaseOutlined, EyeOutlined, EyeInvisibleOutlined, CopyOutlined, ReloadOutlined, SaveOutlined, FolderOpenOutlined, MailOutlined, SettingOutlined, SafetyCertificateOutlined, QuestionCircleOutlined, SyncOutlined, InfoCircleOutlined, TeamOutlined } from '@ant-design/icons'
 import { VM_PERMISSION_LABELS, PERMISSION_FIELD_MASK, hasPermission } from '@/types'
 import api from '@/utils/apis.ts'
 import { SystemStats } from '@/types'
 import PageHeader from '@/components/PageHeader'
 
 const { TextArea } = Input
+
+const SETTINGS_SECTIONS = [
+  { key: 'token', label: '访问与安全', description: 'Token、验证码与登录保护', icon: <SafetyCertificateOutlined /> },
+  { key: 'registration', label: '注册与权限', description: '注册开关、默认权限与配额', icon: <TeamOutlined /> },
+  { key: 'sync', label: '同步与接口', description: '自动同步、远程地址与 API', icon: <SyncOutlined /> },
+  { key: 'email', label: '邮件服务', description: 'Resend 发信与测试', icon: <MailOutlined /> },
+  { key: 'data', label: '配置存档', description: '保存或重新加载配置', icon: <DatabaseOutlined /> },
+  { key: 'system', label: '系统信息', description: '版本与资源规模', icon: <InfoCircleOutlined /> },
+]
 
 /**
  * 系统设置页面
@@ -21,6 +30,7 @@ function CoreConfig() {
   const [testEmailForm] = Form.useForm()
   const [turnstileForm] = Form.useForm()
   const [syncForm] = Form.useForm()
+  const [activeSection, setActiveSection] = useState('token')
 
   /**
    * 页面加载时获取数据
@@ -332,21 +342,55 @@ function CoreConfig() {
   }
 
   return (
-    <div className="p-6 min-h-screen">
-      {/* 页面标题 */}
+    <div className="art-stack settings-page">
       <PageHeader
         icon={<SettingOutlined />}
         title="平台系统设置"
-        subtitle="管理访问Token和系统配置"
+        subtitle="安全管理凭据、邮件、注册策略与运行参数"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Token管理 */}
-        <Card title={<span><span>🔑</span> 访问Token管理</span>}>
+      <div className="settings-workspace">
+        <aside className="settings-nav" aria-label="设置分区">
+          <div className="settings-nav-head">
+            <span>配置分区</span>
+            <strong>平台设置</strong>
+          </div>
+          {SETTINGS_SECTIONS.map(section => (
+            <button
+              key={section.key}
+              type="button"
+              className={`settings-nav-item${activeSection === section.key ? ' is-active' : ''}`}
+              aria-current={activeSection === section.key ? 'page' : undefined}
+              onClick={() => setActiveSection(section.key)}
+            >
+              <span className="settings-nav-icon">{section.icon}</span>
+              <span className="settings-nav-copy">
+                <strong>{section.label}</strong>
+                <small>{section.description}</small>
+              </span>
+            </button>
+          ))}
+          <div className="settings-nav-foot">
+            <span>OpenIDCS 1.0.0</span>
+            <span><span>主机</span> {systemInfo.hosts_count} · <span>实例</span> {systemInfo.vms_count}</span>
+          </div>
+        </aside>
+
+        <div className="settings-content">
+        <section className="settings-section" hidden={activeSection !== 'token'}>
+          <header className="settings-section-head">
+            <span className="settings-section-icon"><SafetyCertificateOutlined /></span>
+            <div>
+              <h2>访问 Token 与验证码</h2>
+              <p>管理 API 访问凭据，并配置登录与注册使用的人机验证。</p>
+            </div>
+          </header>
+          <div className="settings-section-body">
+
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2">当前Token</label>
-              <div className="flex gap-2">
+              <div className="settings-token-control flex gap-2">
                 <Input
                   type={tokenVisible ? 'text' : 'password'}
                   value={tokenVisible ? currentToken : '••••••••••••••••'}
@@ -377,7 +421,7 @@ function CoreConfig() {
                 Turnstile 验证码
               </h4>
               <Form form={turnstileForm} onFinish={saveTurnstileSettings} layout="vertical">
-                <div className="flex items-center justify-between mb-3">
+                <div className="settings-inline-setting flex items-center justify-between mb-3">
                   <div>
                     <p className="text-sm font-medium">开启验证码</p>
                     <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>启用后登录、注册、找回密码都需要验证Turnstile</p>
@@ -401,30 +445,39 @@ function CoreConfig() {
               </Form>
             </div>
           </div>
-        </Card>
+          </div>
+        </section>
 
         {/* API文档 */}
-        <Card title={<span><span>🔌</span> 自动同步设置</span>}>
+        <section className="settings-section" hidden={activeSection !== 'sync'}>
+          <header className="settings-section-head">
+            <span className="settings-section-icon"><SyncOutlined /></span>
+            <div>
+              <h2>自动同步与 API 接口</h2>
+              <p>配置定时同步、远程地址，并查看平台提供的接口能力。</p>
+            </div>
+          </header>
+          <div className="settings-section-body">
           <div className="space-y-3 text-sm">
             <div className="border-t pt-3">
-              <div className="space-y-2">
+              <div className="settings-api-list space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>POST</span>
+                  <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: 'var(--art-primary-soft)', color: 'var(--art-accent-text)' }}>POST</span>
                   <code className="text-xs">/api/hosts</code>
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>- 添加主机</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>GET</span>
+                  <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: 'var(--art-success-soft)', color: 'var(--art-success)' }}>GET</span>
                   <code className="text-xs">/api/hosts/{'{name}'}/vms</code>
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>- 获取虚拟机列表</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>POST</span>
+                  <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: 'var(--art-primary-soft)', color: 'var(--art-accent-text)' }}>POST</span>
                   <code className="text-xs">/api/hosts/{'{name}'}/vms</code>
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>- 创建虚拟机</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>POST</span>
+                  <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: 'var(--art-primary-soft)', color: 'var(--art-accent-text)' }}>POST</span>
                   <code className="text-xs">/api/hosts/{'{name}'}/vms/{'{uuid}'}/power</code>
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>- 电源操作</span>
                 </div>
@@ -444,7 +497,7 @@ function CoreConfig() {
                   <p className="text-sm font-medium">自动同步</p>
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>开启后将按照设定的模式自动同步虚拟机信息</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="settings-sync-controls flex items-center gap-3">
                   <Form.Item name="sync_interval" className="mb-0">
                     <InputNumber min={1} max={1440} style={{ width: 120 }} placeholder="10" addonAfter="分钟" />
                   </Form.Item>
@@ -475,11 +528,20 @@ function CoreConfig() {
               </Button>
             </Form>
           </div>
-        </Card>
+          </div>
+        </section>
 
         {/* 数据管理 */}
-        <Card title={<span><span>💾</span> 数据管理</span>}>
-          <div className="space-y-3">
+        <section className="settings-section" hidden={activeSection !== 'data'}>
+          <header className="settings-section-head">
+            <span className="settings-section-icon"><DatabaseOutlined /></span>
+            <div>
+              <h2>配置存档</h2>
+              <p>把当前平台配置保存到文件，或从已有文件重新加载。</p>
+            </div>
+          </header>
+          <div className="settings-section-body">
+          <div className="settings-data-actions">
             <Button
               block
               icon={<SaveOutlined />}
@@ -506,32 +568,50 @@ function CoreConfig() {
               </div>
             </Button>
           </div>
-        </Card>
+          </div>
+        </section>
 
         {/* 系统信息 */}
-        <Card title={<span><span>ℹ️</span> 系统信息</span>}>
-          <div className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span style={{ color: 'var(--text-secondary)' }}>系统名称</span>
-<span className="font-medium">OpenIDCS受控端</span>
+        <section className="settings-section" hidden={activeSection !== 'system'}>
+          <header className="settings-section-head">
+            <span className="settings-section-icon"><InfoCircleOutlined /></span>
+            <div>
+              <h2>系统信息</h2>
+              <p>查看平台版本与当前纳管的资源规模。</p>
             </div>
-            <div className="flex items-center justify-between">
-<span style={{ color: 'var(--text-secondary)' }}>版本</span>
-                    <span className="font-medium">1.0.0</span>
+          </header>
+          <div className="settings-section-body">
+          <div className="settings-info-grid">
+            <div className="settings-info-item">
+              <span>系统名称</span>
+              <strong>OpenIDCS受控端</strong>
             </div>
-            <div className="flex items-center justify-between">
-<span style={{ color: 'var(--text-secondary)' }}>主机数量</span>
-                    <span className="font-medium">{systemInfo.hosts_count}</span>
+            <div className="settings-info-item">
+              <span>版本</span>
+              <strong>1.0.0</strong>
             </div>
-            <div className="flex items-center justify-between">
-<span style={{ color: 'var(--text-secondary)' }}>虚拟机数量</span>
-                    <span className="font-medium">{systemInfo.vms_count}</span>
+            <div className="settings-info-item">
+              <span>主机数量</span>
+              <strong>{systemInfo.hosts_count}</strong>
+            </div>
+            <div className="settings-info-item">
+              <span>虚拟机数量</span>
+              <strong>{systemInfo.vms_count}</strong>
             </div>
           </div>
-        </Card>
+          </div>
+        </section>
 
         {/* 用户注册设置 */}
-        <Card title={<span><span>👥</span> 用户注册设置</span>}>
+        <section className="settings-section" hidden={activeSection !== 'registration'}>
+          <header className="settings-section-head">
+            <span className="settings-section-icon"><TeamOutlined /></span>
+            <div>
+              <h2>注册策略与默认配额</h2>
+              <p>控制开放注册、邮箱验证、用户默认权限与新账号资源上限。</p>
+            </div>
+          </header>
+          <div className="settings-section-body">
           <Form form={registrationForm} onFinish={saveRegistrationSettings} layout="vertical">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -555,7 +635,7 @@ function CoreConfig() {
               </div>
 
               <div className="border-t pt-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="settings-form-grid">
                   <Form.Item name="default_allowed_hosts" label="默认可访问主机" className="mb-3" extra="多个主机用英文逗号分隔，留空表示不限制">
                     <Input placeholder="host1,host2 或留空表示全部" className="w-full" />
                   </Form.Item>
@@ -565,7 +645,7 @@ function CoreConfig() {
                 </div>
                 <div className="mb-3 p-2 rounded text-xs" style={{background: 'var(--bg-card)', border: '1px solid var(--border-hover)'}}>
                   <p className="font-medium mb-1">权限位说明（当前掩码包含的权限）：</p>
-                  <div className="grid grid-cols-4 gap-1">
+                  <div className="settings-permission-grid">
                     {Object.entries(PERMISSION_FIELD_MASK).map(([field, bit]) => (
                       <label key={field} className="flex items-center gap-1 cursor-pointer" onClick={() => {
                         const current = registrationForm.getFieldValue('default_user_permission') || 56791
@@ -577,7 +657,7 @@ function CoreConfig() {
                     ))}
                   </div>
                 </div>
-                <div className="flex items-center justify-between mb-3">
+                <div className="settings-inline-setting flex items-center justify-between mb-3">
                   <div>
                     <p className="text-sm font-medium">允许自由配置</p>
                     <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>用户可自行调整虚拟机配置</p>
@@ -590,7 +670,7 @@ function CoreConfig() {
 
               <div className="border-t pt-4">
 <h4 className="text-sm font-medium mb-3">新用户默认资源配额</h4>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="settings-form-grid">
                   <Form.Item name="default_quota_cpu" label="CPU核心(个)" className="mb-2">
                     <InputNumber min={0} max={32} className="w-full" />
                   </Form.Item>
@@ -634,10 +714,19 @@ function CoreConfig() {
               </Button>
             </div>
           </Form>
-        </Card>
+          </div>
+        </section>
 
         {/* 邮件服务配置 */}
-        <Card title={<span><span>📧</span> 邮件服务配置</span>}>
+        <section className="settings-section" hidden={activeSection !== 'email'}>
+          <header className="settings-section-head">
+            <span className="settings-section-icon"><MailOutlined /></span>
+            <div>
+              <h2>邮件通知服务</h2>
+              <p>配置 Resend 发信服务，并发送测试邮件验证连通性。</p>
+            </div>
+          </header>
+          <div className="settings-section-body">
           <Alert
             message={
               <span>
@@ -694,7 +783,9 @@ function CoreConfig() {
               </Button>
             </Form>
           </div>
-        </Card>
+          </div>
+        </section>
+        </div>
       </div>
     </div>
   )
