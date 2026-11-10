@@ -13,7 +13,6 @@ import {
     Input,
     Select,
     InputNumber,
-    Breadcrumb,
     Row,
     Col,
     Descriptions,
@@ -29,7 +28,6 @@ import {
     Table
 } from 'antd'
 import {
-    HomeOutlined,
     ReloadOutlined,
     PoweroffOutlined,
     DeleteOutlined,
@@ -54,10 +52,12 @@ import {
     DownOutlined,
     AppstoreOutlined,
     UnorderedListOutlined,
-    MenuOutlined,
     LoadingOutlined
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
+import VmDetailTopBar from '@/components/VmDetailTopBar'
+import FirewallPanel from '@/components/FirewallPanel'
+import SnapshotPanel from '@/components/SnapshotPanel'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getThemePalette } from '@/config/theme.config'
 import { getVMDetailLayoutKey, readVMDetailLayout, saveVMDetailLayout, type VMDetailLayout } from '@/utils/vmDetailLayout'
@@ -66,7 +66,7 @@ import { useUserStore } from '@/utils/data'
 import { startTaskWithNotification, getTaskList } from '@/utils/taskPoller'
 import {VM_PERMISSION, hasPermission, TAB_PERMISSION_MAP, VM_PERMISSION_LABELS, PERMISSION_FIELD_MASK, HIDDEN_TABS, OWNER_ONLY_TABS, getTabQuota, isQuotaExhausted} from '@/types'
 
-const VM_DETAIL_TAB_ORDER = ['overview', 'ip', 'hdd', 'iso', 'nat', 'proxy', 'pci', 'usb', 'backup', 'efi', 'owners', 'access']
+const VM_DETAIL_TAB_ORDER = ['overview', 'ip', 'hdd', 'iso', 'nat', 'firewall', 'proxy', 'pci', 'usb', 'snapshot', 'backup', 'efi', 'owners', 'access']
 
 /** 详情卡片：标题可点击折叠，移动端用于收起低频信息 */
 function FoldCard({ title, defaultOpen = true, className = '', children }: {
@@ -101,8 +101,11 @@ function FoldCard({ title, defaultOpen = true, className = '', children }: {
 function isVMDetailTabVisible(
     key: string,
     config: Record<string, any>,
-    permissions: { isAdminUser: boolean; isOwnerOrAdmin: boolean; canManageAccessKey: boolean; userPermissions: number },
+    permissions: { isAdminUser: boolean; isOwnerOrAdmin: boolean; canManageAccessKey: boolean; userPermissions: number; firewallSupported: boolean; snapshotSupported: boolean },
 ): boolean {
+    // 平台不支持对应能力时隐藏入口（与用户权限无关，避免点进去只能报错）
+    if (key === 'firewall' && !permissions.firewallSupported) return false
+    if (key === 'snapshot' && !permissions.snapshotSupported) return false
     if (key === 'access') return permissions.canManageAccessKey
     if (OWNER_ONLY_TABS.has(key)) return permissions.isOwnerOrAdmin
     const requiredPermission = TAB_PERMISSION_MAP[key]
@@ -256,6 +259,10 @@ interface HostCapabilities {
     hot_nic?: boolean
     /** 数据盘/PCI/USB 是否必须关机 */
     offline_only?: boolean
+    /** 平台是否支持虚拟机防火墙（不支持时隐藏防火墙页签） */
+    firewall?: boolean
+    /** 平台是否支持虚拟机快照（不支持时隐藏快照页签） */
+    snapshot?: boolean
 }
 
 interface HostConfig {
@@ -275,15 +282,19 @@ function VMDetail() {
     const navigate = useNavigate()
     const location = useLocation()
     const { user } = useUserStore()
+    const isRestrictedSession = Boolean((user as any)?.temp_login || ((user as any)?.temp_hs_name && (user as any)?.temp_vm_uuid))
     const detailLayoutPreferenceKey = getVMDetailLayoutKey(user?.username)
     const [layoutPreference, setLayoutPreference] = useState<{ key: string; mode: VMDetailLayout }>(() => ({
         key: detailLayoutPreferenceKey,
         mode: readVMDetailLayout(user?.username),
     }))
-    const detailLayout = layoutPreference.key === detailLayoutPreferenceKey
-        ? layoutPreference.mode
-        : readVMDetailLayout(user?.username)
+    const detailLayout = isRestrictedSession
+        ? 'horizontal'
+        : layoutPreference.key === detailLayoutPreferenceKey
+            ? layoutPreference.mode
+            : readVMDetailLayout(user?.username)
     const changeDetailLayout = (mode: VMDetailLayout) => {
+        if (isRestrictedSession) return
         saveVMDetailLayout(user?.username, mode)
         setLayoutPreference({ key: detailLayoutPreferenceKey, mode })
         if (mode === 'vertical' && hostName && uuid) {
@@ -298,6 +309,7 @@ function VMDetail() {
     const themePalette = getThemePalette(themePreset, theme === 'dark', transparentMode)
 
     useEffect(() => {
+        if (isRestrictedSession) return
         if (detailLayout !== 'vertical' || location.pathname.endsWith('/v2') || !hostName || !uuid) return
         navigate({
             pathname: `/hosts/${hostName}/vms/${uuid}/v2`,
@@ -432,6 +444,8 @@ function VMDetail() {
 
     // EFI State
     const [efiList, setEfiList] = useState<{efi_type: boolean; efi_name: string}[]>([])
+    // 启动顺序首屏只自动加载一次（详情页有轮询，避免每次轮询都请求）
+    const efiLoadedRef = useRef(false)
     const [efiEditing, setEfiEditing] = useState(false)
     const [efiEditList, setEfiEditList] = useState<{efi_type: boolean; efi_name: string}[]>([])
     const [efiLoading, setEfiLoading] = useState(false)
@@ -448,13 +462,15 @@ function VMDetail() {
             isOwnerOrAdmin,
             canManageAccessKey: isAdminUser || (isOwnerOrAdmin && !(user as any)?.temp_login),
             userPermissions,
+            firewallSupported: hostConfig?.capabilities?.firewall === true,
+            snapshotSupported: hostConfig?.capabilities?.snapshot === true,
         }
         const config = vm?.config || {}
         const fallbackTab = VM_DETAIL_TAB_ORDER.find(key => isVMDetailTabVisible(key, config, permissions))
         if (fallbackTab && !isVMDetailTabVisible(activeTab, config, permissions)) {
             setActiveTab(fallbackTab)
         }
-    }, [activeTab, isAdminUser, isOwnerOrAdmin, userPermissions, user, vm?.config])
+    }, [activeTab, isAdminUser, isOwnerOrAdmin, userPermissions, user, vm?.config, hostConfig])
 
     // New Confirmation States
     const [isoMountConfirmChecked, setIsoMountConfirmChecked] = useState(false)
@@ -897,14 +913,32 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         }
     }
 
-    // 加载EFI启动项列表
-    const loadEFIList = async () => {
+    // 加载EFI启动项列表。
+    // useCache=true 时先用本地缓存渲染（避免首屏空白/占位），
+    // 缓存不存在才发请求；请求成功始终回写缓存。
+    const loadEFIList = async (useCache = false) => {
         if (!hostName || !uuid) return
+        const cacheKey = `vm_efi_order:${hostName}:${uuid}`
+        if (useCache) {
+            const raw = localStorage.getItem(cacheKey)
+            if (raw) {
+                try {
+                    const cached = JSON.parse(raw)
+                    if (Array.isArray(cached) && cached.length > 0) {
+                        setEfiList(cached)
+                        return
+                    }
+                } catch {
+                    localStorage.removeItem(cacheKey)
+                }
+            }
+        }
         setEfiLoading(true)
         try {
             const response = await api.getEFIList(hostName, uuid)
             if (response.data && Array.isArray(response.data)) {
                 setEfiList(response.data)
+                localStorage.setItem(cacheKey, JSON.stringify(response.data))
             } else {
                 setEfiList([])
             }
@@ -914,6 +948,15 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             setEfiLoading(false)
         }
     }
+
+    // 进入详情页即加载启动项：有本地缓存先用缓存，没有则自动获取一次。
+    // 之前只在「保存后」才加载，首屏启动顺序是空的。
+    useEffect(() => {
+        if (efiLoadedRef.current || !hostName || !uuid) return
+        efiLoadedRef.current = true
+        void loadEFIList(true)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hostName, uuid])
 
     // 保存EFI启动项顺序
     const handleSaveEFI = async () => {
@@ -960,12 +1003,12 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         if (!hostEnabled) { message.error('该主机已被禁用，无法操作'); return }
         try {
             if (!selectedUsbKey) {
-                message.error('请选择一个USB设备')
+                message.error('请选择一个USB 设备')
                 return
             }
             const device = usbDeviceList[selectedUsbKey]
             if (!device) {
-                message.error('所选USB设备无效')
+                message.error('所选USB 设备无效')
                 return
             }
             setUsbActionLoading(true)
@@ -978,13 +1021,13 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             })
             setUsbModalVisible(false)
             setSelectedUsbKey('')
-            submitAsyncTask(result, '添加USB设备', {
+            submitAsyncTask(result, '添加USB 设备', {
                 onCompleted: () => loadVMDetail(),
                 onFailed: () => loadVMDetail(),
             })
         } catch (error: any) {
-            console.error('添加USB设备失败:', error)
-            message.error(error.message || '添加USB设备失败')
+            console.error('添加USB 设备失败:', error)
+            message.error(error.message || '添加USB 设备失败')
         } finally {
             setUsbActionLoading(false)
         }
@@ -994,12 +1037,12 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         if (!hostEnabled) { message.error('该主机已被禁用，无法操作'); return }
         const usbConfig = vm?.config?.usb_all?.[usbKey]
         showConfirmAction(
-            '删除USB设备确认',
+            '删除USB 设备确认',
             `确定要移除USB直通设备 "${usbConfig?.usb_hint || usbKey}" 吗？此操作需要关闭虚拟机。`,
             async () => {
                 try {
                     setUsbActionLoading(true)
-                    await withVmOffline('移除USB设备', async () => {
+                    await withVmOffline('移除USB 设备', async () => {
                         const result = await api.setupUSB(hostName!, uuid!, {
                             usb_key: usbKey,
                             vid_uuid: usbConfig?.vid_uuid || '',
@@ -1007,14 +1050,14 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                             usb_hint: usbConfig?.usb_hint || '',
                             action: 'remove'
                         })
-                        submitAsyncTask(result, '移除USB设备', {
+                        submitAsyncTask(result, '移除USB 设备', {
                             onCompleted: () => loadVMDetail(),
                             onFailed: () => loadVMDetail(),
                         })
                     })
                 } catch (error: any) {
-                    console.error('删除USB设备失败:', error)
-                    message.error(error.message || '删除USB设备失败')
+                    console.error('删除USB 设备失败:', error)
+                    message.error(error.message || '删除USB 设备失败')
                 } finally {
                     setUsbActionLoading(false)
                 }
@@ -1023,7 +1066,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         )
     }
 
-    // 打开USB设备添加Modal时加载可用设备列表
+    // 打开USB 设备添加Modal时加载可用设备列表
     const handleOpenUsbModal = async () => {
         setUsbModalVisible(true)
         setUsbListLoading(true)
@@ -1037,7 +1080,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             }
         } catch (e) {
             setUsbDeviceList({})
-            message.error('获取USB设备列表失败')
+            message.error('获取USB 设备列表失败')
         } finally {
             setUsbListLoading(false)
         }
@@ -1946,7 +1989,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             const pciKey = _values.pci_key || selectedPciKey
             const device = pciDeviceList[pciKey]
             if (!device) {
-                message.error('请选择一个PCI设备')
+                message.error('请选择一个PCI 设备')
                 setGpuActionLoading(false)
                 return
             }
@@ -1982,7 +2025,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             setPciShutdownConfirmVisible(true)
             return
         }
-        showConfirmAction('删除PCI设备确认', `确定要移除PCI直通设备 "${gpuConfig?.gpu_hint || gpuKey}" 吗？`, async () => {
+        showConfirmAction('删除PCI 设备确认', `确定要移除PCI直通设备 "${gpuConfig?.gpu_hint || gpuKey}" 吗？`, async () => {
             await executePciRemove(gpuKey, gpuConfig)
         }, true)
     }
@@ -2005,7 +2048,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         }
     }
 
-    // 打开PCI设备添加Modal时加载可用设备列表
+    // 打开PCI 设备添加Modal时加载可用设备列表
     const handleOpenPciModal = async () => {
         setGpuModalVisible(true)
         setPciListLoading(true)
@@ -2019,7 +2062,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             }
         } catch (e) {
             setPciDeviceList({})
-            message.error('获取PCI设备列表失败')
+            message.error('获取PCI 设备列表失败')
         } finally {
             setPciListLoading(false)
         }
@@ -2573,7 +2616,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             <Col xs={24} xxl={16}>
                 <div className="space-y-6">
                     {/* 机器信息区域 */}
-                    <FoldCard title="实例信息">
+                    <FoldCard title="实例信息" defaultOpen={!isCompactViewport}>
                         <Row gutter={[16, 16]} className="vm-classic-instance-details-row">
                             <Col xs={24}>
                                 <div className="vm-classic-property-grid">
@@ -2613,7 +2656,10 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                                     {infoField('下行带宽', `${config.speed_d || 0} Mbps`)}
                                 </div>
                             </Col>
-                            <Col xs={24} className="vm-classic-info-visual">
+                        </Row>
+                    </FoldCard>
+
+                    <div className="vm-classic-info-visual vm-classic-info-visual--standalone">
                                 <div className="vm-classic-info-screenshot">
                                     {(() => {
                                         const serverType = hostConfig?.server_type || '';
@@ -2770,9 +2816,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                                     </div>
                                   </section>
                                 </div>
-                            </Col>
-                        </Row>
-                    </FoldCard>
+                    </div>
 
                     {/* 实例配置区域 */}
                     <FoldCard title="实例配置" defaultOpen={!isCompactViewport} className="vm-classic-resource-config">
@@ -3379,6 +3423,18 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             </Card>
         },
         {
+            key: 'firewall',
+            label: '防火墙',
+            children: (
+                <FirewallPanel
+                    hostName={hostName || ''}
+                    vmUuid={uuid || ''}
+                    canEdit={isAdminUser || hasPermission(userPermissions, VM_PERMISSION.FIREWALLS)}
+                    hostEnabled={hostEnabled}
+                />
+            ),
+        },
+        {
             key: 'proxy',
             label: '反向代理',
             children: <Card title="反向代理配置" extra={<Space>
@@ -3483,8 +3539,8 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         },
         {
             key: 'pci',
-            label: 'PCI设备',
-            children: <Card title="PCI设备直通" extra={<Space>
+            label: 'PCI 设备',
+            children: <Card title="PCI 设备直通" extra={<Space>
                 <Segmented
                     value={pciViewMode}
                     onChange={(val) => setPciViewMode(val as 'card' | 'table')}
@@ -3496,7 +3552,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                 />
                 <Button type="primary" icon={<PlusOutlined/>}
                                                             disabled={operationLocked || isQuotaExhausted(config.pci_num, vm?.config?.pci_all ? Object.keys(vm.config.pci_all).length : 0)}
-                                                            onClick={handleOpenPciModal}>添加PCI设备</Button>
+                                                            onClick={handleOpenPciModal}>添加PCI 设备</Button>
             </Space>}
                             variant="borderless">
                 {vm && vm.config && vm.config.pci_all && Object.keys(vm.config.pci_all).length > 0 ? (
@@ -3506,7 +3562,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                             <div key={gpuKey} className="glass-card">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="px-2 py-0.5 text-xs font-medium text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/40 rounded">
-                                        PCI设备
+                                        PCI 设备
                                     </span>
                                     <Space>
                                         <Tag color={gpuConfig.gpu_mdev === 'PV' ? 'blue' : gpuConfig.gpu_mdev === 'DDA' ? 'orange' : 'green'}>{gpuConfig.gpu_mdev || '直通'}</Tag>
@@ -3565,8 +3621,8 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         },
         {
             key: 'usb',
-            label: 'USB设备',
-            children: <Card title="USB设备管理" extra={<Space>
+            label: 'USB 设备',
+            children: <Card title="USB 设备管理" extra={<Space>
                 <Segmented
                     value={usbViewMode}
                     onChange={(val) => setUsbViewMode(val as 'card' | 'table')}
@@ -3576,7 +3632,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                     ]}
                     size="small"
                 />
-                <Button type="primary" icon={<PlusOutlined/>} disabled={operationLocked || isQuotaExhausted(config.usb_num, usbList.length)} onClick={handleOpenUsbModal}>添加USB设备</Button>
+                <Button type="primary" icon={<PlusOutlined/>} disabled={operationLocked || isQuotaExhausted(config.usb_num, usbList.length)} onClick={handleOpenUsbModal}>添加USB 设备</Button>
             </Space>} variant="borderless">
                 {usbList && usbList.length > 0 ? (
                     usbViewMode === 'card' ? (
@@ -3586,7 +3642,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                                  className="glass-card">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 rounded">
-                                        USB设备
+                                        USB 设备
                                     </span>
                                     <Button danger size="small" icon={<DeleteOutlined/>} disabled={operationLocked} onClick={() => handleDeleteUSB(usb.key)} loading={usbActionLoading}>删除</Button>
                                 </div>
@@ -3645,6 +3701,18 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                     <div className="text-center  py-8">暂无USB直通设备</div>
                 )}
             </Card>
+        },
+        {
+            key: 'snapshot',
+            label: '快照',
+            children: (
+                <SnapshotPanel
+                    hostName={hostName || ''}
+                    vmUuid={uuid || ''}
+                    canEdit={isAdminUser || hasPermission(userPermissions, VM_PERMISSION.VM_BACKUP)}
+                    hostEnabled={hostEnabled}
+                />
+            ),
         },
         {
             key: 'backup',
@@ -3784,7 +3852,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                     />
                     {!efiEditing ? (
                         <>
-                            <Button icon={<ReloadOutlined/>} onClick={loadEFIList} loading={efiLoading}>刷新</Button>
+                            <Button icon={<ReloadOutlined/>} onClick={() => loadEFIList()} loading={efiLoading}>刷新</Button>
                             <Button type="primary" icon={<EditOutlined/>}
                                     disabled={!hasPermission(userPermissions, VM_PERMISSION.EFI_EDITS) || efiList.length === 0}
                                     onClick={() => { setEfiEditList([...efiList]); setEfiEditing(true) }}>编辑顺序</Button>
@@ -4096,6 +4164,9 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         isOwnerOrAdmin,
         canManageAccessKey,
         userPermissions,
+        // 平台能力：只有支持对应能力的平台才展示该页签
+        firewallSupported: hostConfig?.capabilities?.firewall === true,
+        snapshotSupported: hostConfig?.capabilities?.snapshot === true,
     }
     const visibleTabItems = tabItems.filter(item => isVMDetailTabVisible(item.key, config, tabVisibility))
     const activeTabItem = visibleTabItems.find(item => item.key === activeTab)
@@ -4177,13 +4248,12 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
     return (
         <div className={`vm-unified-detail-page vm-classic-detail-page h-auto is-layout-${detailLayout}`} data-detail-layout={detailLayout}>
             <div className="">
-                <div className="vm-classic-breadcrumb px-6 py-2 border-b border-gray-100 ">
-                    <Breadcrumb separator="/" items={[
-                        {title: <HomeOutlined/>},
-                        {title: 'VPS'},
-                        {title: config.vm_uuid}
-                    ]}/>
-                </div>
+                <VmDetailTopBar
+                    uuid={config.vm_uuid}
+                    layout="horizontal"
+                    onChange={changeDetailLayout}
+                    showLayoutSwitch={!isRestrictedSession}
+                />
                 <div className="vm-classic-hero-wrap px-6 py-4">
                     {!hostEnabled && (
                         <Alert
@@ -4250,22 +4320,6 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                 disabled={!hostEnabled || operationLocked || isIntermediateState()}/></Dropdown>
                         </Space>
                     </div>
-                </div>
-                <div className="vm-detail-layout-toolbar">
-                    <div className="vm-detail-layout-copy">
-                        <strong>详情布局</strong>
-                        <span>选择导航方式，偏好按账号保存</span>
-                    </div>
-                    <Segmented<VMDetailLayout>
-                        aria-label="虚拟机详情布局"
-                        size="small"
-                        value={detailLayout}
-                        onChange={changeDetailLayout}
-                        options={[
-                            { value: 'horizontal', label: <span><AppstoreOutlined /> 默认布局</span> },
-                            { value: 'vertical', label: <span><MenuOutlined /> 竖版菜单</span> },
-                        ]}
-                    />
                 </div>
             </div>
 
@@ -4541,13 +4595,13 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                    onOk={() => handleAddGpu({ pci_key: selectedPciKey })} confirmLoading={gpuActionLoading}
                    okButtonProps={{ disabled: !selectedPciKey || !addPciConfirmChecked }}>
                 {pciListLoading ? (
-                    <div className="text-center py-8"><Spin tip="正在获取可用PCI设备列表..."/></div>
+                    <div className="text-center py-8"><Spin tip="正在获取可用PCI 设备列表..."/></div>
                 ) : Object.keys(pciDeviceList).length > 0 ? (
                     <>
-                        <div className="mb-3">请选择要直通的PCI设备：</div>
+                        <div className="mb-3">请选择要直通的PCI 设备：</div>
                         <Select
                             style={{ width: '100%' }}
-                            placeholder="选择PCI设备"
+                            placeholder="选择PCI 设备"
                             value={selectedPciKey || undefined}
                             onChange={(val) => setSelectedPciKey(val)}
                             optionLabelProp="label"
@@ -4836,17 +4890,17 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                 </div>
             </Modal>
 
-            <Modal title="添加USB设备" open={usbModalVisible} onCancel={() => { setUsbModalVisible(false); setSelectedUsbKey(''); setUsbShutdownConfirmChecked(false); }}
+            <Modal title="添加USB 设备" open={usbModalVisible} onCancel={() => { setUsbModalVisible(false); setSelectedUsbKey(''); setUsbShutdownConfirmChecked(false); }}
                    onOk={handleAddUSB} confirmLoading={usbActionLoading}
                    okButtonProps={{ disabled: !selectedUsbKey || !usbShutdownConfirmChecked }}>
                 {usbListLoading ? (
-                    <div className="text-center py-8"><Spin tip="正在获取可用USB设备列表..."/></div>
+                    <div className="text-center py-8"><Spin tip="正在获取可用USB 设备列表..."/></div>
                 ) : Object.keys(usbDeviceList).length > 0 ? (
                     <>
-                        <div className="mb-3">请选择要直通的USB设备：</div>
+                        <div className="mb-3">请选择要直通的USB 设备：</div>
                         <Select
                             style={{ width: '100%' }}
-                            placeholder="选择USB设备"
+                            placeholder="选择USB 设备"
                             value={selectedUsbKey || undefined}
                             onChange={(val) => setSelectedUsbKey(val)}
                             optionLabelProp="label"
@@ -4860,7 +4914,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                         </Select>
                     </>
                 ) : (
-                    <div className="text-center py-8 text-gray-400">当前主机无可用USB设备</div>
+                    <div className="text-center py-8 text-gray-400">当前主机无可用USB 设备</div>
                 )}
                 <div className="p-3 rounded flex items-center mt-4" style={{ background: "var(--bg-secondary, rgba(250,204,21,0.08))", border: "1px solid var(--border-color, rgba(250,204,21,0.3))" }}>
                     <Space><input type="checkbox" id="usbShutdownCheck" checked={usbShutdownConfirmChecked}

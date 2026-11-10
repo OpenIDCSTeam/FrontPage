@@ -157,6 +157,58 @@ export interface NATRule {
   nat_tips?: string;
 }
 
+// 虚拟机防火墙状态（仅 PVE 等支持防火墙的平台下发）
+export interface FirewallState {
+  enabled: boolean;
+  policy_in: string;
+  policy_out: string;
+  /** 数据中心防火墙总开关；null / undefined 表示当前账号无权读取（未知） */
+  cluster_enabled?: boolean | null;
+  /** 节点防火墙总开关；null / undefined 表示未知 */
+  node_enabled?: boolean | null;
+  /** 集群 → 节点 → 虚拟机 三层开关是否全部打开 */
+  effective: boolean;
+  /** 平台标识：pve / hyperv（Hyper-V 无总开关、默认策略与 REJECT） */
+  platform?: string;
+}
+
+// 虚拟机快照（仅支持的平台下发）
+export interface SnapshotInfo {
+  name: string;
+  description?: string;
+  /** 父快照名称，顶层快照为空 */
+  parent?: string;
+  /** 创建时间（Unix 秒），平台无法提供时为 0 */
+  created_at?: number;
+  /** 平台附加快照状态 */
+  state?: string;
+  /** 是否为当前快照 */
+  current?: boolean;
+}
+
+// 虚拟机防火墙规则
+export interface FirewallRule {
+  pos: number;
+  type: 'in' | 'out';
+  action: 'ACCEPT' | 'DROP' | 'REJECT' | string;
+  enable: boolean;
+  /** tcp / udp / icmp / icmpv6 …，空表示任意协议 */
+  proto?: string;
+  source?: string;
+  dest?: string;
+  sport?: string;
+  dport?: string;
+  comment?: string;
+  macro?: string;
+  iface?: string;
+}
+
+// 防火墙详情接口返回
+export interface FirewallPayload {
+  state: FirewallState;
+  rules: FirewallRule[];
+}
+
 // 反向代理配置
 export interface ProxyConfig {
   proxy_index: number;
@@ -238,7 +290,7 @@ export const VM_PERMISSION_LABELS: Record<string, string> = {
   efi_edits: '启动顺序',
   vm_modify: '修改配置',
   vm_delete: '删除实例',
-  firewalls: '编辑网关',
+  firewalls: '防火墙',
 };
 
 // 权限字段到掩码位的映射
@@ -276,13 +328,15 @@ export const TAB_PERMISSION_MAP: Record<string, number> = {
   pci: VM_PERMISSION.PCI_EDITS,
   usb: VM_PERMISSION.USB_EDITS,
   backup: VM_PERMISSION.VM_BACKUP,
+  snapshot: VM_PERMISSION.VM_BACKUP,
   efi: VM_PERMISSION.EFI_EDITS,
+  firewall: VM_PERMISSION.FIREWALLS,
 };
 
 // 权限不足时直接隐藏的Tab（用户不具有对应权限时隐藏该切页）
 // access（访问密钥）不放入 HIDDEN_TABS：它等价于该虚拟机的长期登录凭据，
 // 仅管理员/主所有者可见，可见性由 OWNER_ONLY_TABS 控制而非权限掩码。
-export const HIDDEN_TABS: Set<string> = new Set(['ip', 'hdd', 'iso', 'nat', 'proxy', 'pci', 'usb', 'backup', 'efi', 'owners']);
+export const HIDDEN_TABS: Set<string> = new Set(['ip', 'hdd', 'iso', 'nat', 'proxy', 'pci', 'usb', 'backup', 'snapshot', 'efi', 'owners', 'firewall']);
 
 // 权限不足时仅只读的Tab（可查看但禁止操作）- 保留定义以兼容其他引用
 export const READONLY_TABS: Set<string> = new Set([]);
@@ -299,8 +353,8 @@ export const TAB_QUOTA_MAP: Record<string, string> = {
   iso: 'iso_num',      // 光盘镜像 - 光盘配额
   nat: 'nat_num',      // 端口映射 - NAT端口配额
   proxy: 'web_num',    // 反向代理 - Web代理配额
-  pci: 'pci_num',      // PCI设备 - PCI配额
-  usb: 'usb_num',      // USB设备 - USB配额
+  pci: 'pci_num',      // PCI 设备 - PCI配额
+  usb: 'usb_num',      // USB 设备 - USB配额
   backup: 'bak_num',   // 备份管理 - 备份配额
   efi: 'efi_edits',    // 启动顺序 - 无配额限制，仅权限控制
   owners: 'owners',    // 用户权限 - 无配额限制，仅权限控制

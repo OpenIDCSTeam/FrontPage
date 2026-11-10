@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Checkbox, InputNumber, message, Popconfirm, Divider, Row, Col, Tooltip } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, QuestionCircleOutlined, SearchOutlined } from '@ant-design/icons'
+import { Table, Button, Space, Modal, Form, Input, Checkbox, InputNumber, message, Popconfirm, Divider, Row, Col, Tooltip, Segmented } from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, QuestionCircleOutlined, SearchOutlined, AppstoreOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import PageHeader from '@/components/PageHeader'
 import api from '@/utils/apis.ts'
 import type { ColumnsType } from 'antd/es/table'
@@ -25,7 +25,15 @@ function UserManage() {
   const [modalVisible, setModalVisible] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [searchText, setSearchText] = useState('')
+  const [viewMode, setViewMode] = useState<'table' | 'card'>(() => window.innerWidth < 768 ? 'card' : 'table')
   const [form] = Form.useForm()
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)')
+    const apply = () => setViewMode(media.matches ? 'card' : 'table')
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
+  }, [])
 
   /**
    * 加载用户列表
@@ -271,6 +279,76 @@ function UserManage() {
         (user.email || '').toLowerCase().includes(keyword))
     : users
 
+  const renderUserCardView = (data: User[]) => {
+    if (data.length === 0) {
+      return (
+        <div className="art-table-empty">
+          <UserOutlined />
+          <p>{keyword ? '没有匹配的用户' : '暂无平台用户'}</p>
+        </div>
+      )
+    }
+
+    const gb = (mb?: number) => Math.round((mb || 0) / 1024)
+    return (
+      <div className="nat-card-grid">
+        {data.map(record => (
+          <article className="art-panel nat-card user-card" key={record.id}>
+            <header className="nat-card-head">
+              <div className="art-table-identity">
+                <span className="art-icon-tile is-accent" style={{ width: 34, height: 34 }}>
+                  <UserOutlined />
+                </span>
+                <span className="art-cell-stack">
+                  <span className="art-cell-title">{record.username}</span>
+                  <span className="art-cell-sub">{record.email || '—'}</span>
+                </span>
+              </div>
+              <span className={`art-sem ${record.is_active ? 'is-success' : 'is-danger'} art-sem-pill`}>
+                {record.is_active ? '启用' : '禁用'}
+              </span>
+            </header>
+
+            <div className="user-card-meta">
+              <span className={`art-sem ${record.is_admin ? 'is-accent' : ''} art-sem-pill`}>
+                {record.is_admin ? '管理员' : '普通用户'}
+              </span>
+              <span className="art-cell-sub">ID {record.id}</span>
+            </div>
+
+            <div className="user-card-quota">
+              <div><span>CPU</span><b>{record.used_cpu || 0} / {record.quota_cpu}</b></div>
+              <div><span>内存</span><b>{gb(record.used_ram)} / {gb(record.quota_ram)}G</b></div>
+              <div><span>磁盘</span><b>{gb(record.used_ssd)} / {gb(record.quota_ssd)}G</b></div>
+              <div><span>NAT</span><b>{record.used_nat_ports || 0} / {record.quota_nat_ports}</b></div>
+            </div>
+
+            <footer className="nat-card-foot user-card-foot">
+              <span className="art-cell-sub">配额与权限</span>
+              <Space size={2}>
+                <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record.id)}>
+                  编辑
+                </Button>
+                <Popconfirm
+                  title="确定要删除此用户吗？"
+                  description="删除后无法恢复！"
+                  onConfirm={() => handleDelete(record.id)}
+                  okText="确定"
+                  cancelText="取消"
+                  getPopupContainer={() => document.body}
+                >
+                  <Button type="text" size="small" danger icon={<DeleteOutlined />}>
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Space>
+            </footer>
+          </article>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="art-stack">
       <PageHeader
@@ -324,17 +402,28 @@ function UserManage() {
           <span className="art-list-result-count" aria-live="polite">
             显示 <strong>{filteredUsers.length}</strong> / {users.length} 个
           </span>
+          <Segmented
+            aria-label="用户显示方式"
+            size="small"
+            value={viewMode}
+            onChange={val => setViewMode(val as 'table' | 'card')}
+            options={[
+              { value: 'table', icon: <UnorderedListOutlined />, label: '列表' },
+              { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
+            ]}
+          />
         </div>
       </section>
 
       <section className="art-list-results" aria-label="平台用户清单">
         <header className="art-list-results-head">
           <div>
-            <h2>用户清单</h2>
+            <h2>{viewMode === 'table' ? '用户清单' : '用户概览'}</h2>
             <span>共 {users.length} 个账号</span>
           </div>
         </header>
 
+        {viewMode === 'table' ? (
         <div className="art-table-panel">
           <div className="art-panel-body is-flush">
             <Table
@@ -361,6 +450,11 @@ function UserManage() {
             />
           </div>
         </div>
+        ) : loading ? (
+          <div className="art-loading">正在加载用户…</div>
+        ) : (
+          renderUserCardView(filteredUsers)
+        )}
       </section>
       {/* 创建/编辑用户对话框 */}
       <Modal

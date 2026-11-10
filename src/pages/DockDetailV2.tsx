@@ -7,12 +7,12 @@ const ENGINE_LABELS: Record<string, string> = {
 }
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
-  Button, message, Modal, Tag, Dropdown, Alert, Spin
+  message, Modal, Tag, Dropdown, Alert, Spin
 } from 'antd'
 import {
   ReloadOutlined, PoweroffOutlined, DesktopOutlined, EyeOutlined, CopyOutlined,
   PlayCircleOutlined, PauseCircleOutlined, SwapOutlined,
-  CameraOutlined, DatabaseOutlined, SafetyCertificateOutlined, GlobalOutlined, MoreOutlined,
+  DatabaseOutlined, SafetyCertificateOutlined, GlobalOutlined, MoreOutlined,
   WindowsOutlined, CodeOutlined
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
@@ -20,8 +20,10 @@ import { useMmuiTheme } from '@/hooks/useMmuiTheme'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getThemePalette } from '@/config/theme.config'
 import MmuiSidebar, { defaultSidebarItems } from '@/components/mmui/MmuiSidebar'
-import MmuiHeader from '@/components/mmui/MmuiHeader'
 import MmuiCard, { MmuiGaugeRing, MmuiLoginCard } from '@/components/mmui/MmuiCard'
+import VmDetailTopBar from '@/components/VmDetailTopBar'
+import FirewallPanel from '@/components/FirewallPanel'
+import SnapshotPanel from '@/components/SnapshotPanel'
 import api from '@/utils/apis.ts'
 import { useUserStore } from '@/utils/data'
 import { saveVMDetailLayout } from '@/utils/vmDetailLayout'
@@ -47,9 +49,20 @@ interface BackupInfo {
   backup_time?: number; backup_hint?: string;
 }
 
+interface HostCapabilities {
+  hot_iso?: boolean
+  hot_nic?: boolean
+  offline_only?: boolean
+  /** 平台是否支持虚拟机防火墙（不支持时隐藏防火墙菜单） */
+  firewall?: boolean
+  /** 平台是否支持虚拟机快照（不支持时隐藏快照菜单） */
+  snapshot?: boolean
+}
+
 interface HostConfig {
   system_maps: any[]; images_maps?: any[]; server_type?: string;
   enable_host?: boolean; ipaddr_maps?: Record<string, any>; public_addr?: string[]
+  capabilities?: HostCapabilities
 }
 
 // ─── Utility ────────────────────────────────────────────────────────────
@@ -58,6 +71,8 @@ const DETAIL_SECTION_PERMISSION: Record<string, number> = {
   disk: VM_PERMISSION.HDD_EDITS,
   iso: VM_PERMISSION.ISO_EDITS,
   nat: VM_PERMISSION.NET_EDITS,
+  firewall: VM_PERMISSION.FIREWALLS,
+  snapshot: VM_PERMISSION.VM_BACKUP,
   proxy: VM_PERMISSION.WEB_EDITS,
   pci: VM_PERMISSION.PCI_EDITS,
   usb: VM_PERMISSION.USB_EDITS,
@@ -94,6 +109,7 @@ export default function DockDetailV2() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user: currentUser } = useUserStore()
+  const isRestrictedSession = Boolean((currentUser as any)?.temp_login || ((currentUser as any)?.temp_hs_name && (currentUser as any)?.temp_vm_uuid))
   const theme = useMmuiTheme()
   const { theme: colorMode, themePreset, transparentMode } = useTheme()
   const themePalette = getThemePalette(themePreset, colorMode === 'dark', transparentMode)
@@ -105,8 +121,14 @@ export default function DockDetailV2() {
   const [activeSection, setActiveSection] = useState('panel')
 
   useEffect(() => {
-    saveVMDetailLayout(currentUser?.username, 'vertical')
-  }, [currentUser?.username])
+    if (!isRestrictedSession) saveVMDetailLayout(currentUser?.username, 'vertical')
+  }, [currentUser?.username, isRestrictedSession])
+
+  useEffect(() => {
+    if (isRestrictedSession && hostName && uuid) {
+      navigate(`/hosts/${hostName}/vms/${uuid}`, { replace: true })
+    }
+  }, [isRestrictedSession, hostName, uuid, navigate])
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 1023px)')
@@ -122,6 +144,8 @@ export default function DockDetailV2() {
   // ── Data State ────────────────────────────────────────────────────────
   const [vm, setVM] = useState<any>(null)
   const vmRef = useRef<any>(null)
+  // 启动顺序是否已做过首屏加载（缓存或自动拉取），避免轮询重复请求
+  const efiLoadedRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [hostConfig, setHostConfig] = useState<HostConfig | null>(null)
   const hostConfigRef = useRef<HostConfig | null>(null)
@@ -194,6 +218,34 @@ export default function DockDetailV2() {
         }
         setVM(vmData)
         vmRef.current = vmData
+
+        // 启动顺序：首屏优先用本地缓存渲染，没有缓存则自动拉取一次。
+        // 之前只有点「刷新」才会加载，首次进入显示的是空占位。
+        if (!efiLoadedRef.current) {
+          efiLoadedRef.current = true
+          const cacheKey = `vm_efi_order:${hostName}:${uuid}`
+          const raw = localStorage.getItem(cacheKey)
+          let restored = false
+          if (raw) {
+            try {
+              const cached = JSON.parse(raw)
+              if (Array.isArray(cached) && cached.length > 0) {
+                setVM((prev: any) => ({ ...prev, efi_list: cached }))
+                restored = true
+              }
+            } catch {
+              localStorage.removeItem(cacheKey)
+            }
+          }
+          if (!restored) {
+            api.getEFIList(hostName, uuid).then((r) => {
+              if (r.data && Array.isArray(r.data) && r.data.length > 0) {
+                setVM((prev: any) => ({ ...prev, efi_list: r.data }))
+                localStorage.setItem(cacheKey, JSON.stringify(r.data))
+              }
+            }).catch(() => { /* 失败不打扰用户，可手动刷新 */ })
+          }
+        }
         if (typeof (detailRes.data as any).user_permissions === 'number')
           setUserPermissions((detailRes.data as any).user_permissions)
       }
@@ -299,6 +351,10 @@ export default function DockDetailV2() {
   const canManagePower = hasVMPermission(VM_PERMISSION.PWR_EDITS)
   const canManageSystem = hasVMPermission(VM_PERMISSION.SYS_EDITS)
   const visibleSidebarItems = useMemo(() => defaultSidebarItems.filter(item => {
+    // 平台不支持对应能力时隐藏菜单（与权限无关，避免点进去只能报错）；
+    // 支持的平台继续走下面的权限检查
+    if (item.key === 'firewall' && hostConfig?.capabilities?.firewall !== true) return false
+    if (item.key === 'snapshot' && hostConfig?.capabilities?.snapshot !== true) return false
     if (item.key === 'panel' || item.key === 'monitor' || item.key === 'system' || item.key === 'network') return true
     if (item.key === 'permission') return isOwnerOrAdmin
     if (item.key === 'sysadmin') {
@@ -311,7 +367,7 @@ export default function DockDetailV2() {
     const quotaField = DETAIL_SECTION_QUOTA[item.key]
     if (quotaField && config[quotaField] !== undefined && Number(config[quotaField]) === 0) return false
     return true
-  }), [config, isAdminUser, isOwnerOrAdmin, userPermissions])
+  }), [config, isAdminUser, isOwnerOrAdmin, userPermissions, hostConfig])
 
   useEffect(() => {
     if (!visibleSidebarItems.some(item => item.key === activeSection)) setActiveSection('panel')
@@ -491,6 +547,7 @@ export default function DockDetailV2() {
   const ipv4Scope = activeNic?.nic_type === 'pub' ? '公网' : '内网'
   const ipv6Address = vm.ipv6_address && vm.ipv6_address !== '-' ? vm.ipv6_address : ''
   const hardwareSummary = `CPU ${config.cpu_num || 0} 核 · 内存 ${formatMem(config.mem_num || 0)} · 硬盘 ${formatMem(config.hdd_num || 0)} · 带宽 ${config.speed_u || 0} Mbps`
+  const hardwareSummaryCompact = `配置 ${config.cpu_num || 0}C · ${formatMem(config.mem_num || 0).replace(/\.0/g, '')} · ${formatMem(config.hdd_num || 0).replace(/\.0/g, '')} · ${config.speed_u || 0}Mbps`
 
   // ═════════════════════════════════════════════════════════════════════
   // RENDER
@@ -507,8 +564,8 @@ export default function DockDetailV2() {
         onClick={() => setMobileMenuOpen(false)}
       />
 
-      {/* 侧边栏 */}
-      <MmuiSidebar
+      {/* 侧边栏：访问密钥身份完全不显示 */}
+      {!isRestrictedSession && <MmuiSidebar
         activeKey={activeSection}
         items={visibleSidebarItems}
         collapsed={isMobileViewport ? false : sidebarCollapsed}
@@ -518,30 +575,17 @@ export default function DockDetailV2() {
         onSelect={handleSidebarSelect}
         onCollapse={setSidebarCollapsed}
         onBack={() => navigate(`/hosts/${hostName}/vms`)}
-      />
+      />}
 
       {/* 主内容区 */}
       <div className="mmui-layout__main" data-sidebar-collapsed={sidebarCollapsed || undefined}>
-        {/* Header */}
-        <MmuiHeader
-          theme={theme}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleMobileMenu={() => setMobileMenuOpen(!mobileMenuOpen)}
-          mobileMenuOpen={mobileMenuOpen}
-          extra={
-            <Button
-              size="small"
-              onClick={goHorizontalPage}
-              style={{
-                background: 'var(--mmui-card-action-bg)',
-                borderColor: 'var(--mmui-card-action-border)',
-                color: 'var(--mmui-card-action-text)',
-                borderRadius: 'var(--mmui-radius-btn)',
-              }}
-            >
-              横版
-            </Button>
-          }
+        <VmDetailTopBar
+          uuid={config.vm_uuid || uuid || ''}
+          layout="vertical"
+          onChange={(next) => { if (next === 'horizontal') goHorizontalPage() }}
+          onMenu={() => setMobileMenuOpen(true)}
+          showMenu={isMobileViewport && !isRestrictedSession}
+          showLayoutSwitch={!isRestrictedSession}
         />
 
         {/* 内容区 */}
@@ -582,7 +626,12 @@ export default function DockDetailV2() {
                     <span className="vm-detail-hero-sep">·</span>
                     {ipv6Address
                       ? <span>IPv6 <code>{ipv6Address}</code></span>
-                      : <span className="vm-detail-hero-hardware">{hardwareSummary}</span>}
+                      : (
+                        <>
+                          <span className="vm-detail-hero-hardware vm-detail-hero-hardware--wide">{hardwareSummary}</span>
+                          <span className="vm-detail-hero-hardware vm-detail-hero-hardware--compact">{hardwareSummaryCompact}</span>
+                        </>
+                      )}
                   </div>
                 </div>
                 <div className="vm-detail-hero-actions" style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
@@ -643,7 +692,7 @@ export default function DockDetailV2() {
                       ))}
                     </div>
                     <div className="vm-detail-screenshot" data-empty={!vmScreenshot || undefined} style={{ width: 200, height: 180, borderRadius: 'var(--mmui-radius)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--mmui-fill-secondary)', flexShrink: 0 }}>
-                      {vmScreenshot ? <img src={vmScreenshot} alt="VM" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (
+                      {vmScreenshot ? <img src={vmScreenshot} alt="VM" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : (
                         <div style={{ textAlign: 'center' }}><DesktopOutlined style={{ fontSize: 48, color: 'var(--mmui-accent-blue-soft)' }} /><div style={{ fontSize: 11, color: 'var(--mmui-text-muted)', marginTop: 10 }}>{displayStatus === 'STARTED' ? '获取截图中...' : '虚拟机未运行'}</div></div>
                       )}
                     </div>
@@ -957,22 +1006,22 @@ export default function DockDetailV2() {
             </MmuiCard>
           )}
 
-          {/* ═══ PCI设备 ═══ */}
+          {/* ═══ PCI 设备 ═══ */}
           {activeSection === 'pci' && (
-            <MmuiCard title="PCI设备直通" extra={
+            <MmuiCard title="PCI 设备直通" extra={
               <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
                 disabled={!hostEnabled || displayStatus === 'STARTED' || !hasVMPermission(VM_PERMISSION.PCI_EDITS)}
                 onClick={async () => {
                   try {
                     const res = await api.getPCIList(hostName!)
                     if (!res.data || Object.keys(res.data).length === 0) {
-                      message.warning('当前主机无可用PCI设备'); return
+                      message.warning('当前主机无可用PCI 设备'); return
                     }
                     const existingKeys = config.pci_all ? Object.keys(config.pci_all) : []
                     const available = Object.entries(res.data).filter(([k]) => !existingKeys.includes(k))
-                    if (available.length === 0) { message.info('所有PCI设备已分配'); return }
+                    if (available.length === 0) { message.info('所有PCI 设备已分配'); return }
                     const list = available.map(([k, v], idx) => `${idx + 1}. ${v.gpu_hint || k} (${v.gpu_uuid || k})`).join('\n')
-                    const choice = window.prompt(`选择要直通的PCI设备序号:\n${list}`)
+                    const choice = window.prompt(`选择要直通的PCI 设备序号:\n${list}`)
                     if (!choice || isNaN(Number(choice))) return
                     const idx = Number(choice) - 1
                     if (idx < 0 || idx >= available.length) { message.error('无效选择'); return }
@@ -982,14 +1031,14 @@ export default function DockDetailV2() {
                       pci_key: pciKey, gpu_uuid: pciInfo.gpu_uuid, gpu_mdev: useMdev ? pciInfo.gpu_mdev || '' : '',
                       gpu_hint: pciInfo.gpu_hint, action: 'add'
                     })
-                    message.success('PCI设备添加成功，请重启虚拟机使其生效')
+                    message.success('PCI 设备添加成功，请重启虚拟机使其生效')
                     loadVMDetail()
                   } catch (e: any) { message.error(e?.message || '获取PCI列表失败') }
                 }}>添加设备</button>
             }>
               {displayStatus === 'STARTED' && (
                 <div style={{ padding: '8px 12px', marginBottom: 12, borderRadius: 'var(--mmui-radius)', background: 'rgba(255, 152, 0, 0.08)', border: '1px solid rgba(255, 152, 0, 0.2)', fontSize: 12, color: 'var(--mmui-warning)' }}>
-                  ⚠️ PCI设备直通操作需要先关闭虚拟机
+                  ⚠️ PCI 设备直通操作需要先关闭虚拟机
                 </div>
               )}
               {config.pci_all && Object.keys(config.pci_all).length > 0 ? (
@@ -1006,12 +1055,12 @@ export default function DockDetailV2() {
                           <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
                             disabled={displayStatus === 'STARTED' || !hostEnabled || !hasVMPermission(VM_PERMISSION.PCI_EDITS)}
                             onClick={() => Modal.confirm({
-                              title: '移除PCI设备', content: `确定移除 "${info.gpu_hint || key}" 吗？需要重启虚拟机生效。`,
+                              title: '移除PCI 设备', content: `确定移除 "${info.gpu_hint || key}" 吗？需要重启虚拟机生效。`,
                               okButtonProps: { danger: true },
                               onOk: async () => {
                                 try {
                                   await api.setupPCI(hostName!, uuid!, { pci_key: key, gpu_uuid: info.gpu_uuid || '', gpu_mdev: info.gpu_mdev || '', gpu_hint: info.gpu_hint || '', action: 'remove' })
-                                  message.success('PCI设备已移除，请重启虚拟机使其生效')
+                                  message.success('PCI 设备已移除，请重启虚拟机使其生效')
                                   loadVMDetail()
                                 } catch (e: any) { message.error(e?.message || '移除失败') }
                               }
@@ -1021,26 +1070,26 @@ export default function DockDetailV2() {
                     </div>
                   ))}
                 </div>
-              ) : (<div style={{ padding: 40, textAlign: 'center', color: 'var(--mmui-text-muted)' }}>暂无PCI设备直通</div>)}
+              ) : (<div style={{ padding: 40, textAlign: 'center', color: 'var(--mmui-text-muted)' }}>暂无PCI 设备直通</div>)}
             </MmuiCard>
           )}
 
-          {/* ═══ USB设备 ═══ */}
+          {/* ═══ USB 设备 ═══ */}
           {activeSection === 'usb' && (
-            <MmuiCard title="USB设备" extra={
+            <MmuiCard title="USB 设备" extra={
               <button className="mmui-page-btn mmui-page-btn--primary" style={{ minHeight: 28, fontSize: 12 }}
                 disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.USB_EDITS)}
                 onClick={async () => {
                   try {
                     const res = await api.getUSBList(hostName!)
                     if (!res.data || Object.keys(res.data).length === 0) {
-                      message.warning('当前主机无可用USB设备'); return
+                      message.warning('当前主机无可用USB 设备'); return
                     }
                     const existingKeys = config.usb_all ? Object.keys(config.usb_all) : []
                     const available = Object.entries(res.data).filter(([k]) => !existingKeys.includes(k))
-                    if (available.length === 0) { message.info('所有USB设备已分配'); return }
+                    if (available.length === 0) { message.info('所有USB 设备已分配'); return }
                     const list = available.map(([k, v], idx) => `${idx + 1}. ${v.usb_hint || k} (${v.vid_uuid}:${v.pid_uuid})`).join('\n')
-                    const choice = window.prompt(`选择要添加的USB设备序号:\n${list}`)
+                    const choice = window.prompt(`选择要添加的USB 设备序号:\n${list}`)
                     if (!choice || isNaN(Number(choice))) return
                     const idx = Number(choice) - 1
                     if (idx < 0 || idx >= available.length) { message.error('无效选择'); return }
@@ -1049,7 +1098,7 @@ export default function DockDetailV2() {
                       usb_key: usbKey, vid_uuid: usbInfo.vid_uuid, pid_uuid: usbInfo.pid_uuid,
                       usb_hint: usbInfo.usb_hint, action: 'add'
                     })
-                    message.success('USB设备添加成功')
+                    message.success('USB 设备添加成功')
                     loadVMDetail()
                   } catch (e: any) { message.error(e?.message || '获取USB列表失败') }
                 }}>添加设备</button>
@@ -1066,12 +1115,12 @@ export default function DockDetailV2() {
                         <button className="mmui-page-btn" style={{ minWidth: 50, minHeight: 26, fontSize: 11, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
                           disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.USB_EDITS)}
                           onClick={() => Modal.confirm({
-                            title: '移除USB设备', content: `确定移除 "${typeof info === 'string' ? info : (info.usb_name || info.usb_hint || key)}" 吗？`,
+                            title: '移除USB 设备', content: `确定移除 "${typeof info === 'string' ? info : (info.usb_name || info.usb_hint || key)}" 吗？`,
                             okButtonProps: { danger: true },
                             onOk: async () => {
                               try {
                                 await api.setupUSB(hostName!, uuid!, { usb_key: key, vid_uuid: info.vid_uuid || '', pid_uuid: info.pid_uuid || '', usb_hint: info.usb_hint || '', action: 'remove' })
-                                message.success('USB设备已移除')
+                                message.success('USB 设备已移除')
                                 loadVMDetail()
                               } catch (e: any) { message.error(e?.message || '移除失败') }
                             }
@@ -1080,7 +1129,7 @@ export default function DockDetailV2() {
                     </div>
                   ))}
                 </div>
-              ) : (<div style={{ padding: 40, textAlign: 'center', color: 'var(--mmui-text-muted)' }}>暂无USB设备</div>)}
+              ) : (<div style={{ padding: 40, textAlign: 'center', color: 'var(--mmui-text-muted)' }}>暂无USB 设备</div>)}
             </MmuiCard>
           )}
 
@@ -1095,6 +1144,7 @@ export default function DockDetailV2() {
                       const r = await api.getEFIList(hostName!, uuid!)
                       if (r.data && Array.isArray(r.data)) {
                         setVM((prev: any) => ({ ...prev, efi_list: r.data }))
+                        localStorage.setItem(`vm_efi_order:${hostName}:${uuid}`, JSON.stringify(r.data))
                         message.success('已刷新启动项列表')
                       }
                     } catch (e: any) { message.error(e?.message || '获取启动项失败') }
@@ -1144,17 +1194,19 @@ export default function DockDetailV2() {
                     </div>
                   ))}
                 </div>
-              ) : config.efi_all && Object.keys(config.efi_all).length > 0 ? (
+              ) : Array.isArray(config.efi_all) && config.efi_all.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <p style={{ fontSize: 12, color: 'var(--mmui-text-muted)', margin: '0 0 8px 0' }}>
                     以下为配置中的启动项，点击"刷新"获取实时启动项列表以进行排序。
                   </p>
-                  {Object.entries(config.efi_all).map(([key, info]: [string, any], i) => (
+                  {/* efi_all 是数组，之前用 Object.entries 遍历，
+                      渲染出来的是数组下标（0、1）而不是启动项名称 */}
+                  {config.efi_all.map((item: any, i: number) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--mmui-radius)', border: '1px solid var(--mmui-divider)', background: 'var(--mmui-fill-secondary)' }}>
                       <span style={{ width: 24, height: 24, borderRadius: '50%', background: i === 0 ? 'var(--mmui-accent-blue)' : 'var(--mmui-fill-secondary)', color: i === 0 ? themePalette.onPrimary : 'var(--mmui-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
                       <div>
-                        <div style={{ color: 'var(--mmui-heading)' }}>{typeof info === 'string' ? info : (info.boot_name || key)}</div>
-                        <div style={{ fontSize: 11, color: 'var(--mmui-text-muted)' }}>{key}</div>
+                        <div style={{ color: 'var(--mmui-heading)' }}>{item?.efi_name || `启动项 ${i + 1}`}</div>
+                        <div style={{ fontSize: 11, color: 'var(--mmui-text-muted)' }}>{item?.efi_type ? 'UEFI' : 'Legacy'}</div>
                       </div>
                     </div>
                   ))}
@@ -1426,49 +1478,15 @@ export default function DockDetailV2() {
             </MmuiCard>
           )}
 
-          {/* 快照视图 */}
+          {/* 快照视图（仅平台支持时可见） */}
           {activeSection === 'snapshot' && (
-            <MmuiCard title="快照管理" extra={
-              <span style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)' }}>
-                已用 {config.iso_all ? Object.keys(config.iso_all).length : 0} / {config.iso_num || 3}
-              </span>
-            }>
-              {config.iso_all && Object.keys(config.iso_all).length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {Object.entries(config.iso_all).map(([name, info]: [string, any], i) => (
-                    <div key={i} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '12px 16px', borderRadius: 'var(--mmui-radius)',
-                      border: '1px solid var(--mmui-divider)', background: 'var(--mmui-fill-secondary)'
-                    }}>
-                      <div>
-                        <div style={{ fontSize: 'var(--mmui-font-body)', color: 'var(--mmui-text)' }}>{name}</div>
-                        <div style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', marginTop: 4 }}>
-                          {typeof info === 'object' ? (info.iso_time ? new Date(info.iso_time * 1000).toLocaleString('zh-CN') : '') : ''}
-                        </div>
-                      </div>
-                      <button className="mmui-page-btn" style={{ minWidth: 60, minHeight: 28, fontSize: 12, borderColor: 'var(--mmui-error)', color: 'var(--mmui-error)' }}
-                        onClick={() => {
-                          Modal.confirm({
-                            title: '删除快照', content: `确定删除快照 "${name}" 吗？`,
-                            okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
-                            onOk: async () => {
-                              try {
-                                await api.deleteISO(hostName!, uuid!, name)
-                                message.success('快照已删除'); loadVMDetail()
-                              } catch (e: any) { message.error(e?.message || '删除失败') }
-                            }
-                          })
-                        }}>删除</button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ padding: 40, textAlign: 'center', color: 'var(--mmui-text-muted)' }}>
-                  <CameraOutlined style={{ fontSize: 48, marginBottom: 16, display: 'block' }} />
-                  暂无快照
-                </div>
-              )}
+            <MmuiCard title="快照管理">
+              <SnapshotPanel
+                hostName={hostName || ''}
+                vmUuid={uuid || ''}
+                canEdit={hasVMPermission(VM_PERMISSION.VM_BACKUP)}
+                hostEnabled={hostEnabled}
+              />
             </MmuiCard>
           )}
 
@@ -1671,6 +1689,18 @@ export default function DockDetailV2() {
                   暂无端口映射规则
                 </div>
               )}
+            </MmuiCard>
+          )}
+
+          {/* ═══ 防火墙（仅平台支持时可见） ═══ */}
+          {activeSection === 'firewall' && (
+            <MmuiCard title="防火墙">
+              <FirewallPanel
+                hostName={hostName || ''}
+                vmUuid={uuid || ''}
+                canEdit={hasVMPermission(VM_PERMISSION.FIREWALLS)}
+                hostEnabled={hostEnabled}
+              />
             </MmuiCard>
           )}
 

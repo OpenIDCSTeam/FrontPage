@@ -38,6 +38,7 @@ function MainLayout() {
     const navigate = useNavigate()
     const location = useLocation()
     const {user, logout, setUser} = useUserStore()
+    const isRestrictedSession = Boolean((user as any)?.temp_login || ((user as any)?.temp_hs_name && (user as any)?.temp_vm_uuid))
     const [collapsed, setCollapsed] = useState(() => window.location.pathname.endsWith('/v2'))
     const [isMobile, setIsMobile] = useState(false)
     const [drawerOpen, setDrawerOpen] = useState(false)
@@ -189,13 +190,29 @@ function MainLayout() {
         return items
     }, [location.pathname, user?.is_admin])
 
-    // 用户下拉菜单
-    const dropdownMenuItems: MenuProps['items'] = [
-        { key: 'profile',  icon: <UserOutlined/>,  label: '个人资料', onClick: () => navigate('/profile') },
-        { key: 'settings', icon: <SettingOutlined/>, label: '设置',   onClick: () => navigate('/settings') },
-        { type: 'divider' },
-        { key: 'logout',   icon: <LogoutOutlined/>, label: '退出登录', onClick: () => { logout(); navigate('/login') } },
-    ]
+    // 用户下拉菜单：访问密钥身份只保留退出登录
+    const dropdownMenuItems: MenuProps['items'] = isRestrictedSession
+        ? [
+            { key: 'logout', icon: <LogoutOutlined/>, label: '退出登录', onClick: () => { logout(); navigate('/login') } },
+        ]
+        : [
+            { key: 'profile',  icon: <UserOutlined/>,  label: '个人资料', onClick: () => navigate('/profile') },
+            { key: 'settings', icon: <SettingOutlined/>, label: '设置',   onClick: () => navigate('/settings') },
+            { type: 'divider' },
+            { key: 'logout',   icon: <LogoutOutlined/>, label: '退出登录', onClick: () => { logout(); navigate('/login') } },
+        ]
+
+    // 访问密钥身份只允许停留在绑定的虚拟机详情，其他路由强制回退
+    useEffect(() => {
+        if (!isRestrictedSession) return
+        const restrictedHost = (user as any)?.temp_hs_name
+        const restrictedVm = (user as any)?.temp_vm_uuid
+        if (!restrictedHost || !restrictedVm) return
+        const allowedPath = `/hosts/${restrictedHost}/vms/${restrictedVm}`
+        if (location.pathname !== allowedPath) {
+            navigate(allowedPath, { replace: true })
+        }
+    }, [isRestrictedSession, location.pathname, navigate, user])
 
     const handleMenuClick: MenuProps['onClick'] = ({key}) => { navigate(key) }
 
@@ -225,37 +242,7 @@ function MainLayout() {
         </>
     )
 
-    if (isVerticalDetail && isMobile) {
-        return (
-            <Layout style={{ minHeight: '100dvh', height: '100dvh', overflow: 'hidden' }}>
-                <Content style={{ minHeight: 0, overflow: 'hidden' }}>
-                    <Outlet />
-                </Content>
-            </Layout>
-        )
-    }
-
-    if (isVerticalDetail) {
-        return (
-            <Layout style={{ minHeight: '100dvh', height: '100dvh', overflow: 'hidden' }}>
-                <Sider
-                    trigger={null}
-                    collapsible
-                    collapsed={collapsed}
-                    width={208}
-                    collapsedWidth={56}
-                    className="art-sidebar"
-                >
-                    {sideContent}
-                </Sider>
-                <Layout className="art-main" style={{ minWidth: 0 }}>
-                    <Content style={{ minHeight: 0, overflow: 'hidden' }}>
-                        <Outlet />
-                    </Content>
-                </Layout>
-            </Layout>
-        )
-    }
+    const isVMDetailRoute = /\/vms\/[^/]+/.test(location.pathname)
 
     return (
         <Layout className="art-layout">
@@ -263,32 +250,36 @@ function MainLayout() {
             {/* ===== 全局深色顶栏：品牌 + 折叠开关 + 面包屑 + 全局操作 ===== */}
             <Header className="art-header">
                 <div className="art-header-left">
-                    <Button
-                        type="text"
-                        className="art-header-btn"
-                        aria-label={collapsed ? '展开导航' : '收起导航'}
-                        icon={isMobile ? <MenuUnfoldOutlined/> : (collapsed ? <MenuUnfoldOutlined/> : <MenuFoldOutlined/>)}
-                        onClick={() => isMobile ? setDrawerOpen(true) : setCollapsed(!collapsed)}
-                    />
-                    <div className="art-header-brand" onClick={goHome}>
+                    {!isRestrictedSession && (
+                        <Button
+                            type="text"
+                            className="art-header-btn"
+                            aria-label={collapsed ? '展开导航' : '收起导航'}
+                            icon={isMobile ? <MenuUnfoldOutlined/> : (collapsed ? <MenuUnfoldOutlined/> : <MenuFoldOutlined/>)}
+                            onClick={() => isMobile ? setDrawerOpen(true) : setCollapsed(!collapsed)}
+                        />
+                    )}
+                    <div className="art-header-brand" onClick={isRestrictedSession ? undefined : goHome}>
                         <div className="art-header-logo">OI</div>
                         <div className="art-header-brand-text">
                             <span className="art-header-brand-name">OpenIDCS</span>
                             <span className="art-header-brand-desc">{user?.is_admin ? '管理控制台' : '用户控制台'}</span>
                         </div>
                     </div>
-                    <Breadcrumb items={breadcrumbItems} />
+                    {!isVMDetailRoute && <Breadcrumb items={breadcrumbItems} />}
                 </div>
 
                 <div className="art-header-right">
 
-                        {/* 搜索框 */}
-                        <Input
-                            className="art-header-search"
-                            placeholder="搜索功能..."
-                            variant="borderless"
-                            prefix={<SearchOutlined style={{ fontSize: 14 }} />}
-                        />
+                        {/* 搜索框：受限身份不展示，避免跳出当前虚拟机 */}
+                        {!isRestrictedSession && (
+                            <Input
+                                className="art-header-search"
+                                placeholder="搜索功能..."
+                                variant="borderless"
+                                prefix={<SearchOutlined style={{ fontSize: 14 }} />}
+                            />
+                        )}
 
                         <AppearanceMenu />
 
@@ -349,7 +340,7 @@ function MainLayout() {
 
             {/* ===== 顶栏之下：侧边栏 + 内容 ===== */}
             <Layout className="art-main-row">
-            {isMobile ? (
+            {!isRestrictedSession && (isMobile ? (
                 <Drawer
                     placement="left"
                     open={drawerOpen}
@@ -396,7 +387,7 @@ function MainLayout() {
                 >
                     {sideContent}
                 </Sider>
-            )}
+            ))}
 
                 <Layout className="art-main">
                 {/* 内容区域 */}

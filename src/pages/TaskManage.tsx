@@ -13,6 +13,7 @@ import {
   RedoOutlined,
   InfoCircleOutlined,
   SettingOutlined,
+  CloseOutlined,
 } from '@ant-design/icons'
 import PageHeader from '@/components/PageHeader'
 import StatCard from '@/components/StatCard'
@@ -358,13 +359,20 @@ function TaskManage() {
           )}
         </section>
 
-        <section className="art-panel" aria-label="任务详情">
+        <section className={`art-panel art-detail-panel${selectedTask ? ' is-mobile-open' : ''}`} aria-label="任务详情">
           <header className="art-panel-head">
             <span className="art-panel-title">
               <InfoCircleOutlined />
               任务详情
             </span>
             {selectedTask && <span className="art-muted is-mono">{selectedTask.task_id}</span>}
+            <Button
+              className="art-detail-close"
+              type="text"
+              icon={<CloseOutlined />}
+              aria-label="关闭任务详情"
+              onClick={() => setSelectedTask(null)}
+            />
           </header>
           <div className="art-panel-body">
             {selectedTask ? (

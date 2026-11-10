@@ -80,6 +80,14 @@ interface HostConfig {
     ports_close?: number
     remote_port?: number
     limits_nums?: number
+    /** 反向代理模式：direct=同机直连虚拟机；relay=经爱快公网中转 */
+    proxy_mode?: string
+    /** 中转地址（relay 模式），留空使用服务器公网IP */
+    relay_addr?: string
+    /** VNC 反代 IP，留空使用平台地址 */
+    vnc_ip?: string
+    /** VNC 外网地址（可含端口），填写后返回给用户的是该地址 */
+    vnc_wan?: string
     system_maps?: OSConfigItem[]
     images_maps?: OSConfigItem[]
     ipaddr_maps?: Record<string, any>
@@ -699,6 +707,10 @@ function HostManage() {
                     ports_close: config.ports_close,
                     remote_port: config.remote_port,
                     limits_nums: config.limits_nums,
+                    proxy_mode: config.proxy_mode || 'direct',
+                    relay_addr: config.relay_addr,
+                    vnc_ip: config.vnc_ip,
+                    vnc_wan: config.vnc_wan,
                     ipaddr_ddns: (config.ipaddr_ddns || []).join(', '),
                     public_addr: (config.public_addr || []).join(', '),
                     extend_data: config.extend_data ? JSON.stringify(config.extend_data, null, 2) : '',
@@ -938,6 +950,10 @@ function HostManage() {
                 ports_close: values.ports_close,
                 remote_port: values.remote_port,
                 limits_nums: values.limits_nums,
+                proxy_mode: values.proxy_mode || 'direct',
+                relay_addr: values.relay_addr || '',
+                vnc_ip: values.vnc_ip || '',
+                vnc_wan: values.vnc_wan || '',
                 system_maps,
                 images_maps,
                 ipaddr_maps,
@@ -1613,6 +1629,39 @@ function HostManage() {
                                             <Col span={12}>
                                                 <Form.Item name="public_addr" label="服务器公网IP">
                                                     <Input placeholder="例如: 192.168.1.1, 2001:db8::1"/>
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+
+                                        <Row gutter={16}>
+                                            <Col span={12}>
+                                                <Form.Item name="proxy_mode" label="反向代理模式" initialValue="direct"
+                                                             extra="直连：主控与虚拟机平台同一设备；中转：经爱快公网地址转发">
+                                                    <Select options={[
+                                                        {label: '直连虚拟机', value: 'direct'},
+                                                        {label: '经爱快中转', value: 'relay'},
+                                                    ]}/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={12}>
+                                                <Form.Item name="relay_addr" label="中转地址"
+                                                           extra="中转模式下使用，留空则取服务器公网IP">
+                                                    <Input placeholder="例如: 1.2.3.4"/>
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+
+                                        <Row gutter={16}>
+                                            <Col span={12}>
+                                                <Form.Item name="vnc_ip" label="VNC 反代IP"
+                                                           extra="VNC 经反向代理时的目标地址，留空使用平台地址">
+                                                    <Input placeholder="例如: vnc.example.com"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={12}>
+                                                <Form.Item name="vnc_wan" label="VNC 外网地址"
+                                                           extra="填写后用户拿到的是该地址，可含端口">
+                                                    <Input placeholder="例如: vnc.example.com:6080"/>
                                                 </Form.Item>
                                             </Col>
                                         </Row>

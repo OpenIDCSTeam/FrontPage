@@ -6,7 +6,7 @@ import {
   ArrowLeftOutlined, MenuFoldOutlined, CloseOutlined,
   MenuUnfoldOutlined, ApiOutlined, AreaChartOutlined,
   UsbOutlined, UserOutlined, OrderedListOutlined, CloudServerOutlined,
-  DesktopOutlined, InfoCircleOutlined, PoweroffOutlined
+  DesktopOutlined, InfoCircleOutlined, PoweroffOutlined, SafetyOutlined, HistoryOutlined
 } from '@ant-design/icons';
 
 export interface SidebarItem {
@@ -38,9 +38,11 @@ export const defaultSidebarItems: SidebarItem[] = [
   { key: 'nic', icon: <GlobalOutlined />, label: '网卡管理', group: '资源管理' },
   { key: 'disk', icon: <HddOutlined />, label: '数据磁盘', group: '资源管理' },
   { key: 'iso', icon: <CameraOutlined />, label: '光盘镜像', group: '资源管理' },
+  { key: 'snapshot', icon: <HistoryOutlined />, label: '快照', group: '资源管理' },
   { key: 'backup', icon: <DatabaseOutlined />, label: '备份管理', group: '资源管理' },
   { key: 'boot', icon: <OrderedListOutlined />, label: '启动顺序', group: '资源管理' },
   { key: 'nat', icon: <SwapOutlined />, label: '端口映射', group: '网络服务' },
+  { key: 'firewall', icon: <SafetyOutlined />, label: '防火墙', group: '网络服务' },
   { key: 'proxy', icon: <CloudServerOutlined />, label: '反向代理', group: '网络服务' },
   { key: 'pci', icon: <ApiOutlined />, label: 'PCI 设备', group: '硬件设备' },
   { key: 'usb', icon: <UsbOutlined />, label: 'USB 设备', group: '硬件设备' },

@@ -589,8 +589,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                 vmData.os_pass = values.os_pass
                 vmData.vc_pass = values.vc_pass
                 vmData.nic_all = nicAll
-                // 非自由配置模式下，附带选中的套餐名称
-                if (!canFreeConfig && selectedPlanName) {
+                // 选中套餐时附带套餐名称，便于后端按套餐校验资源
+                if (selectedPlanName) {
                     vmData.plan_name = selectedPlanName
                 }
             } else {
@@ -923,14 +923,24 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         </Row>
                     </div>
 
-                    {/* 套餐卡片选择（非自由配置模式且为创建模式时显示） */}
-                    {!canFreeConfig && !isEditMode && (
+                    {/* 套餐卡片选择：创建时所有用户都可选，自由配置用户可切回自定义 */}
+                    {!isEditMode && (canFreeConfig ? Object.keys(serverPlans).length > 0 : true) && (
                         <div className="modal-section">
                             <div style={sectionTitleStyle}>
                                 <div className="w-8 h-8 rounded-lg section-icon-bg-orange flex items-center justify-center">
                                     <AppstoreOutlined />
                                 </div>
                                 <span>选择套餐</span>
+                                {canFreeConfig && (
+                                    <Button
+                                        size="small"
+                                        type={selectedPlanName ? 'default' : 'primary'}
+                                        style={{ marginLeft: 'auto' }}
+                                        onClick={() => setSelectedPlanName('')}
+                                    >
+                                        自定义配置
+                                    </Button>
+                                )}
                             </div>
                             {Object.keys(serverPlans).length === 0 ? (
                                 <Alert message="当前主机暂无可用套餐，请联系管理员" type="warning" showIcon />
@@ -942,10 +952,12 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                         const remainRam = (userQuota?.quota_ram || 0) - (userQuota?.used_ram || 0)
                                         const remainSsd = (userQuota?.quota_ssd || 0) - (userQuota?.used_ssd || 0)
                                         const exceedReasons: string[] = []
-                                        if (planCfg.cpu_num > remainCpu) exceedReasons.push(`CPU超出${planCfg.cpu_num - remainCpu}核`)
-                                        if (planCfg.mem_num > remainRam) exceedReasons.push(`内存超出${planCfg.mem_num - remainRam}MB`)
-                                        if (planCfg.hdd_num > remainSsd) exceedReasons.push(`硬盘超出${planCfg.hdd_num - remainSsd}MB`)
-                                        const isExceeded = exceedReasons.length > 0
+                                        if (!isAdmin) {
+                                            if (planCfg.cpu_num > remainCpu) exceedReasons.push(`CPU超出${planCfg.cpu_num - remainCpu}核`)
+                                            if (planCfg.mem_num > remainRam) exceedReasons.push(`内存超出${planCfg.mem_num - remainRam}MB`)
+                                            if (planCfg.hdd_num > remainSsd) exceedReasons.push(`硬盘超出${planCfg.hdd_num - remainSsd}MB`)
+                                        }
+                                        const isExceeded = !isAdmin && exceedReasons.length > 0
 
                                         return (
                                         <Col span={8} key={planName}>
@@ -973,10 +985,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                                         dat_num: planCfg.dat_num ?? 1,
                                                         dat_all: planCfg.dat_all ?? 0,
                                                     })
-                                                    // 套餐模式下自动配置网卡
-                                                    if (!canFreeConfig) {
-                                                        autoConfigNicsByPlan(planCfg)
-                                                    }
+                                                    // 套餐包含网卡规格，选择后统一按套餐自动配置
+                                                    autoConfigNicsByPlan(planCfg)
                                                 }}
                                                 style={{
                                                     border: `1px solid ${selectedPlanName === planName ? 'var(--main-color)' : 'var(--art-card-border)'}`,
@@ -1016,8 +1026,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         </div>
                     )}
 
-                    {/* 资源配置（自由配置模式或编辑模式时显示） */}
-                    {(canFreeConfig || isEditMode) && (
+                    {/* 资源配置：编辑模式始终显示；创建时仅在未选择套餐时显示 */}
+                    {(isEditMode || (canFreeConfig && !selectedPlanName)) && (
                     <>
                     <div className="modal-section">
                         <div style={sectionTitleStyle}>
@@ -1121,7 +1131,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         <Row gutter={24}>
                             <Col span={12}>
                                 <Form.Item label="PCI直通" name="gpu_id">
-                                    <Select allowClear placeholder="选择PCI设备" onChange={(val) => {
+                                    <Select allowClear placeholder="选择PCI 设备" onChange={(val) => {
                                         if (val && pciDeviceList[val]) {
                                             const dev = pciDeviceList[val]
                                             form.setFieldsValue({
@@ -1168,8 +1178,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         </div>
                         <Row gutter={24}>
                             <Col span={8}>
-                                <Form.Item label="USB设备" name="usb_device_key">
-                                    <Select allowClear placeholder="选择USB设备" onChange={(val) => {
+                                <Form.Item label="USB 设备" name="usb_device_key">
+                                    <Select allowClear placeholder="选择USB 设备" onChange={(val) => {
                                         if (val && usbDeviceList[val]) {
                                             const dev = usbDeviceList[val]
                                             form.setFieldsValue({

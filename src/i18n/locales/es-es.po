@@ -2988,3 +2988,12 @@ msgstr "Sí"
 msgid "空"
 msgstr "nulo"
 
+
+msgid "防火墙"
+msgstr "Cortafuegos"
+
+msgid "防火墙规则"
+msgstr "Regla de cortafuegos"
+
+msgid "快照管理"
+msgstr "Gestión de instantáneas"

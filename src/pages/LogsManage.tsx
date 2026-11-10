@@ -9,7 +9,8 @@ import {
   AlertOutlined,
   InfoCircleOutlined,
   BugOutlined,
-  EyeOutlined
+  EyeOutlined,
+  CloseOutlined
 } from '@ant-design/icons'
 import api from '@/utils/apis.ts'
 import PageHeader from '@/components/PageHeader'
@@ -493,12 +494,19 @@ function LogsManage() {
           </div>
         </section>
 
-        <section className="art-panel">
+        <section className={`art-panel art-detail-panel${selectedLog ? ' is-mobile-open' : ''}`}>
           <header className="art-panel-head">
             <span className="art-panel-title">
               <EyeOutlined />
               日志详情
             </span>
+            <Button
+              className="art-detail-close"
+              type="text"
+              icon={<CloseOutlined />}
+              aria-label="关闭日志详情"
+              onClick={() => setSelectedLog(null)}
+            />
           </header>
           <div className="art-panel-body">
             {selectedLog ? (

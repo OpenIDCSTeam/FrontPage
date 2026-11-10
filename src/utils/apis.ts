@@ -8,6 +8,9 @@ import type {
   CreateVMRequest,
   VMPowerAction,
   NATRule,
+  FirewallRule,
+  FirewallPayload,
+  SnapshotInfo,
   ProxyConfig,
   SystemStats,
   PaginationParams,
@@ -207,14 +210,14 @@ export const getGPUList = (hsName: string): Promise<ApiResponse<Record<string, a
 };
 
 /**
- * 获取主机可直通PCI设备列表
+ * 获取主机可直通PCI 设备列表
  */
 export const getPCIList = (hsName: string): Promise<ApiResponse<Record<string, { gpu_uuid: string; gpu_mdev: string; gpu_hint: string }>>> => {
   return http.get(`/api/client/pci-list/${hsName}`, { timeout: 300000 });
 };
 
 /**
- * PCI设备直通操作（需要关机）
+ * PCI 设备直通操作（需要关机）
  */
 export const setupPCI = (hsName: string, vmUuid: string, data: {
   pci_key: string; gpu_uuid: string; gpu_mdev: string; gpu_hint: string; action: 'add' | 'remove';
@@ -223,14 +226,14 @@ export const setupPCI = (hsName: string, vmUuid: string, data: {
 };
 
 /**
- * 获取主机可用USB设备列表
+ * 获取主机可用USB 设备列表
  */
 export const getUSBList = (hsName: string): Promise<ApiResponse<Record<string, { vid_uuid: string; pid_uuid: string; usb_hint: string }>>> => {
   return http.get(`/api/client/usb-list/${hsName}`);
 };
 
 /**
- * USB设备直通操作（无需关机）
+ * USB 设备直通操作（无需关机）
  */
 export const setupUSB = (hsName: string, vmUuid: string, data: {
   usb_key: string; vid_uuid: string; pid_uuid: string; usb_hint: string; action: 'add' | 'remove';
@@ -456,14 +459,14 @@ export const deleteISO = (hsName: string, vmUuid: string, isoName: string): Prom
 // ============================================================================
 
 /**
- * 添加USB设备
+ * 添加USB 设备
  */
 export const addUSB = (hsName: string, vmUuid: string, data: { usb_vid: string; usb_pid: string; usb_remark?: string }): Promise<ApiResponse> => {
   return http.post(`/api/client/usb/mount/${hsName}/${vmUuid}`, data);
 };
 
 /**
- * 删除USB设备
+ * 删除USB 设备
  */
 export const deleteUSB = (hsName: string, vmUuid: string, usbKey: string): Promise<ApiResponse> => {
   return http.delete(`/api/client/usb/delete/${hsName}/${vmUuid}/${usbKey}`);
@@ -599,6 +602,88 @@ export const addNATRule = (hsName: string, vmUuid: string, data: Omit<NATRule, '
  */
 export const deleteNATRule = (hsName: string, vmUuid: string, ruleIndex: number): Promise<ApiResponse> => {
   return http.delete(`/api/client/natdel/${hsName}/${vmUuid}/${ruleIndex}`);
+};
+
+/**
+ * 获取虚拟机快照列表
+ * 仅支持快照能力的平台（PVE / ESXi / Hyper-V / QEMU / LXD / VirtualBox / Workstation）可用
+ */
+export const getVMSnapshots = (hsName: string, vmUuid: string): Promise<ApiResponse<SnapshotInfo[]>> => {
+  return http.get(`/api/client/snapshot/${hsName}/${vmUuid}`);
+};
+
+/**
+ * 创建虚拟机快照
+ */
+export const createVMSnapshot = (
+  hsName: string,
+  vmUuid: string,
+  data: { name?: string; description?: string },
+): Promise<ApiResponse> => {
+  return http.post(`/api/client/snapshot/${hsName}/${vmUuid}`, data);
+};
+
+/**
+ * 回滚到指定快照
+ */
+export const restoreVMSnapshot = (hsName: string, vmUuid: string, name: string): Promise<ApiResponse> => {
+  return http.post(`/api/client/snapshot/${hsName}/${vmUuid}/restore`, { name });
+};
+
+/**
+ * 删除指定快照
+ */
+export const deleteVMSnapshot = (hsName: string, vmUuid: string, name: string): Promise<ApiResponse> => {
+  return http.delete(`/api/client/snapshot/${hsName}/${vmUuid}`, { params: { name } });
+};
+
+/**
+ * 获取虚拟机防火墙状态与规则
+ * 仅支持防火墙能力的平台（Proxmox VE / Hyper-V）可用
+ */
+export const getFirewall = (hsName: string, vmUuid: string): Promise<ApiResponse<FirewallPayload>> => {
+  return http.get(`/api/client/firewall/${hsName}/${vmUuid}`);
+};
+
+/**
+ * 保存虚拟机防火墙开关与默认策略
+ */
+export const updateFirewallOptions = (
+  hsName: string,
+  vmUuid: string,
+  data: { enable: boolean; policy_in?: string; policy_out?: string },
+): Promise<ApiResponse> => {
+  return http.put(`/api/client/firewall/${hsName}/${vmUuid}/options`, data);
+};
+
+/**
+ * 新增防火墙规则
+ */
+export const createFirewallRule = (
+  hsName: string,
+  vmUuid: string,
+  data: Omit<FirewallRule, 'pos'>,
+): Promise<ApiResponse> => {
+  return http.post(`/api/client/firewall/${hsName}/${vmUuid}/rules`, data);
+};
+
+/**
+ * 按位置更新防火墙规则
+ */
+export const updateFirewallRule = (
+  hsName: string,
+  vmUuid: string,
+  pos: number,
+  data: Omit<FirewallRule, 'pos'>,
+): Promise<ApiResponse> => {
+  return http.put(`/api/client/firewall/${hsName}/${vmUuid}/rules/${pos}`, data);
+};
+
+/**
+ * 按位置删除防火墙规则
+ */
+export const deleteFirewallRule = (hsName: string, vmUuid: string, pos: number): Promise<ApiResponse> => {
+  return http.delete(`/api/client/firewall/${hsName}/${vmUuid}/rules/${pos}`);
 };
 
 /**
@@ -906,6 +991,19 @@ export default {
   getEFIList,
   setupEFI,
   
+  // 虚拟机快照
+  getVMSnapshots,
+  createVMSnapshot,
+  restoreVMSnapshot,
+  deleteVMSnapshot,
+
+  // 虚拟机防火墙
+  getFirewall,
+  updateFirewallOptions,
+  createFirewallRule,
+  updateFirewallRule,
+  deleteFirewallRule,
+
   // 网络管理
   getNATRules,
   addNATRule,

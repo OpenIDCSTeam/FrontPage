@@ -2988,3 +2988,12 @@ msgstr "예"
 msgid "空"
 msgstr "null"
 
+
+msgid "防火墙"
+msgstr "방화벽"
+
+msgid "防火墙规则"
+msgstr "방화벽 규칙"
+
+msgid "快照管理"
+msgstr "스냅샷 관리"

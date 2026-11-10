@@ -63,8 +63,20 @@ function DockManage() {
     const [hostFilter, setHostFilter] = useState('')
     const [ownerFilter, setOwnerFilter] = useState('')
     const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
-        return (localStorage.getItem('dockManage_viewMode') as 'card' | 'table') || 'card'
+      if (window.innerWidth < 768) return 'card'
+      return (localStorage.getItem('dockManage_viewMode') as 'card' | 'table') || 'card'
     })
+
+    // 手机端强制默认卡片；仍可在工具栏手动切回列表
+    useEffect(() => {
+      const media = window.matchMedia('(max-width: 767px)')
+      const apply = () => {
+        if (media.matches) setViewMode('card')
+      }
+      apply()
+      media.addEventListener('change', apply)
+      return () => media.removeEventListener('change', apply)
+    }, [])
     
     // Modals state
     const [createModalOpen, setCreateModalOpen] = useState(false)

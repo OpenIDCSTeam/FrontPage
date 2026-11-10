@@ -6,7 +6,8 @@
 /* ===== 布局容器 ===== */
 .mmui-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: var(--mmui-page-gradient);
   font-family: var(--mmui-font-family);
   color: var(--mmui-text);
@@ -20,16 +21,21 @@
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   margin-left: 0;
   transition: none;
 }
 
 .mmui-layout__content {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: var(--mmui-space-3);
   overflow-x: hidden;
   overflow-y: auto;
-  height: calc(100vh - var(--mmui-header-height));
+  height: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 /* ===== 侧边栏 ===== */
@@ -47,7 +53,7 @@
   z-index: 100;
   overflow-y: auto;
   overflow-x: hidden;
-  height: 100vh;
+  height: 100%;
   transition: width var(--mmui-motion-mid) ease, min-width var(--mmui-motion-mid) ease;
 }
 
@@ -557,12 +563,13 @@
 /* ===== 响应式布局 ===== */
 @media (max-width: 1023px) {
   .mmui-layout {
-    min-height: 100dvh;
-    overflow: clip;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .mmui-layout__content {
-    height: calc(100dvh - var(--mmui-header-height));
+    height: auto;
     padding: 16px;
   }
 
@@ -916,6 +923,37 @@
   color: var(--mmui-text-muted);
 }
 
+.vm-detail-hero-hardware--compact {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .vm-detail-hero-meta {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 3px 0 !important;
+  }
+
+  .vm-detail-hero-sep {
+    display: none !important;
+  }
+
+  .vm-detail-hero-meta > span {
+    display: block;
+  }
+
+  .vm-detail-hero-hardware--wide {
+    display: none !important;
+  }
+
+  .vm-detail-hero-hardware--compact {
+    display: block !important;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+}
+
 .vm-detail-access-grid {
   align-items: stretch;
 }
@@ -1033,7 +1071,8 @@
   }
 
   .vm-detail-info-row > span:nth-child(2) {
-    width: 58px !important;
+    width: 68px !important;
+    white-space: nowrap;
   }
 
   .vm-detail-info-value {

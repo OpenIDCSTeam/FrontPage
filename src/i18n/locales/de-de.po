@@ -2988,3 +2988,12 @@ msgstr "Ja"
 msgid "空"
 msgstr "null"
 
+
+msgid "防火墙"
+msgstr "Firewall"
+
+msgid "防火墙规则"
+msgstr "Firewall-Regel"
+
+msgid "快照管理"
+msgstr "Snapshot-Verwaltung"

@@ -2988,3 +2988,12 @@ msgstr "是"
 msgid "空"
 msgstr "空"
 
+
+msgid "防火墙"
+msgstr "防火牆"
+
+msgid "防火墙规则"
+msgstr "防火牆規則"
+
+msgid "快照管理"
+msgstr "快照管理"

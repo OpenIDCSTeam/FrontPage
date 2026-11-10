@@ -2988,3 +2988,12 @@ msgstr "SÌ"
 msgid "空"
 msgstr "nullo"
 
+
+msgid "防火墙"
+msgstr "Firewall"
+
+msgid "防火墙规则"
+msgstr "Regola del firewall"
+
+msgid "快照管理"
+msgstr "Gestione snapshot"

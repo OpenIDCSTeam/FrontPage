@@ -2988,3 +2988,12 @@ msgstr "Oui"
 msgid "空"
 msgstr "nul"
 
+
+msgid "防火墙"
+msgstr "Pare-feu"
+
+msgid "防火墙规则"
+msgstr "Règle de pare-feu"
+
+msgid "快照管理"
+msgstr "Gestion des instantanés"
