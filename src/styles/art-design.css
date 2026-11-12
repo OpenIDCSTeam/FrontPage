@@ -4776,7 +4776,7 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
 
 .host-resource-metrics {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 10px;
     min-width: 0;
 }
@@ -4821,6 +4821,15 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
     overflow: hidden;
     color: var(--art-gray-500);
     font-size: 10.5px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.host-resource-metric-extra {
+    overflow: hidden;
+    color: var(--art-gray-400, var(--art-gray-500));
+    font-size: 10px;
     line-height: 1.35;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -4899,7 +4908,7 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
     border-left: 1px solid var(--art-card-border);
 }
 
-@container host-resource-card (max-width: 850px) {
+@container host-resource-card (max-width: 1180px) {
     .host-resource-metrics {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
