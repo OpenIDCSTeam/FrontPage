@@ -1539,13 +1539,13 @@ function HostManage() {
                                 children: (
                                     <div className="host-config-tab-panel max-h-[min(65dvh,600px)] overflow-y-auto pr-2">
                                         <Row gutter={16}>
-                                            <Col span={12}>
+                                            <Col span={6}>
                                                 <Form.Item name="name" label="服务器名称"
                                                            rules={[{required: true, message: '请输入服务器名称'}]}>
                                                     <Input placeholder="例如: host1" disabled={editMode === 'edit'}/>
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={12}>
+                                            <Col span={6}>
                                                 <Form.Item name="type" label="服务器类型"
                                                            rules={[{required: true, message: '请选择服务器类型'}]}>
                                                     <Select
@@ -1560,6 +1560,16 @@ function HostManage() {
                                                             ) : null
                                                         )}
                                                     </Select>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="server_addr" label="服务器地址">
+                                                    <Input placeholder="例如: localhost:8697"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="server_user" label="服务器用户">
+                                                    <Input placeholder="例如: root"/>
                                                 </Form.Item>
                                             </Col>
                                         </Row>
@@ -1594,41 +1604,33 @@ function HostManage() {
                                         )}
 
                                         <Row gutter={16}>
-                                            <Col span={12}>
-                                                <Form.Item name="server_addr" label="服务器地址">
-                                                    <Input placeholder="例如: localhost:8697"/>
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={12}>
-                                                <Form.Item name="server_user" label="服务器用户">
-                                                    <Input placeholder="例如: root"/>
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
-
-                                        <Row gutter={16}>
-                                            <Col span={12}>
+                                            <Col span={6}>
                                                 <Form.Item name="server_pass" label="服务器密码">
                                                     <Input.Password placeholder="服务器密码"/>
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={12}>
+                                            <Col span={6}>
                                                 <Form.Item name="filter_name" label="虚拟机前缀">
                                                     <Input placeholder="过滤器名称"/>
                                                 </Form.Item>
                                             </Col>
-                                        </Row>
-
-                                        <Row gutter={16}>
-                                            <Col span={12}>
+                                            <Col span={6}>
                                                 <Form.Item name="server_port" label="服务访问端口">
                                                     <InputNumber placeholder="例如: 443" min={0} max={65535}
                                                                  className="w-full"/>
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={12}>
+                                            <Col span={6}>
                                                 <Form.Item name="public_addr" label="服务器公网IP">
                                                     <Input placeholder="例如: 192.168.1.1, 2001:db8::1"/>
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+
+                                        <Row gutter={16}>
+                                            <Col span={6}>
+                                                <Form.Item name="limits_nums" label="虚拟机数量限制">
+                                                    <InputNumber placeholder="例如: 100" min={0} className="w-full"/>
                                                 </Form.Item>
                                             </Col>
                                         </Row>
@@ -1775,27 +1777,22 @@ function HostManage() {
 
                                         <h4 className="font-medium mb-3 mt-4">端口配置</h4>
                                         <Row gutter={16}>
-                                            <Col span={6}>
+                                            <Col span={8}>
                                                 <Form.Item name="ports_start" label="TCP端口起始">
                                                     <InputNumber placeholder="例如: 10000" min={0} max={65535}
                                                                  className="w-full"/>
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={6}>
+                                            <Col span={8}>
                                                 <Form.Item name="ports_close" label="TCP端口结束">
                                                     <InputNumber placeholder="例如: 20000" min={0} max={65535}
                                                                  className="w-full"/>
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={6}>
+                                            <Col span={8}>
                                                 <Form.Item name="remote_port" label="VNC服务端口">
                                                     <InputNumber placeholder="例如: 5900" min={0} max={65535}
                                                                  className="w-full"/>
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={6}>
-                                                <Form.Item name="limits_nums" label="虚拟机数量限制">
-                                                    <InputNumber placeholder="例如: 100" min={0} className="w-full"/>
                                                 </Form.Item>
                                             </Col>
                                         </Row>
