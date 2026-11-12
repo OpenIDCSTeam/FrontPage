@@ -1240,18 +1240,11 @@ function HostManage() {
         let diskPercent = 0
         let diskUsageGB = 0
         let diskTotalGB = 0
+        // 只展示系统存储路径所在磁盘；未配置系统存储路径时后端不返回磁盘数据
         if (status?.hdd_total && status.hdd_total > 0) {
             diskTotalGB = status.hdd_total / 1024
             diskUsageGB = (status.hdd_usage || 0) / 1024
             diskPercent = clampPercent((status.hdd_usage || 0) / status.hdd_total * 100)
-        } else if (status?.ext_usage) {
-            const firstDisk = Object.values(status.ext_usage)[0]
-            if (firstDisk) {
-                const [total, used] = firstDisk
-                diskTotalGB = total / 1024
-                diskUsageGB = used / 1024
-                diskPercent = total > 0 ? clampPercent(used / total * 100) : 0
-            }
         }
 
         const networkA = status?.network_a || 1000
@@ -1371,7 +1364,12 @@ function HostManage() {
                             <div className="host-resource-metrics">
                                 {metric('CPU', `${status.cpu_total || 0} 核`, `${cpuPercent.toFixed(1)}% 使用`, cpuPercent, status.cpu_model || 'CPU 型号未上报')}
                                 {metric('内存', `${memUsageGB} / ${memTotalGB} GB`, `${memPercent.toFixed(1)}% 已用`, memPercent)}
-                                {metric('磁盘', `${diskUsageGB.toFixed(1)} / ${diskTotalGB.toFixed(1)} GB`, `${diskPercent.toFixed(1)}% 已用`, diskPercent)}
+                                {metric(
+                                    '磁盘',
+                                    diskTotalGB > 0 ? `${diskUsageGB.toFixed(1)} / ${diskTotalGB.toFixed(1)} GB` : '未配置',
+                                    diskTotalGB > 0 ? `${diskPercent.toFixed(1)}% 已用` : '未填写系统存储路径',
+                                    diskPercent,
+                                )}
                                 {metric(
                                     '网络吞吐',
                                     <span className="host-resource-network-value">
