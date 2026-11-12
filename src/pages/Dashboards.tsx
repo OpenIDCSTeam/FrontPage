@@ -89,6 +89,8 @@ interface UserQuota {
   quota_nat_ips: number
   used_pub_ips: number
   quota_pub_ips: number
+  /** 全局配额开关（后端下发；缺省视为开启） */
+  quota_enabled?: boolean
 }
 
 /**
@@ -172,6 +174,8 @@ function Dashboards() {
 
   // 是否可以自由配置（管理员或有自由配置权限）
   const canFreeConfig = isAdmin || !!(userQuota as any)?.can_free_config
+  // 全局配额开关：关闭时不校验配额，也不展示任何配额信息
+  const quotaEnabled = (userQuota as any)?.quota_enabled !== false
 
   // 电源操作模态框状态
   const [powerModalVisible, setPowerModalVisible] = useState(false)
@@ -807,7 +811,7 @@ function Dashboards() {
       return (
         <div className="art-loading">
           <Spin size="large" />
-          <span>正在加载资源配额…</span>
+          <span>{quotaEnabled ? '正在加载资源配额…' : '正在加载账号信息…'}</span>
         </div>
       )
     }
@@ -833,8 +837,8 @@ function Dashboards() {
       <>
         <div className="dashboard-section-heading">
           <div>
-            <span className="dashboard-section-eyebrow">YOUR RESOURCES</span>
-            <h2>资源与配额</h2>
+            <span className="dashboard-section-eyebrow">{quotaEnabled ? 'YOUR RESOURCES' : 'YOUR INSTANCES'}</span>
+            <h2>{quotaEnabled ? '资源与配额' : '实例概览'}</h2>
           </div>
           <span className="dashboard-section-note">{lastUpdate ? `更新于 ${lastUpdate}` : '按当前账号实时汇总'}</span>
         </div>
@@ -853,6 +857,9 @@ function Dashboards() {
           </div>
           <Button type="link" onClick={() => navigate('/user/vms')}>管理全部实例</Button>
         </section>
+        {/* 全局配额关闭时隐藏所有配额指标 */}
+        {quotaEnabled && (
+        <>
         <div className="art-stat-grid">
           <StatCard
             icon={<ThunderboltOutlined />}
@@ -919,12 +926,14 @@ function Dashboards() {
             </div>
           </div>
         </div>
+        </>
+        )}
 
         <div className="dashboard-service-grid">
           <section className="art-panel dashboard-data-panel">
             <div className="art-panel-head">
               <span className="art-panel-title"><SwapOutlined />端口映射</span>
-              <span className="art-muted">已用 {userQuota.used_nat_ports} / {userQuota.quota_nat_ports}</span>
+              <span className="art-muted">已用 {userQuota.used_nat_ports}{quotaEnabled ? ` / ${userQuota.quota_nat_ports}` : ''}</span>
               <Button type="link" onClick={() => navigate('/user/nat')}>管理规则</Button>
             </div>
             <div className="art-panel-body is-flush">
@@ -952,7 +961,7 @@ function Dashboards() {
           <section className="art-panel dashboard-data-panel">
             <div className="art-panel-head">
               <span className="art-panel-title"><GlobalOutlined />反向代理</span>
-              <span className="art-muted">已用 {userQuota.used_web_proxy} / {userQuota.quota_web_proxy}</span>
+              <span className="art-muted">已用 {userQuota.used_web_proxy}{quotaEnabled ? ` / ${userQuota.quota_web_proxy}` : ''}</span>
               <Button type="link" onClick={() => navigate('/user/proxys')}>管理代理</Button>
             </div>
             <div className="art-panel-body is-flush">
@@ -1051,7 +1060,9 @@ function Dashboards() {
         subtitle={
           isAdmin
             ? '集群主机、实例与用户资源的整体运行状况'
-            : '查看您的实例、配额与网络资源使用情况'
+            : quotaEnabled
+              ? '查看您的实例、配额与网络资源使用情况'
+              : '查看您的实例与网络资源使用情况'
         }
         actions={
           isAdmin ? (
@@ -1168,7 +1179,7 @@ function Dashboards() {
                     if (planCfg.cpu_num > remainCpu) exceedReasons.push(`CPU超出${planCfg.cpu_num - remainCpu}核`)
                     if (planCfg.mem_num > remainRam) exceedReasons.push(`内存超出${planCfg.mem_num - remainRam}MB`)
                     if (planCfg.hdd_num > remainSsd) exceedReasons.push(`硬盘超出${planCfg.hdd_num - remainSsd}MB`)
-                    const isExceeded = exceedReasons.length > 0
+                    const isExceeded = quotaEnabled && exceedReasons.length > 0
 
                     return (
                     <Col span={8} key={planName}>
@@ -1228,23 +1239,23 @@ function Dashboards() {
           {canFreeConfig && (
           <>
           <Form.Item
-            label={`CPU核心 (可用: ${userQuota ? userQuota.quota_cpu - userQuota.used_cpu : 0}个)`} 
+            label={quotaEnabled && userQuota ? `CPU核心 (可用: ${userQuota.quota_cpu - userQuota.used_cpu}个)` : 'CPU核心'}
             name="cpu_num" 
             initialValue={1}
           >
-            <Slider min={1} max={userQuota ? Math.max(1, userQuota.quota_cpu - userQuota.used_cpu) : 1} marks={{ 1: '1', 4: '4', 8: '8', 16: '16' }} />
+            <Slider min={1} max={quotaEnabled && userQuota ? Math.max(1, userQuota.quota_cpu - userQuota.used_cpu) : 64} marks={{ 1: '1', 4: '4', 8: '8', 16: '16' }} />
           </Form.Item>
 
           <Form.Item 
-            label={`内存 (可用: ${userQuota ? formatStorage(userQuota.quota_ram - userQuota.used_ram) : '0MB'})`} 
+            label={quotaEnabled && userQuota ? `内存 (可用: ${formatStorage(userQuota.quota_ram - userQuota.used_ram)})` : '内存'}
             name="mem_num" 
             initialValue={1}
           >
-            <Slider min={1} max={userQuota ? Math.max(1, Math.floor((userQuota.quota_ram - userQuota.used_ram) / 1024)) : 1} marks={{ 1: '1G', 4: '4G', 8: '8G', 16: '16G' }} />
+            <Slider min={1} max={quotaEnabled && userQuota ? Math.max(1, Math.floor((userQuota.quota_ram - userQuota.used_ram) / 1024)) : 256} marks={{ 1: '1G', 4: '4G', 8: '8G', 16: '16G' }} />
           </Form.Item>
 
           <Form.Item 
-            label={`硬盘 (可用: ${userQuota ? formatStorage(userQuota.quota_ssd - userQuota.used_ssd) : '0MB'})`} 
+            label={quotaEnabled && userQuota ? `硬盘 (可用: ${formatStorage(userQuota.quota_ssd - userQuota.used_ssd)})` : '硬盘'}
             name="hdd_num"
             initialValue={20}
             rules={[
@@ -1260,7 +1271,7 @@ function Dashboards() {
             ]}
             extra={minDiskSize > 10 ? `当前系统最小要求: ${minDiskSize}GB` : ''}
           >
-            <Slider min={10} max={userQuota ? Math.max(10, Math.floor((userQuota.quota_ssd - userQuota.used_ssd) / 1024)) : 10} marks={{ 10: '10G', 100: '100G', 500: '500G' }} />
+            <Slider min={10} max={quotaEnabled && userQuota ? Math.max(10, Math.floor((userQuota.quota_ssd - userQuota.used_ssd) / 1024)) : 2000} marks={{ 10: '10G', 100: '100G', 500: '500G' }} />
           </Form.Item>
 
           <Form.Item label="GPU显存 (MB)" name="gpu_mem" initialValue={0}>

@@ -107,6 +107,9 @@ function UserConfig() {
     return <div className="text-center py-8">加载中...</div>
   }
 
+  // 全局配额关闭时隐藏整个资源配额卡片
+  const quotaEnabled = userProfile.quota_enabled !== false
+
   return (
     <div className="art-stack">
       {/* 页面标题 */}
@@ -319,7 +322,8 @@ function UserConfig() {
             </div>
           </Card>
 
-          {/* 资源配额 */}
+          {/* 资源配额（全局配额关闭时隐藏） */}
+          {quotaEnabled && (
           <Card 
             title={
               <span className="flex items-center gap-2">
@@ -477,6 +481,7 @@ function UserConfig() {
               </div>
             </div>
           </Card>
+          )}
         </Col>
       </Row>
     </div>

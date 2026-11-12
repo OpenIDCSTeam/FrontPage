@@ -26,6 +26,8 @@ function UserManage() {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [searchText, setSearchText] = useState('')
   const [viewMode, setViewMode] = useState<'table' | 'card'>(() => window.innerWidth < 768 ? 'card' : 'table')
+  // 全局配额开关：关闭时隐藏列表、详情与表单中的配额内容
+  const [quotaEnabled, setQuotaEnabled] = useState(true)
   const [form] = Form.useForm()
 
   useEffect(() => {
@@ -75,9 +77,25 @@ function UserManage() {
     }
   }
 
+  /**
+   * 读取全局配额开关（读取失败时按开启处理）
+   */
+  const loadQuotaSwitch = async () => {
+    try {
+      const res = await api.getSystemSettings()
+      if (res.code === 200) {
+        const value = res.data?.quota_enabled
+        setQuotaEnabled(!(value === '0' || value === 0 || value === false))
+      }
+    } catch (error) {
+      console.error('加载系统设置失败:', error)
+    }
+  }
+
   useEffect(() => {
     loadUsers()
     loadHosts()
+    loadQuotaSwitch()
   }, [])
 
   /**
@@ -244,8 +262,12 @@ function UserManage() {
     },
   ]
 
+  // 配额关闭时不展示配额列与配额展开行
+  const visibleColumns = quotaEnabled ? columns : columns.filter(col => col.key !== 'quota')
+
   /** 展开行：完整配额，一格一字段 */
   const expandedRowRender = (record: User) => {
+    if (!quotaEnabled) return null
     const gb = (mb?: number) => `${Math.round((mb || 0) / 1024)} GB`
     const items: { label: string; value: string }[] = [
       { label: 'CPU 核心', value: `${record.used_cpu || 0} / ${record.quota_cpu}` },
@@ -316,15 +338,17 @@ function UserManage() {
               <span className="art-cell-sub">ID {record.id}</span>
             </div>
 
+            {quotaEnabled && (
             <div className="user-card-quota">
               <div><span>CPU</span><b>{record.used_cpu || 0} / {record.quota_cpu}</b></div>
               <div><span>内存</span><b>{gb(record.used_ram)} / {gb(record.quota_ram)}G</b></div>
               <div><span>磁盘</span><b>{gb(record.used_ssd)} / {gb(record.quota_ssd)}G</b></div>
               <div><span>NAT</span><b>{record.used_nat_ports || 0} / {record.quota_nat_ports}</b></div>
             </div>
+            )}
 
             <footer className="nat-card-foot user-card-foot">
-              <span className="art-cell-sub">配额与权限</span>
+              <span className="art-cell-sub">{quotaEnabled ? '配额与权限' : '权限'}</span>
               <Space size={2}>
                 <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record.id)}>
                   编辑
@@ -427,11 +451,11 @@ function UserManage() {
         <div className="art-table-panel">
           <div className="art-panel-body is-flush">
             <Table
-              columns={columns}
+              columns={visibleColumns}
               dataSource={filteredUsers}
               rowKey="id"
               loading={loading}
-              expandable={{ expandedRowRender }}
+              expandable={quotaEnabled ? { expandedRowRender } : undefined}
               size="small"
               scroll={{ x: 'max-content' }}
               pagination={{
@@ -576,7 +600,9 @@ function UserManage() {
             }}
           </Form.Item>
 
-          {/* 资源配额 */}
+          {/* 资源配额：全局配额关闭时整组隐藏 */}
+          {quotaEnabled && (
+          <>
           <Divider orientation="left">资源配额</Divider>
           <Row gutter={16}>
             <Col span={12}>
@@ -635,6 +661,8 @@ function UserManage() {
               </Form.Item>
             </Col>
           </Row>
+          </>
+          )}
 
           {/* 分配主机 */}
           <Divider orientation="left">分配主机</Divider>

@@ -52,6 +52,8 @@ interface UserQuota {
     quota_web: number
     used_web: number
     can_free_config?: number
+    /** 全局配额开关（后端下发；缺省视为开启） */
+    quota_enabled?: boolean
 }
 
 // 操作系统镜像配置
@@ -182,6 +184,9 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
     // 是否可以自由配置（管理员或有自由配置权限）
     const canFreeConfig = isAdmin || !!(userQuota as any)?.can_free_config
 
+    // 全局配额开关：关闭时不校验配额，也不显示配额上限/可用量
+    const quotaEnabled = (userQuota as any)?.quota_enabled !== false
+
     // 创建时选中了套餐：资源以套餐为准，硬件分区仍展示但默认折叠为只读
     const isPlanMode = !isEditMode && !!selectedPlanName && !!serverPlans[selectedPlanName]
 
@@ -228,7 +233,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
         
         return (
             <Form.Item label={label} style={{ marginBottom: 24 }}>
-                {showQuota && !isAdmin && (
+                {showQuota && quotaEnabled && !isAdmin && (
                     <div className="flex justify-between text-xs mb-2">
                         <span>当前: <strong>{currentValue}</strong> {unit}</span>
                         <span>可用: {Math.max(0, quotaTotal - quotaUsed)} {unit}</span>
@@ -518,7 +523,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
             return
         }
 
-        if (userQuota) {
+        if (userQuota && quotaEnabled) {
             const currentNatIps = nicList.filter(n => n.type === 'nat').length
             const currentPubIps = nicList.filter(n => n.type === 'pub').length
             const availableNatIps = userQuota.quota_nat_ips - userQuota.used_nat_ips
@@ -783,7 +788,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
             dat_all: 0,
         })
 
-        if (userQuota) {
+        if (userQuota && quotaEnabled) {
             const availableNatIps = userQuota.quota_nat_ips - userQuota.used_nat_ips
             const availablePubIps = userQuota.quota_pub_ips - userQuota.used_pub_ips
             let defaultType = 'nat'
@@ -989,12 +994,12 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                         const remainRam = (userQuota?.quota_ram || 0) - (userQuota?.used_ram || 0)
                                         const remainSsd = (userQuota?.quota_ssd || 0) - (userQuota?.used_ssd || 0)
                                         const exceedReasons: string[] = []
-                                        if (!isAdmin) {
+                                        if (quotaEnabled && !isAdmin) {
                                             if (planCfg.cpu_num > remainCpu) exceedReasons.push(`CPU超出${planCfg.cpu_num - remainCpu}核`)
                                             if (planCfg.mem_num > remainRam) exceedReasons.push(`内存超出${planCfg.mem_num - remainRam}MB`)
                                             if (planCfg.hdd_num > remainSsd) exceedReasons.push(`硬盘超出${planCfg.hdd_num - remainSsd}MB`)
                                         }
-                                        const isExceeded = !isAdmin && exceedReasons.length > 0
+                                        const isExceeded = quotaEnabled && !isAdmin && exceedReasons.length > 0
 
                                         return (
                                         <Col span={8} key={planName}>
@@ -1082,7 +1087,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         <Row gutter={24}>
                             <Col span={12}>
                                 <ResourceInput
-                                    name="cpu_num" label="CPU核心" min={1} max={isAdmin ? 128 : (userQuota?.quota_cpu || 4)} step={1} unit="核"
+                                    name="cpu_num" label="CPU核心" min={1} max={(isAdmin || !quotaEnabled) ? 128 : (userQuota?.quota_cpu || 4)} step={1} unit="核"
                                     disabled={isFieldDisabled('cpu_num')} quotaUsed={userQuota?.used_cpu || 0} quotaTotal={userQuota?.quota_cpu || 0} showQuota
                                 />
                             </Col>
@@ -1094,13 +1099,13 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                             </Col>
                             <Col span={12}>
                                 <ResourceInput
-                                    name="mem_num" label="内存" min={512} max={isAdmin ? 131072 : (userQuota?.quota_ram || 4096)} step={512} unit="MB"
+                                    name="mem_num" label="内存" min={512} max={(isAdmin || !quotaEnabled) ? 131072 : (userQuota?.quota_ram || 4096)} step={512} unit="MB"
                                     disabled={isFieldDisabled('mem_num')} quotaUsed={userQuota?.used_ram || 0} quotaTotal={userQuota?.quota_ram || 0} showQuota
                                 />
                             </Col>
                             <Col span={12}>
                                 <ResourceInput
-                                    name="hdd_num" label="硬盘" min={selectedOsMinDisk * 1024 || 10240} max={isAdmin ? 10485760 : (userQuota?.quota_ssd || 51200)} step={1024} unit="MB"
+                                    name="hdd_num" label="硬盘" min={selectedOsMinDisk * 1024 || 10240} max={(isAdmin || !quotaEnabled) ? 10485760 : (userQuota?.quota_ssd || 51200)} step={1024} unit="MB"
                                     disabled={isFieldDisabled('hdd_num')} quotaUsed={userQuota?.used_ssd || 0} quotaTotal={userQuota?.quota_ssd || 0} showQuota
                                 />
                             </Col>
@@ -1273,13 +1278,13 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         <Row gutter={24}>
                             <Col span={12}>
                                 <ResourceInput
-                                    name="speed_u" label="上传带宽" min={1} max={isAdmin ? 10000 : (userQuota?.quota_upload_bw || 100)} step={1} unit="Mbps"
+                                    name="speed_u" label="上传带宽" min={1} max={(isAdmin || !quotaEnabled) ? 10000 : (userQuota?.quota_upload_bw || 100)} step={1} unit="Mbps"
                                     disabled={false} quotaUsed={userQuota?.used_upload_bw || 0} quotaTotal={userQuota?.quota_upload_bw || 0} showQuota
                                 />
                             </Col>
                             <Col span={12}>
                                 <ResourceInput
-                                    name="speed_d" label="下载带宽" min={1} max={isAdmin ? 10000 : (userQuota?.quota_download_bw || 100)} step={1} unit="Mbps"
+                                    name="speed_d" label="下载带宽" min={1} max={(isAdmin || !quotaEnabled) ? 10000 : (userQuota?.quota_download_bw || 100)} step={1} unit="Mbps"
                                     disabled={false} quotaUsed={userQuota?.used_download_bw || 0} quotaTotal={userQuota?.quota_download_bw || 0} showQuota
                                 />
                             </Col>
@@ -1308,13 +1313,13 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         <Row gutter={24}>
                             <Col span={12}>
                                 <ResourceInput
-                                    name="nat_num" label="NAT端口数" min={0} max={isAdmin ? 1000 : (userQuota?.quota_nat || 100)} step={1} unit="个"
+                                    name="nat_num" label="NAT端口数" min={0} max={(isAdmin || !quotaEnabled) ? 1000 : (userQuota?.quota_nat || 100)} step={1} unit="个"
                                     disabled={isFieldDisabled('nat_num')} quotaUsed={userQuota?.used_nat || 0} quotaTotal={userQuota?.quota_nat || 0} showQuota
                                 />
                             </Col>
                             <Col span={12}>
                                 <ResourceInput
-                                    name="web_num" label="Web代理数" min={0} max={isAdmin ? 1000 : (userQuota?.quota_web || 10)} step={1} unit="个"
+                                    name="web_num" label="Web代理数" min={0} max={(isAdmin || !quotaEnabled) ? 1000 : (userQuota?.quota_web || 10)} step={1} unit="个"
                                     disabled={isFieldDisabled('web_num')} quotaUsed={userQuota?.used_web || 0} quotaTotal={userQuota?.quota_web || 0} showQuota
                                 />
                             </Col>

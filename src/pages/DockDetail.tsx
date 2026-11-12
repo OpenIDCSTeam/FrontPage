@@ -4553,7 +4553,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
 
             <Modal title="添加IP地址" open={ipModalVisible} onCancel={() => setIpModalVisible(false)}
                    onOk={() => ipForm.submit()}>
-                {ipQuota && (<div className="mb-4 p-3  rounded text-sm">
+                {ipQuota && ipQuota.user_data?.quota_enabled !== false && (<div className="mb-4 p-3  rounded text-sm">
                     <div className="flex justify-between mb-1"><span>内网IP配额:</span><span
                         className="font-mono">{ipQuota.ip_used}/{ipQuota.ip_num}</span></div>
                     <div className="flex justify-between"><span>公网IP配额:</span><span

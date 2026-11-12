@@ -29,6 +29,8 @@ export interface User {
   can_modify_vm: boolean;
   can_delete_vm: boolean;
   user_permission?: number;
+  /** 全局配额开关（后端下发；缺省视为开启） */
+  quota_enabled?: boolean;
   // 配额信息
   quota_cpu: number;
   quota_ram: number;

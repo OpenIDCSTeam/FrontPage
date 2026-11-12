@@ -26,6 +26,8 @@ function CoreConfig() {
   const [currentToken, setCurrentToken] = useState('')
   const [systemInfo, setSystemInfo] = useState<SystemStats>({ hosts_count: 0, vms_count: 0, running_vms: 0, stopped_vms: 0 })
   const [registrationForm] = Form.useForm()
+  // 全局配额开关：关闭时隐藏默认配额输入，也不再下发这些字段
+  const quotaEnabledValue = Form.useWatch('quota_enabled', registrationForm)
   const [emailForm] = Form.useForm()
   const [testEmailForm] = Form.useForm()
   const [turnstileForm] = Form.useForm()
@@ -85,6 +87,7 @@ function CoreConfig() {
           default_allowed_hosts: settings.default_allowed_hosts || '',
           default_user_permission: parseInt(settings.default_user_permission) || 56791,
           default_free_config: settings.default_free_config !== '0',
+          quota_enabled: !(settings.quota_enabled === '0' || settings.quota_enabled === 0 || settings.quota_enabled === false),
           default_quota_cpu: parseInt(settings.default_quota_cpu) || 2,
           default_quota_ram: parseInt(settings.default_quota_ram) || 4,
           default_quota_sys_disk: parseInt(settings.default_quota_sys_disk) || 20,
@@ -260,27 +263,33 @@ function CoreConfig() {
   const saveRegistrationSettings = async (values: any) => {
     try {
       setLoading(true)
-      const data = {
+      const data: Record<string, string> = {
         registration_enabled: values.registration_enabled ? '1' : '0',
         email_verification_enabled: values.email_verification_enabled ? '1' : '0',
         default_allowed_hosts: values.default_allowed_hosts || '',
         default_user_permission: (values.default_user_permission || 56791).toString(),
         default_free_config: values.default_free_config ? '1' : '0',
-        default_quota_cpu: values.default_quota_cpu.toString(),
-        default_quota_ram: values.default_quota_ram.toString(),
-        default_quota_sys_disk: values.default_quota_sys_disk.toString(),
-        default_quota_data_disk: values.default_quota_data_disk.toString(),
-        default_quota_gpu: values.default_quota_gpu.toString(),
-        default_quota_nat_ports: values.default_quota_nat_ports.toString(),
-        default_quota_internal_ip: values.default_quota_internal_ip.toString(),
-        default_quota_web_proxy: values.default_quota_web_proxy.toString(),
-        default_quota_public_ip: values.default_quota_public_ip.toString(),
-        default_quota_bandwidth_up: values.default_quota_bandwidth_up.toString(),
-        default_quota_bandwidth_down: values.default_quota_bandwidth_down.toString(),
-        default_quota_traffic: values.default_quota_traffic.toString(),
+        quota_enabled: values.quota_enabled ? '1' : '0',
         default_can_create_vm: values.default_can_create_vm ? '1' : '0',
         default_can_modify_vm: values.default_can_modify_vm ? '1' : '0',
         default_can_delete_vm: values.default_can_delete_vm ? '1' : '0',
+      }
+      // 配额关闭时不下发默认配额字段，保留已有值，重新开启后可继续沿用
+      if (values.quota_enabled) {
+        Object.assign(data, {
+          default_quota_cpu: String(values.default_quota_cpu ?? 0),
+          default_quota_ram: String(values.default_quota_ram ?? 0),
+          default_quota_sys_disk: String(values.default_quota_sys_disk ?? 0),
+          default_quota_data_disk: String(values.default_quota_data_disk ?? 0),
+          default_quota_gpu: String(values.default_quota_gpu ?? 0),
+          default_quota_nat_ports: String(values.default_quota_nat_ports ?? 0),
+          default_quota_internal_ip: String(values.default_quota_internal_ip ?? 0),
+          default_quota_web_proxy: String(values.default_quota_web_proxy ?? 0),
+          default_quota_public_ip: String(values.default_quota_public_ip ?? 0),
+          default_quota_bandwidth_up: String(values.default_quota_bandwidth_up ?? 0),
+          default_quota_bandwidth_down: String(values.default_quota_bandwidth_down ?? 0),
+          default_quota_traffic: String(values.default_quota_traffic ?? 0),
+        })
       }
       const res = await api.updateSystemSettings(data)
       if (res.code === 200) {
@@ -669,7 +678,18 @@ function CoreConfig() {
               </div>
 
               <div className="border-t pt-4">
-<h4 className="text-sm font-medium mb-3">新用户默认资源配额</h4>
+                <div className="settings-inline-setting flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-medium">启用配额管理</p>
+                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>关闭后不再校验资源配额，并隐藏用户端与管理端的配额展示和录入</p>
+                  </div>
+                  <Form.Item name="quota_enabled" valuePropName="checked" className="mb-0">
+                    <Switch />
+                  </Form.Item>
+                </div>
+                {quotaEnabledValue !== false && (
+                <>
+                <h4 className="text-sm font-medium mb-3">新用户默认资源配额</h4>
                 <div className="settings-form-grid">
                   <Form.Item name="default_quota_cpu" label="CPU核心(个)" className="mb-2">
                     <InputNumber min={0} max={32} className="w-full" />
@@ -708,6 +728,8 @@ function CoreConfig() {
                     <InputNumber min={0} max={10000} className="w-full" />
                   </Form.Item>
                 </div>
+                </>
+                )}
               </div>
               <Button type="primary" htmlType="submit" block loading={loading} icon={<SaveOutlined />}>
                 保存设置
