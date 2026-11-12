@@ -1,8 +1,11 @@
 import {useCallback, useEffect, useRef, useState} from 'react'
+import type {ReactNode} from 'react'
 import {
     Alert,
     Button,
+    Card,
     Drawer,
+    Empty,
     Form,
     Input,
     InputNumber,
@@ -11,6 +14,7 @@ import {
     Progress,
     Select,
     Space,
+    Spin,
     Table,
     Tabs,
     Tag,
@@ -32,11 +36,12 @@ import {
     bindHostImageFile,
     deleteHostImageFile,
     getHostImageFiles,
+    getHostPlatformInfo,
     renameHostImageFile,
     unbindHostImageFile,
     uploadHostImageFile,
 } from '@/utils/apis'
-import type {HostImageFile, HostImageKind, HostImageListResult} from '@/utils/apis'
+import type {HostImageFile, HostImageKind, HostImageListResult, HostPlatformInfo, HostPlatformSection} from '@/utils/apis'
 
 interface Props {
     open: boolean
@@ -75,14 +80,27 @@ function stripExtension(name: string): string {
     return name.replace(/\.[^.]+$/, '')
 }
 
+// 平台配置分组的列定义：后端只给列名与行数据，前端按索引取值
+function platformColumns(section: HostPlatformSection): ColumnsType<{key: number; row: string[]}> {
+    return section.columns.map((title, index) => ({
+        title,
+        key: `${section.key}-${index}`,
+        render: (_: unknown, record: {key: number; row: string[]}) => record.row[index] || '-',
+    }))
+}
+
 export default function HostImageManager({open, hostName, onClose}: Props) {
-    const [activeKind, setActiveKind] = useState<HostImageKind>('system')
+    const [activeTab, setActiveTab] = useState<HostImageKind | 'platform'>('system')
+    // 平台配置页签不涉及镜像目录，按「系统模板」处理即可
+    const activeKind: HostImageKind = activeTab === 'iso' ? 'iso' : 'system'
     const [listMap, setListMap] = useState<Partial<Record<HostImageKind, HostImageListResult>>>({})
     const [loadingKind, setLoadingKind] = useState<HostImageKind | null>(null)
     const [uploading, setUploading] = useState<{kind: HostImageKind; name: string; percent: number} | null>(null)
     const [renameTarget, setRenameTarget] = useState<{kind: HostImageKind; file: HostImageFile} | null>(null)
     const [bindTarget, setBindTarget] = useState<{kind: HostImageKind; file: HostImageFile} | null>(null)
     const [busy, setBusy] = useState(false)
+    const [platform, setPlatform] = useState<HostPlatformInfo | null>(null)
+    const [platformLoading, setPlatformLoading] = useState(false)
     const lastLoadKey = useRef('')
     const [renameForm] = Form.useForm()
     const [bindForm] = Form.useForm()
@@ -102,22 +120,39 @@ export default function HostImageManager({open, hostName, onClose}: Props) {
         }
     }, [hostName])
 
+    // 平台配置项目随平台不同（PVE 网络/存储、QEMU 网桥、Hyper-V 虚拟交换机）
+    const loadPlatform = useCallback(async () => {
+        if (!hostName) return
+        setPlatformLoading(true)
+        try {
+            const result = await getHostPlatformInfo(hostName)
+            setPlatform(result.data || {host_name: hostName, server_type: '', sections: []})
+        } catch {
+            // 平台信息拿不到时只是不展示该页签，不影响镜像管理
+            setPlatform({host_name: hostName, server_type: '', sections: []})
+        } finally {
+            setPlatformLoading(false)
+        }
+    }, [hostName])
+
     // 每次打开抽屉重置为「系统模板」，并清掉上一台主机的缓存
     useEffect(() => {
         if (!open) return
         setListMap({})
-        setActiveKind('system')
+        setActiveTab('system')
+        setPlatform(null)
         lastLoadKey.current = ''
-    }, [open, hostName])
+        void loadPlatform()
+    }, [open, hostName, loadPlatform])
 
-    // 打开或切换页签时按需加载；用 key 去重，避免同一轮渲染重复请求
+    // 打开或切换到镜像页签时按需加载；用 key 去重，避免同一轮渲染重复请求
     useEffect(() => {
-        if (!open) return
-        const key = `${hostName}::${activeKind}`
+        if (!open || activeTab === 'platform') return
+        const key = `${hostName}::${activeTab}`
         if (lastLoadKey.current === key) return
         lastLoadKey.current = key
-        void load(activeKind)
-    }, [open, hostName, activeKind, load])
+        void load(activeTab)
+    }, [open, hostName, activeTab, load])
 
     const handleUpload = async (file: File) => {
         if (uploading) {
@@ -125,6 +160,16 @@ export default function HostImageManager({open, hostName, onClose}: Props) {
             return
         }
         const kind = activeKind
+        // 系统模板与 ISO 可能共用一个目录，上传前先按后缀拦住放错页签的文件
+        const isISO = /\.iso$/i.test(file.name)
+        if (kind === 'iso' && !isISO) {
+            message.warning('ISO 页签只接受 .iso 文件')
+            return
+        }
+        if (kind === 'system' && isISO) {
+            message.warning('ISO 文件请切换到 ISO 页签上传')
+            return
+        }
         setUploading({kind, name: file.name, percent: 0})
         try {
             await uploadHostImageFile(hostName, kind, file, percent => {
@@ -379,6 +424,59 @@ export default function HostImageManager({open, hostName, onClose}: Props) {
         )
     }
 
+    const renderPlatform = () => {
+        if (platformLoading && !platform) {
+            return (
+                <div className="art-loading">
+                    <Spin size="large" />
+                    <span>正在读取平台配置…</span>
+                </div>
+            )
+        }
+        const sections = platform?.sections || []
+        if (!sections.length) {
+            return <Empty description="该平台暂无可展示的配置项目" />
+        }
+        return (
+            <div className="art-stack">
+                {sections.map(section => (
+                    <Card
+                        key={section.key}
+                        size="small"
+                        title={section.title}
+                        extra={section.hint
+                            ? <span className="art-table-muted" style={{fontSize: 12}}>{section.hint}</span>
+                            : null}
+                    >
+                        {section.error ? (
+                            <Alert type="warning" showIcon message={section.error} />
+                        ) : section.rows.length === 0 ? (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可列出的项目" />
+                        ) : (
+                            <Table
+                                rowKey={record => `${section.key}-${record.key}`}
+                                size="small"
+                                dataSource={section.rows.map((row, index) => ({key: index, row}))}
+                                columns={platformColumns(section)}
+                                pagination={false}
+                            />
+                        )}
+                    </Card>
+                ))}
+            </div>
+        )
+    }
+
+    const tabItems: {key: string; label: string; children: ReactNode}[] =
+        (['system', 'iso'] as HostImageKind[]).map(kind => ({
+            key: kind,
+            label: KIND_META[kind].label,
+            children: renderPanel(kind),
+        }))
+    if (platform?.sections?.length) {
+        tabItems.push({key: 'platform', label: '平台配置', children: renderPlatform()})
+    }
+
     return (
         <>
             <Drawer
@@ -390,21 +488,17 @@ export default function HostImageManager({open, hostName, onClose}: Props) {
                 extra={
                     <Button
                         icon={<FolderOpenOutlined />}
-                        onClick={() => load(activeKind)}
-                        loading={loadingKind === activeKind}
+                        onClick={() => (activeTab === 'platform' ? loadPlatform() : load(activeKind))}
+                        loading={activeTab === 'platform' ? platformLoading : loadingKind === activeKind}
                     >
                         刷新
                     </Button>
                 }
             >
                 <Tabs
-                    activeKey={activeKind}
-                    onChange={key => setActiveKind(key as HostImageKind)}
-                    items={(['system', 'iso'] as HostImageKind[]).map(kind => ({
-                        key: kind,
-                        label: KIND_META[kind].label,
-                        children: renderPanel(kind),
-                    }))}
+                    activeKey={activeTab}
+                    onChange={key => setActiveTab(key as HostImageKind | 'platform')}
+                    items={tabItems}
                 />
             </Drawer>
 

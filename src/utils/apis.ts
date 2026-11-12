@@ -994,6 +994,32 @@ export const bindHostImageFile = (hsName: string, payload: HostImageBindPayload)
   return http.post(`/api/server/images/${hsName}/bind`, payload, { silent: true });
 };
 
+// ---------------------------------------------------------------------------
+// 主机平台配置（按平台不同而不同：PVE 网络/存储、QEMU 网桥、Hyper-V 虚拟交换机）
+// ---------------------------------------------------------------------------
+
+export interface HostPlatformSection {
+  key: string;
+  title: string;
+  hint?: string;
+  columns: string[];
+  rows: string[][];
+  error?: string;
+}
+
+export interface HostPlatformInfo {
+  host_name: string;
+  server_type: string;
+  sections: HostPlatformSection[];
+}
+
+/**
+ * 获取主机平台配置项目
+ */
+export const getHostPlatformInfo = (hsName: string): Promise<ApiResponse<HostPlatformInfo>> => {
+  return http.get(`/api/server/platform/${hsName}`, { silent: true });
+};
+
 /**
  * 解除主机镜像文件的镜像管理绑定
  */
@@ -1057,6 +1083,7 @@ export default {
   deleteHostImageFile,
   bindHostImageFile,
   unbindHostImageFile,
+  getHostPlatformInfo,
   
   // 虚拟机管理
   getVMs,
