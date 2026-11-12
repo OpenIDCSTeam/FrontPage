@@ -498,6 +498,18 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
 }
 
 /**
+ * 归一化虚拟机前缀：去掉末尾的 “-” 与首尾空白。
+ * 末尾的分隔符由系统自动补，避免用户手填出 “web--” 这类重复分隔。
+ */
+const normalizeFilterPrefix = (value?: string) => (value || '').trim().replace(/-+$/, '')
+
+/** 前缀落库形态：非空时统一以 “-” 结尾，与虚拟机命名 {前缀}-{后缀} 保持一致 */
+const withFilterSuffix = (value?: string) => {
+    const base = normalizeFilterPrefix(value)
+    return base ? `${base}-` : ''
+}
+
+/**
  * 主机管理页面
  */
 function HostManage() {
@@ -689,7 +701,7 @@ function HostManage() {
                     server_addr: config.server_addr,
                     server_user: config.server_user,
                     server_pass: config.server_pass,
-                    filter_name: config.filter_name,
+                    filter_name: normalizeFilterPrefix(config.filter_name),
                     images_path: config.images_path,
                     dvdrom_path: config.dvdrom_path,
                     system_path: config.system_path,
@@ -932,7 +944,7 @@ function HostManage() {
                 server_addr: values.server_addr,
                 server_user: values.server_user,
                 server_pass: values.server_pass,
-                filter_name: values.filter_name,
+                filter_name: withFilterSuffix(values.filter_name),
                 images_path: values.images_path,
                 dvdrom_path: values.dvdrom_path,
                 system_path: values.system_path,
@@ -1329,7 +1341,7 @@ function HostManage() {
 
                     {(host.config?.filter_name || host.config?.server_area || host.config?.i_kuai_addr) && (
                         <div className="host-resource-meta" aria-label="主机补充信息">
-                            {host.config?.filter_name && <span><b>前缀</b><code>{host.config.filter_name}</code></span>}
+                            {host.config?.filter_name && <span><b>前缀</b><code>{withFilterSuffix(host.config.filter_name)}</code></span>}
                             {host.config?.server_area && <span><b>区域</b><span>{host.config.server_area}</span></span>}
                             {host.config?.i_kuai_addr && <span><GlobalOutlined aria-hidden="true" /><b>爱快</b><span className="host-resource-meta-address" title={host.config.i_kuai_addr}>{host.config.i_kuai_addr}</span></span>}
                         </div>
@@ -1610,8 +1622,10 @@ function HostManage() {
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
-                                                <Form.Item name="filter_name" label="虚拟机前缀">
-                                                    <Input placeholder="过滤器名称"/>
+                                                <Form.Item name="filter_name" label="虚拟机前缀"
+                                                           extra="末尾的 “-” 由系统自动补全"
+                                                           normalize={(value?: string) => (value || '').replace(/-+$/, '')}>
+                                                    <Input placeholder="例如: web" addonAfter="-"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
