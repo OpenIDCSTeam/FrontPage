@@ -720,11 +720,15 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
     }
 
     const handleSubmit = async (values: any) => {
+        // 套餐模式把硬件分区收进了折叠面板，折叠/未挂载的 Form.Item
+        // 不会出现在 onFinish 的 values 里（cpu_num / mem_num / hdd_num 会整个丢失，
+        // 后端于是按默认值 2C2G/8G 创建）。用表单 store 的全量值兜底。
+        const merged = { ...form.getFieldsValue(true), ...values }
         if (isEditMode) {
-            setPendingValues(values)
+            setPendingValues(merged)
             setSaveConfirmVisible(true)
         } else {
-        await processSubmit(values)
+            await processSubmit(merged)
         }
     }
 
