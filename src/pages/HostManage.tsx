@@ -46,6 +46,7 @@ import {useNavigate} from 'react-router-dom'
 import api from '@/utils/apis.ts'
 import PageHeader from '@/components/PageHeader'
 import HostConfigBackupActions from '@/components/HostConfigBackupActions'
+import HostImageManager from '@/components/HostImageManager'
 
 // 主机配置接口
 // OS镜像配置项（system_maps/images_maps通用结构）
@@ -130,6 +131,299 @@ interface ServerPlanRow {
     ip6_max: number
 }
 
+/**
+ * 套餐默认值。
+ *
+ * 「添加套餐」与加载旧配置的缺省兜底共用这一份，避免两处各写一套：
+ * 编辑老主机时缺失字段补出来的值，必须与新建套餐时看到的保持一致。
+ */
+function createDefaultPlanRow(planName = ''): ServerPlanRow {
+    return {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        planName,
+        cpu_num: 4,
+        cpu_per: 0,
+        gpu_mem: 0,
+        mem_num: 4096,
+        hdd_num: 204800,
+        hdd_iop: 1000,
+        bak_num: 1,
+        iso_num: 1,
+        pci_num: 0,
+        usb_num: 0,
+        dat_num: 1,
+        dat_all: 0,
+        speed_u: 100,
+        speed_d: 100,
+        nat_num: 100,
+        web_num: 100,
+        flu_num: 102400,
+        // [重置天数, 超限阈值MB, 上次重置时间戳]；时间戳 0 表示尚未重置过
+        flu_rst: [31, 10, 0],
+        nic_pub: 0,
+        nic_pri: 1,
+        ip4_max: 1,
+        ip6_max: 0,
+    }
+}
+
+/**
+ * 归一化虚拟机前缀：去掉末尾的 “-” 与首尾空白。
+ * 末尾的分隔符由系统自动补，避免用户手填出 “web--” 这类重复分隔。
+ */
+const normalizeFilterPrefix = (value?: string) => (value || '').trim().replace(/-+$/, '')
+
+/** 前缀落库形态：非空时统一以 “-” 结尾，与虚拟机命名 {前缀}-{后缀} 保持一致 */
+const withFilterSuffix = (value?: string) => {
+    const base = normalizeFilterPrefix(value)
+    return base ? `${base}-` : ''
+}
+
+/** 新建主机时与平台无关的默认值，避免表单大面积留空 */
+const HOST_FORM_DEFAULTS: Record<string, any> = {
+    // 连接参数的通用兜底，选中类型后会按平台覆盖（见 HOST_TYPE_DEFAULTS）
+    server_port: 22,
+    server_user: 'root',
+    filter_name: '',
+    ports_start: 10000,
+    ports_close: 60000,
+    remote_port: 5900,
+    limits_nums: 0,
+    proxy_mode: 'direct',
+    relay_addr: '',
+    vnc_ip: '',
+    vnc_wan: '',
+    public_addr: '',
+    ipaddr_ddns: '223.5.5.5, 119.29.29.29',
+    area_code: '',
+    area_name: '',
+    n_cpu_price: 0,
+    n_mem_price: 0,
+    n_hdd_price: 0,
+    n_net_price: 0,
+}
+
+/**
+ * 各平台的连接与存储/网络默认值。
+ *
+ * 取值与驱动内的运行时兜底一致（PVE 系统盘 local-lvm、备份 local 等），
+ * 让新建时看到的值就是实际会用的值，而不是留空后到线上才暴露差异。
+ */
+const HOST_TYPE_DEFAULTS: Record<string, Record<string, any>> = {
+    PromoxSetup: {
+        server_port: 8006,
+        server_user: 'root@pam',
+        system_path: 'local-lvm',
+        extern_path: 'local-lvm',
+        backup_path: 'local',
+        dvdrom_path: 'local',
+        images_path: 'local',
+        network_nat: 'vmbr1',
+        network_pub: 'vmbr0',
+    },
+    vSphereESXi: {server_port: 443, server_user: 'root'},
+    HyperVSetup: {server_port: 5985, server_user: 'Administrator'},
+    VMWareSetup: {server_port: 8697, server_user: 'root'},
+    QEMUServer: {server_port: 22, server_user: 'root'},
+    SmolVM: {server_port: 22, server_user: 'root'},
+    LxContainer: {server_port: 22, server_user: 'root'},
+    OCInterface: {server_port: 22, server_user: 'root'},
+}
+
+/** 字段提示：base 为通用说明，byType 按当前选择的服务器类型覆盖 */
+type FieldHint = { base: string; byType?: Record<string, string> }
+
+/**
+ * 表单字段的悬浮提示。
+ *
+ * 同一个字段在不同虚拟化平台上含义不同：例如「系统存储路径」在 PVE 上是
+ * 存储名（local-lvm），在 QEMU / LXD 上却是宿主机目录。提示按当前选中的
+ * 服务器类型切换，避免用户按一个平台的直觉去填另一个平台。
+ */
+const FIELD_HINTS: Record<string, FieldHint> = {
+    // ===== 基本配置 =====
+    name: {base: '主机唯一标识。虚拟机会按此名称归属到该主机，保存后不可修改'},
+    type: {base: '决定使用哪个虚拟化平台驱动，同时决定下方路径与网络字段的取值格式'},
+    server_addr: {
+        base: '虚拟化平台的 API 或 SSH 地址；主控与被管平台同机时可填 localhost',
+        byType: {
+            PromoxSetup: 'PVE API 地址，形如 10.0.0.21:8006',
+            vSphereESXi: 'ESXi 地址，形如 10.0.0.22:443',
+            HyperVSetup: 'WinRM 地址，形如 10.0.0.23:5985',
+            VMWareSetup: 'VMware Workstation API 地址，形如 127.0.0.1:8697',
+            QEMUServer: 'SSH 地址，形如 10.0.0.24',
+            LxContainer: 'SSH 地址，形如 10.0.0.25',
+            OCInterface: 'SSH 地址，形如 10.0.0.26',
+            SmolVM: 'SSH 地址，形如 10.0.0.27',
+            VirtualBoxs: '仅支持本机，可留空',
+            MemuAndroid: '仅支持本机，可留空',
+        },
+    },
+    server_user: {
+        base: '登录平台所用的账号',
+        byType: {
+            PromoxSetup: 'PVE 账号需带认证域，如 root@pam 或 用户名@pve',
+            vSphereESXi: 'ESXi 账号，如 root',
+            HyperVSetup: 'Windows 管理员账号，如 Administrator',
+            VMWareSetup: 'Windows 当前用户账号',
+            QEMUServer: '宿主机 SSH 账号，通常为 root',
+            LxContainer: '宿主机 SSH 账号，通常为 root',
+            OCInterface: '宿主机 SSH 账号，通常为 root',
+            SmolVM: '宿主机 SSH 账号，通常为 root',
+        },
+    },
+    server_pass: {
+        base: '账号对应的密码；PVE 建议使用专用 API 用户而不是 root',
+        byType: {
+            HyperVSetup: 'Windows 账号密码；agent 需以该身份运行才能执行 WinRM 操作',
+        },
+    },
+    filter_name: {base: '只纳管名称以该前缀开头的虚拟机，避免误管平台上的其它实例；末尾的 “-” 会自动补全，无需填写；留空表示纳管全部'},
+    server_port: {
+        base: '平台 API / 命令通道端口',
+        byType: {
+            PromoxSetup: 'PVE API 端口，默认 8006',
+            vSphereESXi: 'ESXi API 端口，默认 443',
+            HyperVSetup: 'WinRM 端口：HTTP 5985，HTTPS 5986',
+            VMWareSetup: 'Workstation API 端口，默认 8697',
+            QEMUServer: 'SSH 端口，默认 22',
+            LxContainer: 'SSH 端口，默认 22',
+            OCInterface: 'SSH 端口，默认 22',
+            SmolVM: 'SSH 端口，默认 22',
+        },
+    },
+    public_addr: {base: '本机公网 IP，多个用逗号分隔；反向代理中转与 VNC 对外地址留空时取这里的第一项'},
+
+    // ===== 拓展设置 =====
+    images_path: {
+        base: '模板 / 镜像存放位置',
+        byType: {
+            PromoxSetup: 'PVE 存储名，如 local（不是目录路径）',
+            QEMUServer: '宿主机目录，如 /var/lib/libvirt/images',
+            LxContainer: '宿主机目录',
+            SmolVM: '宿主机目录；默认使用 images_path/vmlinux-smolvm',
+            MemuAndroid: '模拟器镜像目录',
+        },
+    },
+    dvdrom_path: {
+        base: 'ISO 映像存放位置',
+        byType: {
+            PromoxSetup: 'PVE 存储名，如 local；挂载时自动补成 local:iso',
+            QEMUServer: '宿主机 ISO 目录，如 /var/lib/libvirt/images',
+            VMWareSetup: 'Workstation ISO 所在目录',
+        },
+    },
+    system_path: {
+        base: '系统盘存放位置',
+        byType: {
+            PromoxSetup: 'PVE 存储名，如 local-lvm',
+            QEMUServer: '系统盘目录',
+            SmolVM: 'rootfs 存放目录',
+        },
+    },
+    backup_path: {
+        base: '备份文件存放位置',
+        byType: {
+            PromoxSetup: 'PVE 备份存储名，如 local（vzdump 目标）',
+        },
+    },
+    extern_path: {
+        base: '数据盘存放位置',
+        byType: {
+            PromoxSetup: 'PVE 存储名，如 local-lvm',
+        },
+    },
+    launch_path: {
+        base: '命令通道平台的程序启动路径，留空由 agent 自动探测',
+        byType: {
+            PromoxSetup: 'PVE 通过 API 管理，无需填写',
+            vSphereESXi: 'ESXi 通过 API 管理，无需填写',
+            HyperVSetup: 'Hyper-V 通过 WMI/WinRM 管理，无需填写',
+            QEMUServer: 'qemu-system-x86_64 可执行文件路径',
+            SmolVM: 'hypervisor 可执行文件路径（firecracker / cloud-hypervisor）',
+            VMWareSetup: 'vmrun.exe 路径',
+            VirtualBoxs: 'VBoxManage 路径',
+            MemuAndroid: 'memuc 路径',
+        },
+    },
+    limits_nums: {base: '该主机最多允许创建的虚拟机数量；0 表示不限制'},
+    n_cpu_price: {base: '按 CPU 核心计费时的单价，0 表示不单独计费'},
+    n_mem_price: {base: '按内存容量计费时的单价，0 表示不单独计费'},
+    n_hdd_price: {base: '按硬盘容量计费时的单价，0 表示不单独计费'},
+    n_net_price: {base: '按带宽计费时的单价，0 表示不单独计费'},
+
+    // ===== 网络配置 =====
+    i_kuai_addr: {base: '爱快路由器 Web 地址；配置后才会下发端口映射、DHCP/ARP 静态绑定与公网地址转换'},
+    i_kuai_user: {base: '爱快管理员账号（3.x 账号密码登录使用）'},
+    i_kuai_pass: {base: '爱快管理员密码（3.x 账号密码登录使用）'},
+    ports_start: {base: '端口映射可分配的外网端口起点，建议避开 1-1024'},
+    ports_close: {base: '端口映射可分配的外网端口终点，需大于起始端口'},
+    remote_port: {base: 'VNC 起始端口，虚拟机按序占用其后的端口'},
+    network_nat: {
+        base: '内网（NAT）虚拟网桥 / 设备名',
+        byType: {
+            PromoxSetup: 'PVE 内网网桥名，如 vmbr1',
+            LxContainer: 'LXD 网桥名，如 lxdbr0',
+            OCInterface: 'Docker 网桥名，如 docker0',
+            QEMUServer: 'libvirt 网络名，如 default',
+            SmolVM: '宿主机网桥名',
+            HyperVSetup: 'Hyper-V 虚拟交换机名',
+            vSphereESXi: 'vSphere 端口组 / 虚拟交换机名',
+            VirtualBoxs: 'VirtualBox 网络名',
+        },
+    },
+    network_pub: {
+        base: '公网（独立 IP）虚拟网桥 / 设备名',
+        byType: {
+            PromoxSetup: 'PVE 公网网桥名，如 vmbr0',
+            LxContainer: 'LXD 公网网桥名',
+            OCInterface: 'Docker 公网网络名（常见为 host 或 macvlan）',
+            QEMUServer: 'libvirt 公网网络名',
+            HyperVSetup: 'Hyper-V 外部虚拟交换机名',
+            vSphereESXi: 'vSphere 公网端口组名',
+        },
+    },
+    area_code: {base: '区域代码，用于套餐与实例筛选，如 CN / US / HK'},
+    area_name: {base: '区域显示名称，如 成都 / 华南区'},
+
+    // ===== IP 地址池 =====
+    ip_pool_name: {base: '地址池标识名，同一主机内不可重复'},
+    ip_pool_vers: {base: 'IPv4 使用点分掩码；IPv6 使用前缀长度（如 64）'},
+    ip_pool_type: {base: 'nat=内网地址池，pub=公网地址池，需与网卡类型对应'},
+    ip_pool_from: {base: '池的起始地址，按数量顺序递增分配'},
+    ip_pool_gate: {base: '该网段的默认网关，会写入网卡配置'},
+    ip_pool_mask: {base: 'IPv4 填点分掩码（如 255.255.255.0）；IPv6 填前缀长度（如 64）'},
+    ip_pool_nums: {base: '从起始地址起可分配的地址数量'},
+}
+
+/** 套餐字段提示（与「添加套餐」的字段一一对应） */
+const PLAN_FIELD_HINTS: Record<string, string> = {
+    cpu_num: '单台虚拟机的 CPU 核心数',
+    mem_num: '内存容量，单位 MB',
+    hdd_num: '系统盘容量，单位 MB',
+    flu_num: '每月可用流量，单位 MB；超出后按超限阈值处理',
+    speed_u: '上行带宽上限，单位 Mbps；0 表示不限速',
+    speed_d: '下行带宽上限，单位 Mbps；0 表示不限速',
+    nat_num: '可创建的端口映射数量',
+    web_num: '可创建的反向代理数量',
+    cpu_per: '限制虚拟机可占用的 CPU 百分比；0 表示不限制',
+    gpu_mem: 'GPU 虚拟显存大小，单位 MB',
+    hdd_iop: '磁盘 IOPS 上限',
+    bak_num: '可创建的备份数量',
+    iso_num: '可挂载的光盘数量',
+    pci_num: '可直通的 PCIe 设备数量',
+    usb_num: '可直通的 USB 设备数量',
+    dat_num: '可挂载的数据盘数量',
+    dat_all: '数据盘容量合计上限，单位 MB',
+    flu_rst_days: '每隔多少天重置一次流量统计',
+    flu_rst_over: '流量超出上限多少 MB 后开始限速或断网',
+    flu_rst_at: '上一次重置的时间戳（Unix 秒）；0 表示尚未重置',
+    nic_pub: '创建虚拟机时默认分配的公网网卡数量',
+    nic_pri: '创建虚拟机时默认分配的内网网卡数量',
+    ip4_max: '单台虚拟机最多可分配的 IPv4 地址数量',
+    ip6_max: '单台虚拟机最多可分配的 IPv6 地址数量',
+}
+
 // 主机数据接口
 interface Host {
     name: string
@@ -152,6 +446,8 @@ interface HostStatus {
     hdd_usage?: number
     hdd_total?: number
     ext_usage?: Record<string, [number, number]>
+    // 按用途统计的磁盘容量（MB）：system/data/images/iso/backup
+    disk_usage?: Record<string, [number, number]>
     network_a?: number
     network_u?: number
     network_d?: number
@@ -198,16 +494,39 @@ interface IpaddrMapRow {
     mask: string
     fromIp: string
     nums: number
+    /** IPv6 前缀长度（如 64）；IPv4 池不使用 */
+    prefix: number
+}
+
+/**
+ * 新建地址池的默认值。
+ *
+ * 名称/协议/用途/掩码都给可用缺省，用户只需补起始地址与数量；
+ * 数量保持 0，避免未填地址时被当成一个有效但不可用的池提交。
+ */
+function createDefaultIpPoolRow(): IpaddrMapRow {
+    return {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        setName: 'nat',
+        vers: 'ipv4',
+        type: 'nat',
+        gate: '',
+        mask: '255.255.255.0',
+        fromIp: '',
+        nums: 0,
+        prefix: 64,
+    }
 }
 
 // 主机列表视图组件
-function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, handleToggle }: {
+function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, handleToggle, onManageImages }: {
     hosts: Record<string, Host>
     hostsStatus: Record<string, HostStatus>
     engineTypes: Record<string, EngineTypeConfig>
     navigate: any
     handleEdit: (name: string) => void
     handleToggle: (name: string, enable: boolean) => void
+    onManageImages: (name: string) => void
 }) {
     const [visiblePublicAddr, setVisiblePublicAddr] = useState<Record<string, boolean>>({})
 
@@ -445,12 +764,15 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '操作',
             key: 'actions',
-            width: 104,
+            width: 148,
             fixed: 'right' as const,
             render: (_: any, record: any) => {
                 const isActive = record.host.status === 'active'
                 return (
                     <div className="art-table-actions">
+                        <Tooltip title="管理主机">
+                            <Button aria-label="管理主机" className="art-table-icon-btn" type="text" size="small" icon={<FolderOutlined />} onClick={() => onManageImages(record.name)} disabled={!isActive} />
+                        </Tooltip>
                         <Tooltip title="管理虚拟机">
                             <Button aria-label="管理虚拟机" className="art-table-icon-btn" type="text" size="small" icon={<CloudServerOutlined />} onClick={() => navigate(`/hosts/${record.name}/vms`)} disabled={!isActive} />
                         </Tooltip>
@@ -498,18 +820,6 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
 }
 
 /**
- * 归一化虚拟机前缀：去掉末尾的 “-” 与首尾空白。
- * 末尾的分隔符由系统自动补，避免用户手填出 “web--” 这类重复分隔。
- */
-const normalizeFilterPrefix = (value?: string) => (value || '').trim().replace(/-+$/, '')
-
-/** 前缀落库形态：非空时统一以 “-” 结尾，与虚拟机命名 {前缀}-{后缀} 保持一致 */
-const withFilterSuffix = (value?: string) => {
-    const base = normalizeFilterPrefix(value)
-    return base ? `${base}-` : ''
-}
-
-/**
  * 主机管理页面
  */
 function HostManage() {
@@ -536,6 +846,7 @@ function HostManage() {
             .includes(query)
     }))
     const [modalVisible, setModalVisible] = useState(false)
+    const [imageHost, setImageHost] = useState('')
     const [editMode, setEditMode] = useState<'add' | 'edit'>('add')
     const [currentHost, setCurrentHost] = useState<string>('')
     const [form] = Form.useForm()
@@ -663,20 +974,48 @@ function HostManage() {
         setCurrentHost('')
         setSelectedHostType('')
         form.resetFields()
+        // 预填默认值：端口区间、VNC、DNS、价格等都有可用值，
+        // 用户只需补名称、类型、地址与密码就能保存。
+        // 平台相关的端口/账号/存储/网桥在选类型时再覆盖（见 handleHostTypeChange）。
+        form.setFieldsValue(HOST_FORM_DEFAULTS)
         setSystemMaps([{id: Date.now().toString(), sys_name: '', sys_file: '', sys_size: '', sys_type: '', sys_flag: true}])
         setImageMaps([{id: Date.now().toString(), sys_name: '', sys_file: '', sys_size: '', sys_type: '', sys_flag: true}])
-        setIpaddrMaps([{
-            id: Date.now().toString(),
-            setName: '',
-            vers: 'ipv4',
-            type: 'nat',
-            gate: '',
-            mask: '',
-            fromIp: '',
-            nums: 0
-        }])
-        setServerPlans([])
+        setIpaddrMaps([createDefaultIpPoolRow()])
+        // 默认带一个套餐，避免「套餐配置」页一片空白；
+        // 不需要时用户可以删除。
+        setServerPlans([createDefaultPlanRow('默认套餐')])
         setModalVisible(true)
+    }
+
+    // 切换服务器类型：带出该平台的连接参数与存储/网络默认值。
+    //
+    // 同一个值不重复覆盖，否则编辑已有主机时手滑重选原类型
+    // 会把用户已经调过的路径改回默认值。
+    const handleHostTypeChange = (value: string) => {
+        if (value === selectedHostType) return
+        setSelectedHostType(value)
+        const defaults = HOST_TYPE_DEFAULTS[value]
+        if (defaults) form.setFieldsValue(defaults)
+    }
+
+    // 生成不与现有套餐重名的默认名称（默认套餐 / 默认套餐2 / …）
+    const nextPlanName = () => {
+        const base = '默认套餐'
+        const used = new Set(serverPlans.map(p => p.planName))
+        if (!used.has(base)) return base
+        let i = 2
+        while (used.has(`${base}${i}`)) i++
+        return `${base}${i}`
+    }
+
+    // 按当前服务器类型返回字段提示：平台差异优先，缺省回落到通用说明
+    const fieldHint = (key: string) => {
+        const hintConfig = FIELD_HINTS[key]
+        if (!hintConfig) return undefined
+        if (selectedHostType && hintConfig.byType?.[selectedHostType]) {
+            return hintConfig.byType[selectedHostType]
+        }
+        return hintConfig.base
     }
 
     // 打开编辑主机对话框
@@ -794,50 +1133,46 @@ function HostManage() {
                             gate: ipConfig.gate || '',
                             mask: ipConfig.mask || '',
                             fromIp: ipConfig.from || '',
-                            nums: ipConfig.nums || 0
+                            nums: ipConfig.nums || 0,
+                            // 兼容旧配置：前缀长度可能写在 mask 里（"64"）
+                            prefix: Number(ipConfig.prefix)
+                                || (Number(ipConfig.mask) || 0)
+                                || 64
                         })
                     })
                 }
-                setIpaddrMaps(ipaddrMapsData.length > 0 ? ipaddrMapsData : [{
-                    id: Date.now().toString(),
-                    setName: '',
-                    vers: 'ipv4',
-                    type: 'nat',
-                    gate: '',
-                    mask: '',
-                    fromIp: '',
-                    nums: 0
-                }])
+                setIpaddrMaps(ipaddrMapsData.length > 0 ? ipaddrMapsData : [createDefaultIpPoolRow()])
 
-                // 加载套餐配置
+                // 加载套餐配置：缺失字段用与「添加套餐」相同的默认值补齐
+                const planDefaults = createDefaultPlanRow()
                 const serverPlansData: ServerPlanRow[] = []
                 if (config.server_plan) {
                     Object.entries(config.server_plan).forEach(([planName, planCfg]: [string, any]) => {
                         serverPlansData.push({
                             id: Date.now().toString() + Math.random(),
                             planName,
-                            cpu_num: planCfg.cpu_num ?? 2,
-                            cpu_per: planCfg.cpu_per ?? 0,
-                            gpu_mem: planCfg.gpu_mem ?? 0,
-                            mem_num: planCfg.mem_num ?? 2048,
-                            hdd_num: planCfg.hdd_num ?? 8192,
-                            hdd_iop: planCfg.hdd_iop ?? 1000,
-                            bak_num: planCfg.bak_num ?? 1,
-                            iso_num: planCfg.iso_num ?? 1,
-                            pci_num: planCfg.pci_num ?? 0,
-                            usb_num: planCfg.usb_num ?? 0,
-                            dat_num: planCfg.dat_num ?? 1,
-                            dat_all: planCfg.dat_all ?? 0,
-                            speed_u: planCfg.speed_u ?? 100,
-                            speed_d: planCfg.speed_d ?? 100,
-                            nat_num: planCfg.nat_num ?? 100,
-                            web_num: planCfg.web_num ?? 100,
-                            flu_num: planCfg.flu_num ?? 102400,
-                            flu_rst: Array.isArray(planCfg.flu_rst) ? planCfg.flu_rst : [31, 10, 10],
-                            nic_pub: planCfg.nic_pub ?? 0,
-                            nic_pri: planCfg.nic_pri ?? 1,
-                            ip4_max: planCfg.ip4_max ?? 1,
-                            ip6_max: planCfg.ip6_max ?? 0,
+                            cpu_num: planCfg.cpu_num ?? planDefaults.cpu_num,
+                            cpu_per: planCfg.cpu_per ?? planDefaults.cpu_per,
+                            gpu_mem: planCfg.gpu_mem ?? planDefaults.gpu_mem,
+                            mem_num: planCfg.mem_num ?? planDefaults.mem_num,
+                            hdd_num: planCfg.hdd_num ?? planDefaults.hdd_num,
+                            hdd_iop: planCfg.hdd_iop ?? planDefaults.hdd_iop,
+                            bak_num: planCfg.bak_num ?? planDefaults.bak_num,
+                            iso_num: planCfg.iso_num ?? planDefaults.iso_num,
+                            pci_num: planCfg.pci_num ?? planDefaults.pci_num,
+                            usb_num: planCfg.usb_num ?? planDefaults.usb_num,
+                            dat_num: planCfg.dat_num ?? planDefaults.dat_num,
+                            dat_all: planCfg.dat_all ?? planDefaults.dat_all,
+                            speed_u: planCfg.speed_u ?? planDefaults.speed_u,
+                            speed_d: planCfg.speed_d ?? planDefaults.speed_d,
+                            nat_num: planCfg.nat_num ?? planDefaults.nat_num,
+                            web_num: planCfg.web_num ?? planDefaults.web_num,
+                            flu_num: planCfg.flu_num ?? planDefaults.flu_num,
+                            flu_rst: Array.isArray(planCfg.flu_rst) ? planCfg.flu_rst : planDefaults.flu_rst,
+                            nic_pub: planCfg.nic_pub ?? planDefaults.nic_pub,
+                            nic_pri: planCfg.nic_pri ?? planDefaults.nic_pri,
+                            ip4_max: planCfg.ip4_max ?? planDefaults.ip4_max,
+                            ip6_max: planCfg.ip6_max ?? planDefaults.ip6_max,
                         })
                     })
                 }
@@ -892,7 +1227,9 @@ function HostManage() {
                         gate: row.gate,
                         mask: row.mask,
                         from: row.fromIp,
-                        nums: row.nums
+                        nums: row.nums,
+                        // IPv6 的前缀长度与 IPv4 的点分掩码不是一回事，单独保存
+                        ...(row.vers === 'ipv6' ? {prefix: row.prefix || 64} : {})
                     }
                 }
             })
@@ -930,7 +1267,7 @@ function HostManage() {
                         nat_num: row.nat_num,
                         web_num: row.web_num,
                         flu_num: row.flu_num,
-                        flu_rst: Array.isArray(row.flu_rst) && row.flu_rst.length === 3 ? row.flu_rst : [31, 10, 10],
+                        flu_rst: Array.isArray(row.flu_rst) && row.flu_rst.length === 3 ? row.flu_rst : [31, 10, 0],
                         nic_pub: row.nic_pub,
                         nic_pri: row.nic_pri,
                         ip4_max: row.ip4_max,
@@ -1237,15 +1574,37 @@ function HostManage() {
         const memUsageGB = ((status?.mem_usage || 0) / 1024).toFixed(1)
         const memTotalGB = ((status?.mem_total || 0) / 1024).toFixed(1)
 
-        let diskPercent = 0
-        let diskUsageGB = 0
-        let diskTotalGB = 0
-        // 只展示系统存储路径所在磁盘；未配置系统存储路径时后端不返回磁盘数据
-        if (status?.hdd_total && status.hdd_total > 0) {
-            diskTotalGB = status.hdd_total / 1024
-            diskUsageGB = (status.hdd_usage || 0) / 1024
-            diskPercent = clampPercent((status.hdd_usage || 0) / status.hdd_total * 100)
+        // 磁盘按用途拆分：系统盘取系统存储路径，数据盘取数据存储路径，
+        // 镜像/ISO/备份盘作为对应卡片的补充信息展示。
+        const diskStat = (role: string) => {
+            const raw = status?.disk_usage?.[role]
+            if (!raw || raw[0] <= 0) return null
+            return {
+                totalGB: raw[0] / 1024,
+                usageGB: raw[1] / 1024,
+                percent: clampPercent(raw[1] / raw[0] * 100),
+            }
         }
+        const systemDisk = diskStat('system') || (status?.hdd_total
+            ? {
+                totalGB: status.hdd_total / 1024,
+                usageGB: (status.hdd_usage || 0) / 1024,
+                percent: clampPercent((status.hdd_usage || 0) / status.hdd_total * 100),
+            }
+            : null)
+        const dataDisk = diskStat('data')
+        const imagesDisk = diskStat('images')
+        const isoDisk = diskStat('iso')
+        const backupDisk = diskStat('backup')
+        const fmtDiskValue = (disk: { usageGB: number; totalGB: number } | null) =>
+            disk ? `${disk.usageGB.toFixed(1)} / ${disk.totalGB.toFixed(1)} GB` : '未配置'
+        const fmtDiskPair = (disk: { usageGB: number; totalGB: number }) =>
+            `${disk.usageGB.toFixed(1)}/${disk.totalGB.toFixed(0)}G`
+        const systemDiskExtra = [
+            imagesDisk ? `镜像 ${fmtDiskPair(imagesDisk)}` : '',
+            isoDisk ? `ISO ${fmtDiskPair(isoDisk)}` : '',
+        ].filter(Boolean).join(' · ')
+        const dataDiskExtra = backupDisk ? `备份 ${fmtDiskPair(backupDisk)}` : ''
 
         const networkA = status?.network_a || 1000
         const maxBandwidth = Math.max(networkA * 1024 / 8, 1)
@@ -1258,11 +1617,19 @@ function HostManage() {
             : 0
         const usageStroke = (pct: number) =>
             pct > 80 ? 'var(--art-danger)' : pct > 60 ? 'var(--art-warning)' : 'var(--main-color)'
-        const metric = (label: string, value: React.ReactNode, detail: string, pct: number, title?: string) => (
+        const metric = (
+            label: string,
+            value: React.ReactNode,
+            detail: React.ReactNode,
+            pct: number,
+            title?: string,
+            extra?: React.ReactNode,
+        ) => (
             <div className="host-resource-metric" title={title}>
                 <div className="host-resource-metric-label">{label}</div>
                 <div className="host-resource-metric-value">{value}</div>
                 <div className="host-resource-metric-detail">{detail}</div>
+                {extra ? <div className="host-resource-metric-extra">{extra}</div> : null}
                 <Progress
                     percent={clampPercent(pct)}
                     size="small"
@@ -1299,6 +1666,9 @@ function HostManage() {
                         </div>
                     </div>
                     <div className="host-resource-primary-actions">
+                        <Button size="small" icon={<FolderOutlined />} onClick={() => setImageHost(name)} disabled={!isActive}>
+                            管理主机
+                        </Button>
                         <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(name)} disabled={!isActive}>
                             编辑配置
                         </Button>
@@ -1365,10 +1735,20 @@ function HostManage() {
                                 {metric('CPU', `${status.cpu_total || 0} 核`, `${cpuPercent.toFixed(1)}% 使用`, cpuPercent, status.cpu_model || 'CPU 型号未上报')}
                                 {metric('内存', `${memUsageGB} / ${memTotalGB} GB`, `${memPercent.toFixed(1)}% 已用`, memPercent)}
                                 {metric(
-                                    '磁盘',
-                                    diskTotalGB > 0 ? `${diskUsageGB.toFixed(1)} / ${diskTotalGB.toFixed(1)} GB` : '未配置',
-                                    diskTotalGB > 0 ? `${diskPercent.toFixed(1)}% 已用` : '未填写系统存储路径',
-                                    diskPercent,
+                                    '系统磁盘',
+                                    fmtDiskValue(systemDisk),
+                                    systemDisk ? `${systemDisk.percent.toFixed(1)}% 已用` : '未填写系统存储路径',
+                                    systemDisk?.percent || 0,
+                                    `系统存储路径：${host.config?.system_path || '未配置'}`,
+                                    systemDiskExtra || undefined,
+                                )}
+                                {metric(
+                                    '数据磁盘',
+                                    fmtDiskValue(dataDisk),
+                                    dataDisk ? `${dataDisk.percent.toFixed(1)}% 已用` : '未填写数据存储路径',
+                                    dataDisk?.percent || 0,
+                                    `数据存储路径：${host.config?.extern_path || '未配置'}`,
+                                    dataDiskExtra || undefined,
                                 )}
                                 {metric(
                                     '网络吞吐',
@@ -1523,6 +1903,7 @@ function HostManage() {
                                 navigate={navigate}
                                 handleEdit={handleEdit}
                                 handleToggle={handleToggle}
+                                onManageImages={setImageHost}
                             />
                         </div>
                     </div>
@@ -1551,16 +1932,18 @@ function HostManage() {
                                         <Row gutter={16}>
                                             <Col span={6}>
                                                 <Form.Item name="name" label="服务器名称"
+                                                           tooltip={fieldHint('name')}
                                                            rules={[{required: true, message: '请输入服务器名称'}]}>
                                                     <Input placeholder="例如: host1" disabled={editMode === 'edit'}/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
                                                 <Form.Item name="type" label="服务器类型"
+                                                           tooltip={fieldHint('type')}
                                                            rules={[{required: true, message: '请选择服务器类型'}]}>
                                                     <Select
                                                         placeholder="请选择类型"
-                                                        onChange={(value) => setSelectedHostType(value)}
+                                                        onChange={handleHostTypeChange}
                                                     >
                                                         {Object.entries(engineTypes).map(([type, config]) =>
                                                             config.enabled ? (
@@ -1573,12 +1956,14 @@ function HostManage() {
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
-                                                <Form.Item name="server_addr" label="服务器地址">
+                                                <Form.Item name="server_addr" label="服务器地址"
+                                                           tooltip={fieldHint('server_addr')}>
                                                     <Input placeholder="例如: localhost:8697"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
-                                                <Form.Item name="server_user" label="服务器用户">
+                                                <Form.Item name="server_user" label="服务器用户"
+                                                           tooltip={fieldHint('server_user')}>
                                                     <Input placeholder="例如: root"/>
                                                 </Form.Item>
                                             </Col>
@@ -1615,25 +2000,28 @@ function HostManage() {
 
                                         <Row gutter={16}>
                                             <Col span={6}>
-                                                <Form.Item name="server_pass" label="服务器密码">
+                                                <Form.Item name="server_pass" label="服务器密码"
+                                                           tooltip={fieldHint('server_pass')}>
                                                     <Input.Password placeholder="服务器密码"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
                                                 <Form.Item name="filter_name" label="虚拟机前缀"
-                                                           extra="末尾的 “-” 由系统自动补全"
+                                                           tooltip={fieldHint('filter_name')}
                                                            normalize={(value?: string) => (value || '').replace(/-+$/, '')}>
                                                     <Input placeholder="例如: web" addonAfter="-"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
-                                                <Form.Item name="server_port" label="服务访问端口">
+                                                <Form.Item name="server_port" label="服务访问端口"
+                                                           tooltip={fieldHint('server_port')}>
                                                     <InputNumber placeholder="例如: 443" min={0} max={65535}
                                                                  className="w-full"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
-                                                <Form.Item name="public_addr" label="服务器公网IP">
+                                                <Form.Item name="public_addr" label="服务器公网IP"
+                                                           tooltip={fieldHint('public_addr')}>
                                                     <Input placeholder="例如: 192.168.1.1, 2001:db8::1"/>
                                                 </Form.Item>
                                             </Col>
@@ -1641,86 +2029,32 @@ function HostManage() {
 
                                         <Row gutter={16}>
                                             <Col span={6}>
-                                                <Form.Item name="limits_nums" label="虚拟机数量限制">
+                                                <Form.Item name="limits_nums" label="虚拟机数量限制"
+                                                           tooltip={fieldHint('limits_nums')}>
                                                     <InputNumber placeholder="例如: 100" min={0} className="w-full"/>
                                                 </Form.Item>
                                             </Col>
                                         </Row>
 
-                                        <Row gutter={16}>
-                                            <Col span={12}>
-                                                <Form.Item name="proxy_mode" label="反向代理模式" initialValue="direct"
-                                                             extra="直连：主控与虚拟机平台同一设备；中转：经爱快公网地址转发">
-                                                    <Select options={[
-                                                        {label: '直连虚拟机', value: 'direct'},
-                                                        {label: '经爱快中转', value: 'relay'},
-                                                    ]}/>
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={12}>
-                                                <Form.Item name="relay_addr" label="中转地址"
-                                                           extra="中转模式下使用，留空则取服务器公网IP">
-                                                    <Input placeholder="例如: 1.2.3.4"/>
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
-
-                                        <Row gutter={16}>
-                                            <Col span={12}>
-                                                <Form.Item name="vnc_ip" label="VNC 反代IP"
-                                                           extra="VNC 经反向代理时的目标地址，留空使用平台地址">
-                                                    <Input placeholder="例如: vnc.example.com"/>
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={12}>
-                                                <Form.Item name="vnc_wan" label="VNC 外网地址"
-                                                           extra="填写后用户拿到的是该地址，可含端口">
-                                                    <Input placeholder="例如: vnc.example.com:6080"/>
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
-
-                                        <Row gutter={16}>
-                                            <Col span={12}>
-                                                <Form.Item name="network_nat" label="共享IP设备名">
-                                                    <Input placeholder="例如: nat"/>
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={12}>
-                                                <Form.Item name="network_pub" label="独立IP设备名">
-                                                    <Input placeholder="例如: pub"/>
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
-
-                                        <Row gutter={16}>
-                                            <Col span={8}>
-                                                <Form.Item name="area_code" label="区域代码" extra="例如：CN、US、HK">
-                                                    <Input placeholder="例如: CN"/>
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={16}>
-                                                <Form.Item name="area_name" label="区域名称" extra="例如：成都、华南区">
-                                                    <Input placeholder="例如: 成都"/>
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
                                     </div>
                                 )
                             },
                             {
-                                key: 'storage',
-                                label: <span><FolderOutlined/> 存储路径</span>,
+                                key: 'extended',
+                                label: <span><FolderOutlined/> 拓展设置</span>,
                                 children: (
                                     <div className="host-config-tab-panel max-h-[min(65dvh,600px)] overflow-y-auto pr-2">
+                                        <h4 className="font-medium mb-3">存储路径</h4>
                                         <Row gutter={16}>
                                             <Col span={12}>
-                                                <Form.Item name="images_path" label="模板存储路径">
+                                                <Form.Item name="images_path" label="模板存储路径"
+                                                           tooltip={fieldHint('images_path')}>
                                                     <Input placeholder="例如: /data/images"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={12}>
-                                                <Form.Item name="dvdrom_path" label="光盘存储路径">
+                                                <Form.Item name="dvdrom_path" label="光盘存储路径"
+                                                           tooltip={fieldHint('dvdrom_path')}>
                                                     <Input placeholder="例如: /data/iso"/>
                                                 </Form.Item>
                                             </Col>
@@ -1728,12 +2062,14 @@ function HostManage() {
 
                                         <Row gutter={16}>
                                             <Col span={12}>
-                                                <Form.Item name="system_path" label="系统存储路径">
+                                                <Form.Item name="system_path" label="系统存储路径"
+                                                           tooltip={fieldHint('system_path')}>
                                                     <Input placeholder="例如: /data/system"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={12}>
-                                                <Form.Item name="backup_path" label="备份存储路径">
+                                                <Form.Item name="backup_path" label="备份存储路径"
+                                                           tooltip={fieldHint('backup_path')}>
                                                     <Input placeholder="例如: /data/backup"/>
                                                 </Form.Item>
                                             </Col>
@@ -1741,13 +2077,43 @@ function HostManage() {
 
                                         <Row gutter={16}>
                                             <Col span={12}>
-                                                <Form.Item name="extern_path" label="数据存储路径">
+                                                <Form.Item name="extern_path" label="数据存储路径"
+                                                           tooltip={fieldHint('extern_path')}>
                                                     <Input placeholder="例如: /data/extern"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={12}>
-                                                <Form.Item name="launch_path" label="程序启动路径">
+                                                <Form.Item name="launch_path" label="程序启动路径"
+                                                           tooltip={fieldHint('launch_path')}>
                                                     <Input placeholder="虚拟化程序路径"/>
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+
+                                        <h4 className="font-medium mb-3 mt-4">售价配置</h4>
+                                        <Row gutter={8} className="mb-4">
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_cpu_price')}>处理器核心单价</div>
+                                                <Form.Item name="n_cpu_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_mem_price')}>虚拟机内存单价</div>
+                                                <Form.Item name="n_mem_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_hdd_price')}>虚拟机硬盘单价</div>
+                                                <Form.Item name="n_hdd_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_net_price')}>虚拟机带宽单价</div>
+                                                <Form.Item name="n_net_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
                                                 </Form.Item>
                                             </Col>
                                         </Row>
@@ -1762,17 +2128,20 @@ function HostManage() {
                                         <h4 className="font-medium mb-3">爱快OS配置</h4>
                                         <Row gutter={16}>
                                             <Col span={6}>
-                                                <Form.Item name="i_kuai_addr" label="爱快OS地址">
+                                                <Form.Item name="i_kuai_addr" label="爱快OS地址"
+                                                           tooltip={fieldHint('i_kuai_addr')}>
                                                     <Input placeholder="例如: http://192.168.1.1"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
-                                                <Form.Item name="i_kuai_user" label="爱快OS用户名">
+                                                <Form.Item name="i_kuai_user" label="爱快OS用户名"
+                                                           tooltip={fieldHint('i_kuai_user')}>
                                                     <Input placeholder="爱快OS管理员用户名"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
-                                                <Form.Item name="i_kuai_pass" label="爱快OS密码">
+                                                <Form.Item name="i_kuai_pass" label="爱快OS密码"
+                                                           tooltip={fieldHint('i_kuai_pass')}>
                                                     <Input.Password placeholder="爱快OS管理员密码"/>
                                                 </Form.Item>
                                             </Col>
@@ -1787,32 +2156,226 @@ function HostManage() {
                                             </Col>
                                         </Row>
 
-                                        <h4 className="font-medium mb-3 mt-4">端口配置</h4>
+                                        <h4 className="font-medium mb-3 mt-4">端口与访问</h4>
                                         <Row gutter={16}>
-                                            <Col span={8}>
-                                                <Form.Item name="ports_start" label="TCP端口起始">
+                                            <Col span={6}>
+                                                <Form.Item name="ports_start" label="TCP端口起始"
+                                                           tooltip={fieldHint('ports_start')}>
                                                     <InputNumber placeholder="例如: 10000" min={0} max={65535}
                                                                  className="w-full"/>
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={8}>
-                                                <Form.Item name="ports_close" label="TCP端口结束">
+                                            <Col span={6}>
+                                                <Form.Item name="ports_close" label="TCP端口结束"
+                                                           tooltip={fieldHint('ports_close')}>
                                                     <InputNumber placeholder="例如: 20000" min={0} max={65535}
                                                                  className="w-full"/>
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={8}>
-                                                <Form.Item name="remote_port" label="VNC服务端口">
-                                                    <InputNumber placeholder="例如: 5900" min={0} max={65535}
-                                                                 className="w-full"/>
+                                            <Col span={6}>
+                                                <Form.Item name="proxy_mode" label="反向代理模式" initialValue="direct"
+                                                             tooltip="直连：主控与虚拟机平台同一设备；中转：经爱快公网地址转发">
+                                                    <Select options={[
+                                                        {label: '直连虚拟机', value: 'direct'},
+                                                        {label: '经爱快中转', value: 'relay'},
+                                                    ]}/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="relay_addr" label="中转地址"
+                                                           tooltip="中转模式下使用，留空则取服务器公网IP">
+                                                    <Input placeholder="例如: 1.2.3.4"/>
                                                 </Form.Item>
                                             </Col>
                                         </Row>
 
-                                        <h4 className="font-medium mb-3 mt-4">DNS服务器配置</h4>
-                                        <Form.Item name="ipaddr_ddns" label="DNS服务器（多个用逗号分隔）">
-                                            <Input placeholder="例如: 8.8.8.8, 8.8.4.4"/>
-                                        </Form.Item>
+                                        <Row gutter={16} className="mt-4">
+                                            <Col span={6}>
+                                                <Form.Item name="vnc_ip" label="VNC 反代IP"
+                                                           tooltip="VNC 经反向代理时的目标地址，留空使用平台地址">
+                                                    <Input placeholder="例如: vnc.example.com"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="vnc_wan" label="VNC 外网地址"
+                                                           tooltip="填写后用户拿到的是该地址，可含端口">
+                                                    <Input placeholder="例如: vnc.example.com:6080"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="remote_port" label="VNC服务端口"
+                                                           tooltip={fieldHint('remote_port')}>
+                                                    <InputNumber placeholder="例如: 5900" min={0} max={65535}
+                                                                 className="w-full"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="ipaddr_ddns" label="DNS服务器"
+                                                           tooltip="多个用逗号分隔，默认 223.5.5.5, 119.29.29.29">
+                                                    <Input placeholder="223.5.5.5, 119.29.29.29"/>
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                        <Row gutter={16}>
+                                            <Col span={6}>
+                                                <Form.Item name="network_nat" label="共享IP设备名"
+                                                           tooltip={fieldHint('network_nat')}>
+                                                    <Input placeholder="例如: nat"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="network_pub" label="独立IP设备名"
+                                                           tooltip={fieldHint('network_pub')}>
+                                                    <Input placeholder="例如: pub"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="area_code" label="区域代码"
+                                                           tooltip={fieldHint('area_code')}>
+                                                    <Input placeholder="例如: CN"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="area_name" label="区域名称"
+                                                           tooltip={fieldHint('area_name')}>
+                                                    <Input placeholder="例如: 成都"/>
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+
+                                        <h4 className="font-medium mb-3 mt-4">IP地址池配置</h4>
+                                        <div className="space-y-2 mb-4">
+                                            {ipaddrMaps.map((row, index) => (
+                                                <Row key={row.id} gutter={8} align="middle">
+                                                    <Col span={3}>
+                                                        <Input
+                                                            placeholder="配置名称"
+                                                            title={fieldHint('ip_pool_name')}
+                                                            value={row.setName}
+                                                            onChange={(e) => {
+                                                                const newMaps = [...ipaddrMaps]
+                                                                newMaps[index].setName = e.target.value
+                                                                setIpaddrMaps(newMaps)
+                                                            }}
+                                                        />
+                                                    </Col>
+                                                    <Col span={3}>
+                                                        <Select
+                                                            value={row.vers}
+                                                            title={fieldHint('ip_pool_vers')}
+                                                            onChange={(value) => {
+                                                                const newMaps = [...ipaddrMaps]
+                                                                newMaps[index].vers = value
+                                                                setIpaddrMaps(newMaps)
+                                                            }}
+                                                            className="w-full"
+                                                        >
+                                                            <Select.Option value="ipv4">IPv4</Select.Option>
+                                                            <Select.Option value="ipv6">IPv6</Select.Option>
+                                                        </Select>
+                                                    </Col>
+                                                    <Col span={2}>
+                                                        <Select
+                                                            value={row.type}
+                                                            title={fieldHint('ip_pool_type')}
+                                                            onChange={(value) => {
+                                                                const newMaps = [...ipaddrMaps]
+                                                                newMaps[index].type = value
+                                                                setIpaddrMaps(newMaps)
+                                                            }}
+                                                            className="w-full"
+                                                        >
+                                                            <Select.Option value="nat">NAT</Select.Option>
+                                                            <Select.Option value="pub">PUB</Select.Option>
+                                                        </Select>
+                                                    </Col>
+                                                    <Col span={4}>
+                                                        <Input
+                                                            placeholder={row.vers === 'ipv6' ? '起始IPv6地址' : '起始IP地址'}
+                                                            title={fieldHint('ip_pool_from')}
+                                                            value={row.fromIp}
+                                                            onChange={(e) => {
+                                                                const newMaps = [...ipaddrMaps]
+                                                                newMaps[index].fromIp = e.target.value
+                                                                setIpaddrMaps(newMaps)
+                                                            }}
+                                                        />
+                                                    </Col>
+                                                    <Col span={4}>
+                                                        <Input
+                                                            placeholder="网关地址"
+                                                            title={fieldHint('ip_pool_gate')}
+                                                            value={row.gate}
+                                                            onChange={(e) => {
+                                                                const newMaps = [...ipaddrMaps]
+                                                                newMaps[index].gate = e.target.value
+                                                                setIpaddrMaps(newMaps)
+                                                            }}
+                                                        />
+                                                    </Col>
+                                                    <Col span={4}>
+                                                        {row.vers === 'ipv6' ? (
+                                                            <InputNumber
+                                                                placeholder="前缀 64"
+                                                                title={fieldHint('ip_pool_mask')}
+                                                                value={row.prefix}
+                                                                min={1}
+                                                                max={128}
+                                                                controls={false}
+                                                                className="w-full"
+                                                                onChange={(value) => {
+                                                                    const newMaps = [...ipaddrMaps]
+                                                                    newMaps[index].prefix = value || 64
+                                                                    setIpaddrMaps(newMaps)
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <Input
+                                                                placeholder="子网掩码"
+                                                                title={fieldHint('ip_pool_mask')}
+                                                                value={row.mask}
+                                                                onChange={(e) => {
+                                                                    const newMaps = [...ipaddrMaps]
+                                                                    newMaps[index].mask = e.target.value
+                                                                    setIpaddrMaps(newMaps)
+                                                                }}
+                                                            />
+                                                        )}
+                                                    </Col>
+                                                    <Col span={2}>
+                                                        <InputNumber
+                                                            placeholder="数量"
+                                                            title={fieldHint('ip_pool_nums')}
+                                                            value={row.nums}
+                                                            min={1}
+                                                            controls={false}
+                                                            className="w-full"
+                                                            onChange={(value) => {
+                                                                const newMaps = [...ipaddrMaps]
+                                                                newMaps[index].nums = value || 0
+                                                                setIpaddrMaps(newMaps)
+                                                            }}
+                                                        />
+                                                    </Col>
+                                                    <Col span={2}>
+                                                        <Button
+                                                            danger
+                                                            block
+                                                            icon={<DeleteOutlined/>}
+                                                            onClick={() => setIpaddrMaps(ipaddrMaps.filter(m => m.id !== row.id))}
+                                                        />
+                                                    </Col>
+                                                </Row>
+                                            ))}
+                                            <Button
+                                                type="dashed"
+                                                icon={<PlusOutlined/>}
+                                                onClick={() => setIpaddrMaps([...ipaddrMaps, createDefaultIpPoolRow()])}
+                                                block
+                                            >
+                                                添加IP地址池
+                                            </Button>
+                                        </div>
                                     </div>
                                 )
                             },
@@ -1821,33 +2384,6 @@ function HostManage() {
                                 label: <span><DatabaseOutlined/> 高级配置</span>,
                                 children: (
                                     <div className="host-config-tab-panel max-h-[min(65dvh,600px)] overflow-y-auto pr-2">
-                                        <h4 className="font-medium mb-3">售价配置</h4>
-                                        <Row gutter={8} className="mb-4">
-                                            <Col span={6}>
-                                                <div className="text-xs text-gray-500 mb-1">处理器核心单价</div>
-                                                <Form.Item name="n_cpu_price" noStyle>
-                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={6}>
-                                                <div className="text-xs text-gray-500 mb-1">虚拟机内存单价</div>
-                                                <Form.Item name="n_mem_price" noStyle>
-                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={6}>
-                                                <div className="text-xs text-gray-500 mb-1">虚拟机硬盘单价</div>
-                                                <Form.Item name="n_hdd_price" noStyle>
-                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
-                                                </Form.Item>
-                                            </Col>
-                                            <Col span={6}>
-                                                <div className="text-xs text-gray-500 mb-1">虚拟机带宽单价</div>
-                                                <Form.Item name="n_net_price" noStyle>
-                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
                                         <h4 className="font-medium mb-3">系统镜像配置</h4>
                                         <div className="space-y-2 mb-4">
                                             {systemMaps.map((row, index) => (
@@ -2040,127 +2576,6 @@ function HostManage() {
                                             </Button>
                                         </div>
 
-                                        <h4 className="font-medium mb-3 mt-4">IP地址池配置</h4>
-                                        <div className="space-y-2 mb-4">
-                                            {ipaddrMaps.map((row, index) => (
-                                                <div key={row.id} className="p-3 rounded-lg">
-                                                    <Row gutter={8} className="mb-2">
-                                                        <Col span={6}>
-                                                            <Input
-                                                                placeholder="配置名称"
-                                                                value={row.setName}
-                                                                onChange={(e) => {
-                                                                    const newMaps = [...ipaddrMaps]
-                                                                    newMaps[index].setName = e.target.value
-                                                                    setIpaddrMaps(newMaps)
-                                                                }}
-                                                            />
-                                                        </Col>
-                                                        <Col span={4}>
-                                                            <Select
-                                                                value={row.vers}
-                                                                onChange={(value) => {
-                                                                    const newMaps = [...ipaddrMaps]
-                                                                    newMaps[index].vers = value
-                                                                    setIpaddrMaps(newMaps)
-                                                                }}
-                                                                className="w-full"
-                                                            >
-                                                                <Select.Option value="ipv4">IPv4</Select.Option>
-                                                                <Select.Option value="ipv6">IPv6</Select.Option>
-                                                            </Select>
-                                                        </Col>
-                                                        <Col span={4}>
-                                                            <Select
-                                                                value={row.type}
-                                                                onChange={(value) => {
-                                                                    const newMaps = [...ipaddrMaps]
-                                                                    newMaps[index].type = value
-                                                                    setIpaddrMaps(newMaps)
-                                                                }}
-                                                                className="w-full"
-                                                            >
-                                                                <Select.Option value="nat">NAT</Select.Option>
-                                                                <Select.Option value="pub">PUB</Select.Option>
-                                                            </Select>
-                                                        </Col>
-                                                        <Col span={8}>
-                                                            <InputNumber
-                                                                placeholder="数量"
-                                                                value={row.nums}
-                                                                onChange={(value) => {
-                                                                    const newMaps = [...ipaddrMaps]
-                                                                    newMaps[index].nums = value || 0
-                                                                    setIpaddrMaps(newMaps)
-                                                                }}
-                                                                min={1}
-                                                                className="w-full"
-                                                            />
-                                                        </Col>
-                                                        <Col span={2}>
-                                                            <Button
-                                                                danger
-                                                                icon={<DeleteOutlined/>}
-                                                                onClick={() => setIpaddrMaps(ipaddrMaps.filter(m => m.id !== row.id))}
-                                                            />
-                                                        </Col>
-                                                    </Row>
-                                                    <Row gutter={8}>
-                                                        <Col span={8}>
-                                                            <Input
-                                                                placeholder="起始IP地址"
-                                                                value={row.fromIp}
-                                                                onChange={(e) => {
-                                                                    const newMaps = [...ipaddrMaps]
-                                                                    newMaps[index].fromIp = e.target.value
-                                                                    setIpaddrMaps(newMaps)
-                                                                }}
-                                                            />
-                                                        </Col>
-                                                        <Col span={8}>
-                                                            <Input
-                                                                placeholder="网关地址"
-                                                                value={row.gate}
-                                                                onChange={(e) => {
-                                                                    const newMaps = [...ipaddrMaps]
-                                                                    newMaps[index].gate = e.target.value
-                                                                    setIpaddrMaps(newMaps)
-                                                                }}
-                                                            />
-                                                        </Col>
-                                                        <Col span={8}>
-                                                            <Input
-                                                                placeholder="子网掩码"
-                                                                value={row.mask}
-                                                                onChange={(e) => {
-                                                                    const newMaps = [...ipaddrMaps]
-                                                                    newMaps[index].mask = e.target.value
-                                                                    setIpaddrMaps(newMaps)
-                                                                }}
-                                                            />
-                                                        </Col>
-                                                    </Row>
-                                                </div>
-                                            ))}
-                                            <Button
-                                                type="dashed"
-                                                icon={<PlusOutlined/>}
-                                                onClick={() => setIpaddrMaps([...ipaddrMaps, {
-                                                    id: Date.now().toString(),
-                                                    setName: '',
-                                                    vers: 'ipv4',
-                                                    type: 'nat',
-                                                    gate: '',
-                                                    mask: '',
-                                                    fromIp: '',
-                                                    nums: 0
-                                                }])}
-                                                block
-                                            >
-                                                添加IP地址池
-                                            </Button>
-                                        </div>
-
                                         <h4 className="font-medium mb-3 mt-4">API扩展选项</h4>
                                         <Form.Item name="extend_data" label="扩展数据 (JSON格式)">
                                             <Input.TextArea rows={4} placeholder='{"key": "value"}'/>
@@ -2199,20 +2614,20 @@ function HostManage() {
                                                     </Row>
                                                     <Row gutter={8}>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">CPU核心数</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.cpu_num}>CPU核心数</div>
                                                             <InputNumber
                                                                 value={row.cpu_num}
                                                                 min={1}
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    newPlans[index].cpu_num = v ?? 2
+                                                                    newPlans[index].cpu_num = v ?? 4
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">内存(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.mem_num}>内存(MB)</div>
                                                             <InputNumber
                                                                 value={row.mem_num}
                                                                 min={512}
@@ -2220,13 +2635,13 @@ function HostManage() {
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    newPlans[index].mem_num = v ?? 2048
+                                                                    newPlans[index].mem_num = v ?? 4096
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">硬盘(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.hdd_num}>硬盘(MB)</div>
                                                             <InputNumber
                                                                 value={row.hdd_num}
                                                                 min={1024}
@@ -2234,13 +2649,13 @@ function HostManage() {
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    newPlans[index].hdd_num = v ?? 8192
+                                                                    newPlans[index].hdd_num = v ?? 204800
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">流量(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_num}>流量(MB)</div>
                                                             <InputNumber
                                                                 value={row.flu_num}
                                                                 min={0}
@@ -2256,7 +2671,7 @@ function HostManage() {
                                                     </Row>
                                                     <Row gutter={8} className="mt-2">
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">上行带宽(Mbps)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.speed_u}>上行带宽(Mbps)</div>
                                                             <InputNumber
                                                                 value={row.speed_u}
                                                                 min={1}
@@ -2269,7 +2684,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">下行带宽(Mbps)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.speed_d}>下行带宽(Mbps)</div>
                                                             <InputNumber
                                                                 value={row.speed_d}
                                                                 min={1}
@@ -2282,7 +2697,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">NAT端口数</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.nat_num}>NAT端口数</div>
                                                             <InputNumber
                                                                 value={row.nat_num}
                                                                 min={0}
@@ -2295,7 +2710,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">代理数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.web_num}>代理数量</div>
                                                             <InputNumber
                                                                 value={row.web_num}
                                                                 min={0}
@@ -2310,7 +2725,7 @@ function HostManage() {
                                                     </Row>
                                                     <Row gutter={8} className="mt-2">
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">CPU可用比例(%)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.cpu_per}>CPU可用比例(%)</div>
                                                             <InputNumber
                                                                 value={row.cpu_per}
                                                                 min={0}
@@ -2324,7 +2739,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">虚拟显存(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.gpu_mem}>虚拟显存(MB)</div>
                                                             <InputNumber
                                                                 value={row.gpu_mem}
                                                                 min={0}
@@ -2338,7 +2753,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">硬盘IOPS</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.hdd_iop}>硬盘IOPS</div>
                                                             <InputNumber
                                                                 value={row.hdd_iop}
                                                                 min={0}
@@ -2352,7 +2767,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">备份数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.bak_num}>备份数量</div>
                                                             <InputNumber
                                                                 value={row.bak_num}
                                                                 min={0}
@@ -2367,7 +2782,7 @@ function HostManage() {
                                                     </Row>
                                                     <Row gutter={8} className="mt-2">
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">光盘数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.iso_num}>光盘数量</div>
                                                             <InputNumber
                                                                 value={row.iso_num}
                                                                 min={0}
@@ -2380,7 +2795,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">PCIe数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.pci_num}>PCIe数量</div>
                                                             <InputNumber
                                                                 value={row.pci_num}
                                                                 min={0}
@@ -2393,7 +2808,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">USB数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.usb_num}>USB数量</div>
                                                             <InputNumber
                                                                 value={row.usb_num}
                                                                 min={0}
@@ -2406,7 +2821,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">数据盘数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.dat_num}>数据盘数量</div>
                                                             <InputNumber
                                                                 value={row.dat_num}
                                                                 min={0}
@@ -2421,7 +2836,7 @@ function HostManage() {
                                                     </Row>
                                                     <Row gutter={8} className="mt-2">
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">数据盘总容量(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.dat_all}>数据盘总容量(MB)</div>
                                                             <InputNumber
                                                                 value={row.dat_all}
                                                                 min={0}
@@ -2435,45 +2850,45 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">流量重置(天)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_rst_days}>流量重置(天)</div>
                                                             <InputNumber
                                                                 value={row.flu_rst?.[0] ?? 31}
                                                                 min={1}
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    const cur = Array.isArray(newPlans[index].flu_rst) ? [...newPlans[index].flu_rst] : [31, 10, 10]
+                                                                    const cur = Array.isArray(newPlans[index].flu_rst) ? [...newPlans[index].flu_rst] : [31, 10, 0]
                                                                     cur[0] = v ?? 31
-                                                                    newPlans[index].flu_rst = [cur[0], cur[1] ?? 10, cur[2] ?? 10]
+                                                                    newPlans[index].flu_rst = [cur[0], cur[1] ?? 10, cur[2] ?? 0]
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">超限阈值(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_rst_over}>超限阈值(MB)</div>
                                                             <InputNumber
                                                                 value={row.flu_rst?.[1] ?? 10}
                                                                 min={0}
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    const cur = Array.isArray(newPlans[index].flu_rst) ? [...newPlans[index].flu_rst] : [31, 10, 10]
+                                                                    const cur = Array.isArray(newPlans[index].flu_rst) ? [...newPlans[index].flu_rst] : [31, 10, 0]
                                                                     cur[1] = v ?? 10
-                                                                    newPlans[index].flu_rst = [cur[0] ?? 31, cur[1], cur[2] ?? 10]
+                                                                    newPlans[index].flu_rst = [cur[0] ?? 31, cur[1], cur[2] ?? 0]
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">上次重置时间戳</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_rst_at}>上次重置时间戳</div>
                                                             <InputNumber
-                                                                value={row.flu_rst?.[2] ?? 10}
+                                                                value={row.flu_rst?.[2] ?? 0}
                                                                 min={0}
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    const cur = Array.isArray(newPlans[index].flu_rst) ? [...newPlans[index].flu_rst] : [31, 10, 10]
-                                                                    cur[2] = v ?? 10
+                                                                    const cur = Array.isArray(newPlans[index].flu_rst) ? [...newPlans[index].flu_rst] : [31, 10, 0]
+                                                                    cur[2] = v ?? 0
                                                                     newPlans[index].flu_rst = [cur[0] ?? 31, cur[1] ?? 10, cur[2]]
                                                                     setServerPlans(newPlans)
                                                                 }}
@@ -2482,7 +2897,7 @@ function HostManage() {
                                                     </Row>
                                                     <Row gutter={8} className="mt-2">
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">公网网卡数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.nic_pub}>公网网卡数量</div>
                                                             <InputNumber
                                                                 value={row.nic_pub}
                                                                 min={0}
@@ -2495,7 +2910,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">内网网卡数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.nic_pri}>内网网卡数量</div>
                                                             <InputNumber
                                                                 value={row.nic_pri}
                                                                 min={0}
@@ -2508,7 +2923,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">IPv4最大数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.ip4_max}>IPv4最大数量</div>
                                                             <InputNumber
                                                                 value={row.ip4_max}
                                                                 min={0}
@@ -2522,7 +2937,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1">IPv6最大数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.ip6_max}>IPv6最大数量</div>
                                                             <InputNumber
                                                                 value={row.ip6_max}
                                                                 min={0}
@@ -2541,32 +2956,7 @@ function HostManage() {
                                             <Button
                                                 type="dashed"
                                                 icon={<PlusOutlined/>}
-                                                onClick={() => setServerPlans([...serverPlans, {
-                                                    id: Date.now().toString(),
-                                                    planName: '',
-                                                    cpu_num: 2,
-                                                    cpu_per: 0,
-                                                    gpu_mem: 0,
-                                                    mem_num: 2048,
-                                                    hdd_num: 8192,
-                                                    hdd_iop: 1000,
-                                                    bak_num: 1,
-                                                    iso_num: 1,
-                                                    pci_num: 0,
-                                                    usb_num: 0,
-                                                    dat_num: 1,
-                                                    dat_all: 0,
-                                                    speed_u: 100,
-                                                    speed_d: 100,
-                                                    nat_num: 100,
-                                                    web_num: 100,
-                                                    flu_num: 102400,
-                                                    flu_rst: [31, 10, 10],
-                                                    nic_pub: 0,
-                                                    nic_pri: 1,
-                                                    ip4_max: 1,
-                                                    ip6_max: 0,
-                                                }])}
+                                                onClick={() => setServerPlans([...serverPlans, createDefaultPlanRow(nextPlanName())])}
                                                 block
                                             >
                                                 添加套餐
@@ -2579,6 +2969,13 @@ function HostManage() {
                     />
                 </Form>
             </Modal>
+
+            {/* 管理主机：系统模板 / ISO 目录文件与镜像绑定 */}
+            <HostImageManager
+                open={!!imageHost}
+                hostName={imageHost}
+                onClose={() => setImageHost('')}
+            />
         </div>
     )
 }

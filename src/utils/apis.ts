@@ -900,6 +900,112 @@ export const scanBackups = (hsName: string): Promise<ApiResponse> => {
 };
 
 // ============================================================================
+// 主机镜像/文件管理（系统模板 + ISO 目录）
+// ============================================================================
+
+export type HostImageKind = 'system' | 'iso';
+
+export interface HostImageFile {
+  name: string;
+  size: number;
+  mod_time: number;
+  bound: boolean;
+  sys_name?: string;
+  sys_size?: string;
+  sys_type?: string;
+  sys_flag?: boolean;
+}
+
+export interface HostImageListResult {
+  kind: HostImageKind;
+  host_name: string;
+  dir?: string;
+  files: HostImageFile[];
+  /** 读取主机目录失败时的原因（接口仍返回 200，便于前端展示目录信息） */
+  error?: string;
+}
+
+export interface HostImageBindPayload {
+  kind: HostImageKind;
+  file: string;
+  sys_name: string;
+  sys_size: string;
+  sys_type: string;
+}
+
+/**
+ * 列出主机镜像目录中的文件（含镜像管理绑定状态）
+ */
+export const getHostImageFiles = (hsName: string, kind: HostImageKind): Promise<ApiResponse<HostImageListResult>> => {
+  return http.get(`/api/server/images/${hsName}`, { params: { kind }, silent: true });
+};
+
+/**
+ * 上传镜像文件到主机目录
+ */
+export const uploadHostImageFile = (
+  hsName: string,
+  kind: HostImageKind,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ApiResponse<{ kind: string; name: string; size: number }>> => {
+  const form = new FormData();
+  // kind 必须在 file 之前：后端按 multipart 顺序流式转发，先拿到类型再落盘
+  form.append('kind', kind);
+  form.append('file', file, file.name);
+  return http.post(`/api/server/images/${hsName}/upload`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0,
+    silent: true,
+    onUploadProgress: (event: any) => {
+      if (!onProgress || !event?.total) return;
+      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    },
+  });
+};
+
+/**
+ * 重命名主机镜像文件
+ */
+export const renameHostImageFile = (
+  hsName: string,
+  kind: HostImageKind,
+  oldName: string,
+  newName: string,
+): Promise<ApiResponse> => {
+  return http.post(`/api/server/images/${hsName}/rename`, { kind, old_name: oldName, new_name: newName }, { silent: true });
+};
+
+/**
+ * 删除主机镜像文件
+ */
+export const deleteHostImageFile = (
+  hsName: string,
+  kind: HostImageKind,
+  name: string,
+): Promise<ApiResponse> => {
+  return http.delete(`/api/server/images/${hsName}`, { params: { kind, name }, silent: true });
+};
+
+/**
+ * 绑定主机镜像文件到镜像管理
+ */
+export const bindHostImageFile = (hsName: string, payload: HostImageBindPayload): Promise<ApiResponse> => {
+  return http.post(`/api/server/images/${hsName}/bind`, payload, { silent: true });
+};
+
+/**
+ * 解除主机镜像文件的镜像管理绑定
+ */
+export const unbindHostImageFile = (
+  hsName: string,
+  kind: HostImageKind,
+  name: string,
+): Promise<ApiResponse> => {
+  return http.delete(`/api/server/images/${hsName}/bind`, { params: { kind, name }, silent: true });
+};
+
+// ============================================================================
 // 默认导出
 // ============================================================================
 
@@ -945,6 +1051,12 @@ export default {
   getUSBList,
   setupUSB,
   getServerPlan,
+  getHostImageFiles,
+  uploadHostImageFile,
+  renameHostImageFile,
+  deleteHostImageFile,
+  bindHostImageFile,
+  unbindHostImageFile,
   
   // 虚拟机管理
   getVMs,
