@@ -12,7 +12,8 @@ import {
     Space,
     Slider,
     Alert,
-    Divider
+    Divider,
+    Collapse
 } from 'antd'
 import {
     PlusOutlined,
@@ -105,6 +106,29 @@ function normalizeOSList(raw: any): OSConfigItem[] {
     return []
 }
 
+/**
+ * 套餐模式下把硬件相关分区收进一个默认折叠的面板。
+ *
+ * children 里仍是完整的 Form.Item，forceRender 保证折叠时也会挂载，
+ * 否则未渲染的字段不会进入表单值，提交时硬件参数会全部丢失。
+ */
+const HardwareConfigFold: React.FC<{ fold: boolean; hint: string; children: React.ReactNode }> = ({ fold, hint, children }) => {
+    if (!fold) return <>{children}</>
+    return (
+        <Collapse
+            bordered={false}
+            defaultActiveKey={[]}
+            style={{ marginBottom: 8, background: 'transparent' }}
+            items={[{
+                key: 'plan-hardware',
+                forceRender: true,
+                label: <span style={{ fontSize: 13 }}>硬件与网络配置（{hint}）</span>,
+                children,
+            }]}
+        />
+    )
+}
+
 interface DockCreateModalProps {
     open: boolean
     onCancel: () => void
@@ -158,6 +182,9 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
     // 是否可以自由配置（管理员或有自由配置权限）
     const canFreeConfig = isAdmin || !!(userQuota as any)?.can_free_config
 
+    // 创建时选中了套餐：资源以套餐为准，硬件分区仍展示但默认折叠为只读
+    const isPlanMode = !isEditMode && !!selectedPlanName && !!serverPlans[selectedPlanName]
+
     // 编辑模式下的权限控制（管理员拥有全部权限）
     const canEditSys = isAdmin || hasPermission(vmPerms, VM_PERMISSION.SYS_EDITS)
     const canEditPwd = isAdmin || hasPermission(vmPerms, VM_PERMISSION.PWD_EDITS)
@@ -196,6 +223,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
         showQuota?: boolean
     }> = ({ name, label, min, max, step = 1, unit = '', disabled = false, quotaUsed = 0, quotaTotal = 0, showQuota = false }) => {
         const currentValue = Form.useWatch(name, form)
+        // 套餐模式下资源由套餐决定，展开后仅用于查看
+        const isDisabled = disabled || isPlanMode
         
         return (
             <Form.Item label={label} style={{ marginBottom: 24 }}>
@@ -212,7 +241,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                 min={min}
                                 max={max}
                                 step={step}
-                                disabled={disabled}
+                                disabled={isDisabled}
                                 onChange={(val) => form.setFieldValue(name, val)}
                                 value={currentValue}
                             />
@@ -224,7 +253,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                 min={min}
                                 max={max}
                                 step={step}
-                                disabled={disabled}
+                                disabled={isDisabled}
                                 style={{ width: '100%' }}
                                 addonAfter={unit || undefined}
                             />
@@ -313,6 +342,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
             form.resetFields()
             setNicList([])
             setSaveConfirmVisible(false)
+            // 关闭后清空套餐选择，避免下次打开时仍按旧套餐折叠展示
+            setSelectedPlanName('')
         }
     }, [open, vmUuid])
 
@@ -632,6 +663,11 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         // 顶部转圈圈强提醒，持续轮询直到完成
                         startTaskWithNotification(result, '创建虚拟机', {
                             onCompleted: async () => {
+                                // 先刷新列表再补端口映射：
+                                // addNATRule 要走爱快 API，平台响应慢时会把 onSuccess
+                                // 一起拖住（最多 30s 超时），页面看起来就像卡死。
+                                onSuccess()
+
                                 // 根据操作系统类型自动添加默认端口映射
                                 const selectedOs = hostImages.find(it => it.sys_file === values.os_name)
                                 if (selectedOs) {
@@ -664,8 +700,6 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                         }
                                     }
                                 }
-                                // 任务完成后刷新列表
-                                onSuccess()
                             },
                         })
                     } else {
@@ -701,7 +735,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
     const resetForm = async () => {
         form.resetFields()
         setNicList([])
-        
+        setSelectedPlanName('')
+
         if (hostName) {
             setSelectedHost(hostName)
             form.setFieldsValue({ host_name: hostName })
@@ -793,6 +828,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                             <Select 
                                 onChange={(val) => {
                                     setSelectedHost(val)
+                                    // 换主机后旧套餐不再适用，避免沿用旧套餐的资源与折叠状态
+                                    setSelectedPlanName('')
                                     loadHostData(val)
                                 }}
                                 placeholder="请选择部署主机"
@@ -1026,8 +1063,13 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         </div>
                     )}
 
-                    {/* 资源配置：编辑模式始终显示；创建时仅在未选择套餐时显示 */}
-                    {(isEditMode || (canFreeConfig && !selectedPlanName)) && (
+                    {/* 硬件相关分区：套餐模式下整体收进默认折叠的面板，展开后可查看明细 */}
+                    <HardwareConfigFold
+                        fold={isPlanMode}
+                        hint={canFreeConfig ? '已按套餐自动填充，如需修改请切换「自定义配置」' : '已按套餐自动填充，仅供查看'}
+                    >
+                    {/* 资源配置：编辑模式始终显示；创建时未选择套餐可直接编辑 */}
+                    {(isEditMode || canFreeConfig || isPlanMode) && (
                     <>
                     <div className="modal-section">
                         <div style={sectionTitleStyle}>
@@ -1087,32 +1129,32 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         <Row gutter={24}>
                             <Col span={8}>
                                 <Form.Item name="bak_num" label="最大备份数" style={{ marginBottom: 16 }}>
-                                    <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="个" />
+                                    <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="个" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                             <Col span={8}>
                                 <Form.Item name="iso_num" label="最大光盘数" style={{ marginBottom: 16 }}>
-                                    <InputNumber min={0} max={10} style={{ width: '100%' }} addonAfter="个" />
+                                    <InputNumber min={0} max={10} style={{ width: '100%' }} addonAfter="个" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                             <Col span={8}>
                                 <Form.Item name="pci_num" label="最大PCIe数" style={{ marginBottom: 16 }}>
-                                    <InputNumber min={0} max={16} style={{ width: '100%' }} addonAfter="个" />
+                                    <InputNumber min={0} max={16} style={{ width: '100%' }} addonAfter="个" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                             <Col span={8}>
                                 <Form.Item name="usb_num" label="最大USB数" style={{ marginBottom: 16 }}>
-                                    <InputNumber min={0} max={16} style={{ width: '100%' }} addonAfter="个" />
+                                    <InputNumber min={0} max={16} style={{ width: '100%' }} addonAfter="个" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                             <Col span={8}>
                                 <Form.Item name="dat_num" label="最大数据盘数" style={{ marginBottom: 16 }}>
-                                    <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="个" />
+                                    <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="个" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                             <Col span={8}>
                                 <Form.Item name="dat_all" label="数据盘总容量" style={{ marginBottom: 16 }}>
-                                    <InputNumber min={0} style={{ width: '100%' }} addonAfter="MB" />
+                                    <InputNumber min={0} style={{ width: '100%' }} addonAfter="MB" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                         </Row>
@@ -1120,7 +1162,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                     </>
                     )}
 
-                    {(canFreeConfig || isEditMode) && (
+                    {(isEditMode || canFreeConfig || isPlanMode) && (
                     <div className="modal-section">
                         <div style={sectionTitleStyle}>
                             <div className="w-8 h-8 rounded-lg section-icon-bg-red flex items-center justify-center">
@@ -1131,7 +1173,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         <Row gutter={24}>
                             <Col span={12}>
                                 <Form.Item label="PCI直通" name="gpu_id">
-                                    <Select allowClear placeholder="选择PCI 设备" onChange={(val) => {
+                                    <Select allowClear placeholder="选择PCI 设备" disabled={isPlanMode} onChange={(val) => {
                                         if (val && pciDeviceList[val]) {
                                             const dev = pciDeviceList[val]
                                             form.setFieldsValue({
@@ -1156,10 +1198,10 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                 <Form.Item label="MDEV / 备注">
                                     <Space.Compact style={{ width: '100%' }}>
                                         <Form.Item name="gpu_mdev" noStyle>
-                                            <Input placeholder="vGPU/MDEV UUID" style={{ width: '60%' }} />
+                                            <Input placeholder="vGPU/MDEV UUID" style={{ width: '60%' }} disabled={isPlanMode} />
                                         </Form.Item>
                                         <Form.Item name="gpu_remark" noStyle>
-                                            <Input placeholder="PCI备注信息" style={{ width: '40%' }} />
+                                            <Input placeholder="PCI备注信息" style={{ width: '40%' }} disabled={isPlanMode} />
                                         </Form.Item>
                                     </Space.Compact>
                                 </Form.Item>
@@ -1168,7 +1210,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                     </div>
                     )}
 
-                    {(canFreeConfig || isEditMode) && (
+                    {(isEditMode || canFreeConfig || isPlanMode) && (
                     <div className="modal-section">
                         <div style={sectionTitleStyle}>
                             <div className="w-8 h-8 rounded-lg section-icon-bg-blue flex items-center justify-center">
@@ -1179,7 +1221,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         <Row gutter={24}>
                             <Col span={8}>
                                 <Form.Item label="USB 设备" name="usb_device_key">
-                                    <Select allowClear placeholder="选择USB 设备" onChange={(val) => {
+                                    <Select allowClear placeholder="选择USB 设备" disabled={isPlanMode} onChange={(val) => {
                                         if (val && usbDeviceList[val]) {
                                             const dev = usbDeviceList[val]
                                             form.setFieldsValue({
@@ -1202,24 +1244,24 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                 <Form.Item label="VID / PID">
                                     <Space.Compact style={{ width: '100%' }}>
                                         <Form.Item name="usb_vid" noStyle>
-                                            <Input placeholder="VID (ex: 0403)" style={{ width: '50%' }} />
+                                            <Input placeholder="VID (ex: 0403)" style={{ width: '50%' }} disabled={isPlanMode} />
                                         </Form.Item>
                                         <Form.Item name="usb_pid" noStyle>
-                                            <Input placeholder="PID (ex: 6001)" style={{ width: '50%' }} />
+                                            <Input placeholder="PID (ex: 6001)" style={{ width: '50%' }} disabled={isPlanMode} />
                                         </Form.Item>
                                     </Space.Compact>
                                 </Form.Item>
                             </Col>
                             <Col span={8}>
                                 <Form.Item label="备注" name="usb_remark">
-                                    <Input placeholder="USB备注信息" />
+                                    <Input placeholder="USB备注信息" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                         </Row>
                     </div>
                     )}
 
-                    {(canFreeConfig || isEditMode) && (
+                    {(isEditMode || canFreeConfig || isPlanMode) && (
                     <div className="modal-section">
                         <div style={sectionTitleStyle}>
                             <div className="w-8 h-8 rounded-lg section-icon-bg-green flex items-center justify-center">
@@ -1251,12 +1293,12 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                             </Col>
                             <Col span={6}>
                                 <Form.Item label="重置时间" name="flu_rst_day" style={{ marginBottom: 24 }}>
-                                    <InputNumber min={1} max={365} style={{ width: '100%' }} addonAfter="天" />
+                                    <InputNumber min={1} max={365} style={{ width: '100%' }} addonAfter="天" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                             <Col span={6}>
                                 <Form.Item label="达标限速" name="flu_rst_limit" style={{ marginBottom: 24 }}>
-                                    <InputNumber min={1} max={1000} style={{ width: '100%' }} addonAfter="Mbps" />
+                                    <InputNumber min={1} max={1000} style={{ width: '100%' }} addonAfter="Mbps" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                         </Row>
@@ -1280,15 +1322,15 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                     </div>
                     )}
 
-                    {/* 非自由配置用户不显示网卡配置（由套餐自动配置）；编辑模式也隐藏 */}
-                    {!isEditMode && canFreeConfig && (
+                    {/* 网卡由套餐自动配置，套餐模式下只读展示；编辑模式隐藏 */}
+                    {!isEditMode && (canFreeConfig || isPlanMode) && (
                     <div className="modal-section">
                         <div style={sectionTitleStyle}>
                             <div className="w-8 h-8 rounded-lg section-icon-bg-blue flex items-center justify-center">
                                 <RadarChartOutlined />
                             </div>
                             <span>网卡配置</span>
-                            {!canFreeConfig && selectedPlanName && serverPlans[selectedPlanName] && (
+                            {isPlanMode && (
                                 <span className="text-xs" style={{ color: 'var(--art-gray-500)', marginLeft: 8 }}>
                                     (公网{serverPlans[selectedPlanName].nic_pub ?? 0}张 + 内网{serverPlans[selectedPlanName].nic_pri ?? 1}张，
                                     IPv4最多{serverPlans[selectedPlanName].ip4_max ?? 1}个，
@@ -1303,30 +1345,31 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                     <Input style={{ width: 120 }} disabled />
                                 </Form.Item>
                                 <Form.Item name={`nic_type_${nic.key}`} initialValue="nat" noStyle>
-                                    <Select style={{ width: 100 }} disabled={!canFreeConfig && !!selectedPlanName}>
+                                    <Select style={{ width: 100 }} disabled={isPlanMode}>
                                         <Select.Option value="nat">内网</Select.Option>
                                         <Select.Option value="pub">公网</Select.Option>
                                     </Select>
                                 </Form.Item>
                                 <Form.Item name={`nic_ip_${nic.key}`} noStyle>
-                                    <Input placeholder="IPv4 (可选)" style={{ margin: '0 10px' }} disabled={!canFreeConfig && !!selectedPlanName} />
+                                    <Input placeholder="IPv4 (可选)" style={{ margin: '0 10px' }} disabled={isPlanMode} />
                                 </Form.Item>
                                 <Form.Item name={`nic_ip6_${nic.key}`} noStyle>
-                                    <Input placeholder="IPv6 (可选)" style={{ margin: '0 10px' }} disabled={!canFreeConfig && !!selectedPlanName} />
+                                    <Input placeholder="IPv6 (可选)" style={{ margin: '0 10px' }} disabled={isPlanMode} />
                                 </Form.Item>
-                                {(canFreeConfig || !selectedPlanName) && (
+                                {!isPlanMode && (
                                     <Button danger icon={<DeleteOutlined />} onClick={() => handleRemoveNic(nic.key)} />
                                 )}
                             </Space.Compact>
                         ))}
                         
-                        {(canFreeConfig || !selectedPlanName) && (
+                        {!isPlanMode && (
                         <Button type="dashed" onClick={handleAddNic} block icon={<PlusOutlined />}>
                             添加网卡
                         </Button>
                         )}
                     </div>
                     )}
+                    </HardwareConfigFold>
                 </Form>
             </Modal>
 
