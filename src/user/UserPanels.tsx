@@ -455,9 +455,8 @@ const UserPanels: React.FC = () => {
     const vmHost = vm._host;
     const vmUuid = vm._realUuid || key;
 
-    const cpuTotal = firstStatus.cpu_total || config.cpu_num || 0;
-    const cpuUsage = firstStatus.cpu_usage || 0;
-    const cpuPercent = cpuTotal > 0 ? Math.round((cpuUsage / cpuTotal) * 100) : 0;
+    // cpu_usage 是 Agent 采集的整体使用率（0-100），不是已用核数
+    const cpuPercent = Math.max(0, Math.min(Math.round(firstStatus.cpu_usage || 0), 100));
 
     const memTotal = firstStatus.mem_total || config.mem_num || 0;
     const memUsage = firstStatus.mem_usage || 0;

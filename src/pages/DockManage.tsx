@@ -686,8 +686,8 @@ function DockManage() {
                                 const statusList = record.vm?.status || []
                                 const st = statusList.length > 0 ? statusList[0] : {}
                                 const total = st.cpu_total || config.cpu_num || 0
-                                const usage = st.cpu_usage || 0
-                                const percent = total > 0 ? Math.round((usage / total) * 100) : 0
+                                // cpu_usage 是 Agent 采集的整体使用率（0-100），不是已用核数
+                                const percent = Math.max(0, Math.min(Math.round(st.cpu_usage || 0), 100))
                                 return (
                                     <div>
                                         <div className="text-xs mb-1">{total}核 {percent}%</div>
