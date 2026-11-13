@@ -148,6 +148,8 @@ export default function HostFirewallPanel({hostName}: Props) {
         },
     ]
 
+    const serviceDown = error.includes('未运行')
+
     return (
         <div className="art-stack">
             <Space wrap>
@@ -155,6 +157,7 @@ export default function HostFirewallPanel({hostName}: Props) {
                 <Button
                     type="primary"
                     icon={<PlusOutlined />}
+                    disabled={serviceDown}
                     onClick={() => {
                         form.resetFields()
                         form.setFieldsValue({
@@ -174,7 +177,14 @@ export default function HostFirewallPanel({hostName}: Props) {
                         : '规则编号来自 iptables --line-numbers，删除时按编号移除'}
                 </span>
             </Space>
-            {error && <Alert type="error" showIcon message={error} />}
+            {error && (
+                <Alert
+                    type={serviceDown ? 'warning' : 'error'}
+                    showIcon
+                    message={serviceDown ? 'Windows 防火墙服务未运行' : '防火墙规则读取失败'}
+                    description={error}
+                />
+            )}
             <Table
                 rowKey="id"
                 size="small"
