@@ -47,6 +47,7 @@ import api from '@/utils/apis.ts'
 import PageHeader from '@/components/PageHeader'
 import HostConfigBackupActions from '@/components/HostConfigBackupActions'
 import HostImageManager from '@/components/HostImageManager'
+import {REGION_GROUPS} from '@/constants/regions'
 
 // 主机配置接口
 // OS镜像配置项（system_maps/images_maps通用结构）
@@ -383,7 +384,7 @@ const FIELD_HINTS: Record<string, FieldHint> = {
             vSphereESXi: 'vSphere 公网端口组名',
         },
     },
-    area_code: {base: '区域代码，用于套餐与实例筛选，如 CN / US / HK'},
+    area_code: {base: '选择国家 / 地区代码，用于套餐与实例筛选；与区域名称组合为「代码,名称」'},
     area_name: {base: '区域显示名称，如 成都 / 华南区'},
 
     // ===== IP 地址池 =====
@@ -2232,7 +2233,13 @@ function HostManage() {
                                             <Col span={6}>
                                                 <Form.Item name="area_code" label="区域代码"
                                                            tooltip={fieldHint('area_code')}>
-                                                    <Input placeholder="例如: CN"/>
+                                                    <Select
+                                                        showSearch
+                                                        allowClear
+                                                        placeholder="选择国家 / 地区"
+                                                        optionFilterProp="label"
+                                                        options={REGION_GROUPS}
+                                                    />
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
