@@ -7068,3 +7068,90 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
+
+/* ---------- 主机管理抽屉：左侧页签导航 ----------
+ * 全局 .ant-tabs 被做成「分段胶囊」，左置页签会变成一整块巨型胶囊。
+ * 这里单独还原成控制台常见的侧边导航：整列无底色、单项 8px 圆角，
+ * 选中用淡主色底 + 左侧强调条，避免和内容区抢视线。
+ */
+.host-manager-tabs > .ant-tabs-nav {
+    flex: 0 0 150px;
+    width: 150px;
+    margin: 0 16px 0 0;
+    padding-right: 12px;
+    border-right: 1px solid var(--art-card-border);
+}
+
+.host-manager-tabs .ant-tabs-nav-wrap {
+    align-self: flex-start;
+}
+
+.host-manager-tabs .ant-tabs-nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+}
+
+.host-manager-tabs .ant-tabs-tab,
+.host-manager-tabs .ant-tabs-tab + .ant-tabs-tab {
+    margin: 0 !important;
+    padding: 9px 12px;
+    justify-content: flex-start;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--art-gray-600);
+    transition: background-color 0.14s var(--art-ease), color 0.14s var(--art-ease);
+}
+
+.host-manager-tabs .ant-tabs-tab:hover {
+    background: var(--art-hover-color);
+    color: var(--art-gray-900);
+}
+
+.host-manager-tabs .ant-tabs-tab.ant-tabs-tab-active {
+    background: var(--art-active-color);
+    box-shadow: inset 3px 0 0 var(--main-color);
+}
+
+.host-manager-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn,
+.host-manager-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn:hover {
+    color: var(--main-color);
+    font-weight: 600;
+}
+
+.host-manager-tabs .ant-tabs-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    white-space: nowrap;
+}
+
+.host-manager-tabs .ant-tabs-ink-bar {
+    display: none;
+}
+
+.host-manager-tabs > .ant-tabs-content-holder {
+    min-width: 0;
+}
+
+@media (max-width: 768px) {
+    .host-manager-tabs > .ant-tabs-nav {
+        flex: 0 0 112px;
+        width: 112px;
+        margin-right: 10px;
+        padding-right: 8px;
+    }
+
+    .host-manager-tabs .ant-tabs-tab {
+        padding: 8px;
+        font-size: 12px;
+    }
+
+    .host-manager-tabs .ant-tabs-tab-btn {
+        gap: 6px;
+    }
+}

@@ -560,6 +560,7 @@ export default function HostImageManager({open, hostName, onClose}: Props) {
                 }
             >
                 <Tabs
+                    className="host-manager-tabs"
                     tabPosition="left"
                     activeKey={activeTab}
                     onChange={setActiveTab}
