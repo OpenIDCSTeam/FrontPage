@@ -22,12 +22,19 @@ import {
     message,
 } from 'antd'
 import {
+    ClusterOutlined,
+    CodeOutlined,
+    DatabaseOutlined,
     DeleteOutlined,
     DisconnectOutlined,
     EditOutlined,
+    FileZipOutlined,
     FolderOpenOutlined,
     LinkOutlined,
     ReloadOutlined,
+    SafetyCertificateOutlined,
+    SettingOutlined,
+    ThunderboltOutlined,
     UploadOutlined,
 } from '@ant-design/icons'
 import type {ColumnsType} from 'antd/es/table'
@@ -42,6 +49,11 @@ import {
     uploadHostImageFile,
 } from '@/utils/apis'
 import type {HostImageFile, HostImageKind, HostImageListResult, HostPlatformInfo, HostPlatformSection} from '@/utils/apis'
+import HostTerminalPanel from '@/components/host/HostTerminalPanel'
+import HostFilePanel from '@/components/host/HostFilePanel'
+import HostFirewallPanel from '@/components/host/HostFirewallPanel'
+import HostProcessPanel from '@/components/host/HostProcessPanel'
+import HostServicePanel from '@/components/host/HostServicePanel'
 
 interface Props {
     open: boolean
@@ -90,8 +102,8 @@ function platformColumns(section: HostPlatformSection): ColumnsType<{key: number
 }
 
 export default function HostImageManager({open, hostName, onClose}: Props) {
-    const [activeTab, setActiveTab] = useState<HostImageKind | 'platform'>('system')
-    // 平台配置页签不涉及镜像目录，按「系统模板」处理即可
+    const [activeTab, setActiveTab] = useState<string>('system')
+    // 非镜像页签不涉及镜像目录，按「系统模板」处理即可
     const activeKind: HostImageKind = activeTab === 'iso' ? 'iso' : 'system'
     const [listMap, setListMap] = useState<Partial<Record<HostImageKind, HostImageListResult>>>({})
     const [loadingKind, setLoadingKind] = useState<HostImageKind | null>(null)
@@ -147,7 +159,8 @@ export default function HostImageManager({open, hostName, onClose}: Props) {
 
     // 打开或切换到镜像页签时按需加载；用 key 去重，避免同一轮渲染重复请求
     useEffect(() => {
-        if (!open || activeTab === 'platform') return
+        if (!open) return
+        if (activeTab !== 'system' && activeTab !== 'iso') return
         const key = `${hostName}::${activeTab}`
         if (lastLoadKey.current === key) return
         lastLoadKey.current = key
@@ -467,15 +480,56 @@ export default function HostImageManager({open, hostName, onClose}: Props) {
         )
     }
 
-    const tabItems: {key: string; label: string; children: ReactNode}[] =
-        (['system', 'iso'] as HostImageKind[]).map(kind => ({
-            key: kind,
-            label: KIND_META[kind].label,
-            children: renderPanel(kind),
-        }))
+    const hostOS = platform?.host_os || 'linux'
+    const tabItems: {key: string; label: ReactNode; children: ReactNode}[] = [
+        {
+            key: 'system',
+            label: <span><DatabaseOutlined /> {KIND_META.system.label}</span>,
+            children: renderPanel('system'),
+        },
+        {
+            key: 'iso',
+            label: <span><FileZipOutlined /> {KIND_META.iso.label}</span>,
+            children: renderPanel('iso'),
+        },
+    ]
     if (platform?.sections?.length) {
-        tabItems.push({key: 'platform', label: '平台配置', children: renderPlatform()})
+        tabItems.push({
+            key: 'platform',
+            label: <span><ClusterOutlined /> 平台配置</span>,
+            children: renderPlatform(),
+        })
     }
+    // Windows 主机（Hyper-V / Workstation）没有 Linux Shell，不展示终端页签
+    if (hostOS === 'linux') {
+        tabItems.push({
+            key: 'terminal',
+            label: <span><CodeOutlined /> 终端</span>,
+            children: <HostTerminalPanel hostName={hostName} />,
+        })
+    }
+    tabItems.push(
+        {
+            key: 'files',
+            label: <span><FolderOpenOutlined /> 文件</span>,
+            children: <HostFilePanel hostName={hostName} />,
+        },
+        {
+            key: 'firewall',
+            label: <span><SafetyCertificateOutlined /> 防火墙</span>,
+            children: <HostFirewallPanel hostName={hostName} />,
+        },
+        {
+            key: 'processes',
+            label: <span><ThunderboltOutlined /> 进程</span>,
+            children: <HostProcessPanel hostName={hostName} />,
+        },
+        {
+            key: 'services',
+            label: <span><SettingOutlined /> 服务</span>,
+            children: <HostServicePanel hostName={hostName} />,
+        },
+    )
 
     return (
         <>
@@ -483,21 +537,32 @@ export default function HostImageManager({open, hostName, onClose}: Props) {
                 title={`管理主机 · ${hostName}`}
                 open={open}
                 onClose={onClose}
-                width="min(1000px, 100vw)"
+                width="min(1180px, 100vw)"
                 destroyOnHidden
                 extra={
-                    <Button
-                        icon={<FolderOpenOutlined />}
-                        onClick={() => (activeTab === 'platform' ? loadPlatform() : load(activeKind))}
-                        loading={activeTab === 'platform' ? platformLoading : loadingKind === activeKind}
-                    >
-                        刷新
-                    </Button>
+                    activeTab === 'system' || activeTab === 'iso' ? (
+                        <Button
+                            icon={<FolderOpenOutlined />}
+                            onClick={() => load(activeKind)}
+                            loading={loadingKind === activeKind}
+                        >
+                            刷新
+                        </Button>
+                    ) : activeTab === 'platform' ? (
+                        <Button
+                            icon={<FolderOpenOutlined />}
+                            onClick={loadPlatform}
+                            loading={platformLoading}
+                        >
+                            刷新
+                        </Button>
+                    ) : null
                 }
             >
                 <Tabs
+                    tabPosition="left"
                     activeKey={activeTab}
-                    onChange={key => setActiveTab(key as HostImageKind | 'platform')}
+                    onChange={setActiveTab}
                     items={tabItems}
                 />
             </Drawer>

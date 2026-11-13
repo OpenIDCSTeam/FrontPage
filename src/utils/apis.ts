@@ -1010,6 +1010,8 @@ export interface HostPlatformSection {
 export interface HostPlatformInfo {
   host_name: string;
   server_type: string;
+  /** 目标主机操作系统：linux / windows */
+  host_os?: string;
   sections: HostPlatformSection[];
 }
 
@@ -1018,6 +1020,137 @@ export interface HostPlatformInfo {
  */
 export const getHostPlatformInfo = (hsName: string): Promise<ApiResponse<HostPlatformInfo>> => {
   return http.get(`/api/server/platform/${hsName}`, { silent: true });
+};
+
+// ============================================================================
+// 主机运维：终端 / 文件 / 防火墙 / 进程 / 服务
+// ============================================================================
+
+export interface HostProcessItem {
+  pid: number;
+  user: string;
+  cpu: number;
+  mem: number;
+  /** 展示文本：Linux 为百分比，Windows 为累计 CPU 秒 */
+  cpu_desc?: string;
+  mem_desc?: string;
+  state: string;
+  command: string;
+}
+
+export interface HostServiceItem {
+  name: string;
+  load: string;
+  active: string;
+  sub: string;
+  description: string;
+}
+
+export interface HostFirewallRule {
+  id: string;
+  target: string;
+  protocol: string;
+  source: string;
+  port: string;
+  comment: string;
+}
+
+export interface HostFileItem {
+  name: string;
+  is_dir: boolean;
+  size: number;
+  mode: string;
+  owner: string;
+  mod_time: number;
+}
+
+export interface HostTerminalTicket {
+  ws_url: string;
+  token: string;
+  expires_in: number;
+  user: string;
+}
+
+export const requestHostTerminal = (hsName: string): Promise<ApiResponse<HostTerminalTicket>> => {
+  return http.post(`/api/server/ops/${hsName}/terminal`, {}, { silent: true });
+};
+
+export const getHostProcesses = (hsName: string): Promise<ApiResponse<{ os: string; items: HostProcessItem[] }>> => {
+  return http.get(`/api/server/ops/${hsName}/processes`, { silent: true });
+};
+
+export const killHostProcess = (hsName: string, pid: number): Promise<ApiResponse> => {
+  return http.post(`/api/server/ops/${hsName}/processes/kill`, { pid }, { silent: true });
+};
+
+export const getHostServices = (hsName: string): Promise<ApiResponse<{ os: string; items: HostServiceItem[] }>> => {
+  return http.get(`/api/server/ops/${hsName}/services`, { silent: true });
+};
+
+export const controlHostService = (
+  hsName: string,
+  name: string,
+  action: 'start' | 'stop' | 'restart',
+): Promise<ApiResponse> => {
+  return http.post(`/api/server/ops/${hsName}/services/control`, { name, action }, { silent: true });
+};
+
+export const getHostFirewallRules = (hsName: string): Promise<ApiResponse<{ os: string; rules: HostFirewallRule[] }>> => {
+  return http.get(`/api/server/ops/${hsName}/firewall`, { silent: true });
+};
+
+export const addHostFirewallRule = (hsName: string, rule: Partial<HostFirewallRule>): Promise<ApiResponse> => {
+  return http.post(`/api/server/ops/${hsName}/firewall`, rule, { silent: true });
+};
+
+export const deleteHostFirewallRule = (hsName: string, id: string): Promise<ApiResponse> => {
+  return http.delete(`/api/server/ops/${hsName}/firewall`, { params: { id }, silent: true });
+};
+
+export const getHostFiles = (hsName: string, path: string): Promise<ApiResponse<{ os: string; path: string; items: HostFileItem[] }>> => {
+  return http.get(`/api/server/ops/${hsName}/files`, { params: { path }, silent: true });
+};
+
+export const uploadHostFile = (
+  hsName: string,
+  path: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ApiResponse<{ name: string; size: number }>> => {
+  const form = new FormData();
+  form.append('path', path);
+  form.append('file', file, file.name);
+  return http.post(`/api/server/ops/${hsName}/files/upload`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0,
+    silent: true,
+    onUploadProgress: (event: any) => {
+      if (!onProgress || !event?.total) return;
+      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    },
+  });
+};
+
+/** 文件下载地址（浏览器直接打开即可，Session Cookie 会带上认证） */
+export const hostFileDownloadUrl = (hsName: string, path: string, name: string): string => {
+  return `/api/server/ops/${hsName}/files/download?path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`;
+};
+
+export const createHostDir = (hsName: string, path: string, name: string): Promise<ApiResponse> => {
+  return http.post(`/api/server/ops/${hsName}/files/mkdir`, { path, name }, { silent: true });
+};
+
+export const renameHostPath = (
+  hsName: string,
+  path: string,
+  name: string,
+  newName: string,
+): Promise<ApiResponse> => {
+  return http.post(`/api/server/ops/${hsName}/files/rename`, { path, name, new_name: newName }, { silent: true });
+};
+
+export const deleteHostPath = (hsName: string, path: string, name: string): Promise<ApiResponse> => {
+  return http.delete(`/api/server/ops/${hsName}/files`, { params: { path, name }, silent: true });
 };
 
 /**
@@ -1084,6 +1217,20 @@ export default {
   bindHostImageFile,
   unbindHostImageFile,
   getHostPlatformInfo,
+  requestHostTerminal,
+  getHostProcesses,
+  killHostProcess,
+  getHostServices,
+  controlHostService,
+  getHostFirewallRules,
+  addHostFirewallRule,
+  deleteHostFirewallRule,
+  getHostFiles,
+  uploadHostFile,
+  hostFileDownloadUrl,
+  createHostDir,
+  renameHostPath,
+  deleteHostPath,
   
   // 虚拟机管理
   getVMs,
