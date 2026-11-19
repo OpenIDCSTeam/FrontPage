@@ -7126,6 +7126,8 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
     align-items: stretch;
     gap: 16px;
     min-width: 0;
+    /* 实时画面只是缩略预览：高度对齐右侧三行快捷操作，宽度按比例随之收缩 */
+    --vm-console-preview-height: 130px;
 }
 
 .vm-console-pane {
@@ -7206,16 +7208,18 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
 
 .vm-console-screen img {
     display: block;
-    width: 100%;
+    width: auto;
+    max-width: 100%;
     height: auto;
-    max-height: min(58vh, 360px);
+    max-height: var(--vm-console-preview-height, 130px);
     object-fit: contain;
+    margin-inline: auto;
     border-radius: var(--art-radius-sm);
 }
 
 /* 仅无截图（未运行 / 取图失败 / 加载中）时保留浅底占位，避免内容悬空 */
 .vm-console-screen:not(:has(img)) {
-    min-height: 168px;
+    min-height: 130px;
     padding: 10px;
     background: var(--art-sunken-bg);
     border: 1px solid var(--art-card-border);
@@ -7585,6 +7589,7 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
 
     .vm-console-layout {
         grid-template-columns: minmax(0, 1fr);
+        --vm-console-preview-height: 190px;
     }
 }
 
