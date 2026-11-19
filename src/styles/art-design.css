@@ -6277,14 +6277,45 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
     min-width: 0;
 }
 
+/* 页签条与内容列同宽：外边距让出 24px；胶囊底色挂在外层滚动视口上，
+   页签再多也只是在胶囊内滚动，胶囊两端始终是完整圆角。 */
 .vm-detail-horizontal-tabs {
-    padding: 0 24px;
-    overflow: hidden;
+    margin: 14px 24px 0;
+    padding: 0;
+    overflow: visible;
 }
 
 .vm-detail-horizontal-tabs .ant-tabs-nav {
+    position: relative;
     max-width: 100%;
+    overflow: visible;
+}
+
+/* 溢出时的「更多」按钮浮在胶囊右端，胶囊本身仍然占满内容列宽度 */
+.vm-detail-horizontal-tabs .ant-tabs-nav-operations {
+    position: absolute;
+    inset-inline-end: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.vm-detail-horizontal-tabs .ant-tabs-nav-wrap {
+    padding: 3px;
+    background: var(--art-sunken-bg);
+    border: 1px solid var(--art-card-border);
+    border-radius: var(--art-radius-pill);
     overflow: hidden;
+}
+
+.vm-detail-horizontal-tabs .ant-tabs-nav-list {
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+}
+
+.vm-detail-horizontal-tabs .ant-tabs-tab {
+    padding: 6px 11px;
 }
 
 .vm-detail-horizontal-tabs .ant-tabs-nav-wrap {
@@ -6336,7 +6367,7 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
     }
 
     .vm-detail-horizontal-tabs {
-        padding-inline: 16px;
+        margin-inline: 16px;
     }
 
     .vm-detail-horizontal-content {
@@ -6496,7 +6527,7 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
     }
 
     .vm-detail-horizontal-tabs {
-        padding-inline: 12px;
+        margin-inline: 12px;
     }
 
     .vm-detail-horizontal-tabs .ant-tabs-nav-wrap {
@@ -6801,7 +6832,7 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
     }
 
     .vm-detail-horizontal-tabs {
-        padding-inline: 10px;
+        margin-inline: 10px;
     }
 
     .vm-detail-horizontal-tabs .ant-tabs-tab {
@@ -6903,7 +6934,7 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
     }
 
     .vm-detail-horizontal-tabs {
-        padding-inline: 8px;
+        margin-inline: 8px;
     }
 
     .vm-detail-layout-toolbar {
@@ -7471,6 +7502,13 @@ html[data-theme='dark'] :is([class*='dark:border-blue-'], [class*='dark:border-p
     .vm-detail-horizontal-tabs .ant-tabs-nav,
     .vm-detail-horizontal-tabs .ant-tabs-nav-wrap {
         overflow: visible !important;
+    }
+
+    .vm-detail-horizontal-tabs .ant-tabs-nav-wrap {
+        padding: 0;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
     }
 
     .vm-detail-horizontal-tabs .ant-tabs-nav-list {
