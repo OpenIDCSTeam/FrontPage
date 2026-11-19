@@ -13,7 +13,8 @@ import {
   ReloadOutlined, PoweroffOutlined, DesktopOutlined, EyeOutlined, CopyOutlined,
   PlayCircleOutlined, PauseCircleOutlined, SwapOutlined,
   DatabaseOutlined, SafetyCertificateOutlined, GlobalOutlined, MoreOutlined,
-  WindowsOutlined, CodeOutlined
+  WindowsOutlined, CodeOutlined, EnvironmentOutlined, ThunderboltOutlined,
+  CalendarOutlined, WarningOutlined
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 import { useMmuiTheme } from '@/hooks/useMmuiTheme'
@@ -24,10 +25,11 @@ import MmuiCard, { MmuiGaugeRing, MmuiLoginCard } from '@/components/mmui/MmuiCa
 import VmDetailTopBar from '@/components/VmDetailTopBar'
 import FirewallPanel from '@/components/FirewallPanel'
 import SnapshotPanel from '@/components/SnapshotPanel'
+import VMConsolePanel from '@/components/vm/VMConsolePanel'
 import api from '@/utils/apis.ts'
 import { useUserStore } from '@/utils/data'
 import { saveVMDetailLayout } from '@/utils/vmDetailLayout'
-import { VM_PERMISSION, hasPermission, isQuotaExhausted } from '@/types'
+import { VM_PERMISSION, hasPermission, isQuotaExhausted, checkAddNicQuota } from '@/types'
 import '@/styles/mmui-theme.css'
 import '@/styles/mmui-components.css'
 
@@ -163,6 +165,8 @@ export default function DockDetailV2() {
   const [reinstallOS, setReinstallOS] = useState('')
   const [reinstallPass, setReinstallPass] = useState('')
   const [remoteModalVisible, setRemoteModalVisible] = useState(false)
+  // 容器类平台没有图形帧缓冲，VNC 入口改为网页命令行控制台
+  const [consoleModalVisible, setConsoleModalVisible] = useState(false)
   const [timeRange, setTimeRange] = useState(30)
   const [monitorData, setMonitorData] = useState<any>({
     cpu: [], memory: [], disk: [], gpu: [], netUp: [], netDown: [], traffic: [], labels: []
@@ -436,10 +440,17 @@ export default function DockDetailV2() {
     })
   }
 
+  const ttyPlatform = ['OCInterface', 'LxContainer', 'SmolVM'].includes(hostConfig?.server_type || '')
+
   const handleOpenVNC = async () => {
     if (!hostName || !uuid || !hostEnabled) return
     if (!hasVMPermission(VM_PERMISSION.VNC_EDITS)) {
       message.warning('当前账号没有远程控制台权限')
+      return
+    }
+    if (ttyPlatform) {
+      setRemoteModalVisible(false)
+      setConsoleModalVisible(true)
       return
     }
     const hide = message.loading('获取控制台地址...', 0)
@@ -546,8 +557,6 @@ export default function DockDetailV2() {
     .find((nic: any) => nic?.ip4_addr === vm.ipv4_address) as any
   const ipv4Scope = activeNic?.nic_type === 'pub' ? '公网' : '内网'
   const ipv6Address = vm.ipv6_address && vm.ipv6_address !== '-' ? vm.ipv6_address : ''
-  const hardwareSummary = `CPU ${config.cpu_num || 0} 核 · 内存 ${formatMem(config.mem_num || 0)} · 硬盘 ${formatMem(config.hdd_num || 0)} · 带宽 ${config.speed_u || 0} Mbps`
-  const hardwareSummaryCompact = `配置 ${config.cpu_num || 0}C · ${formatMem(config.mem_num || 0).replace(/\.0/g, '')} · ${formatMem(config.hdd_num || 0).replace(/\.0/g, '')} · ${config.speed_u || 0}Mbps`
 
   // ═════════════════════════════════════════════════════════════════════
   // RENDER
@@ -623,15 +632,12 @@ export default function DockDetailV2() {
                     <span>主机 <strong>{hostName}</strong></span>
                     <span className="vm-detail-hero-sep">·</span>
                     <span>系统 <strong>{getOSDisplayName(config.os_name || '')}</strong></span>
-                    <span className="vm-detail-hero-sep">·</span>
-                    {ipv6Address
-                      ? <span>IPv6 <code>{ipv6Address}</code></span>
-                      : (
-                        <>
-                          <span className="vm-detail-hero-hardware vm-detail-hero-hardware--wide">{hardwareSummary}</span>
-                          <span className="vm-detail-hero-hardware vm-detail-hero-hardware--compact">{hardwareSummaryCompact}</span>
-                        </>
-                      )}
+                    {ipv6Address && (
+                      <>
+                        <span className="vm-detail-hero-sep">·</span>
+                        <span>IPv6 <code>{ipv6Address}</code></span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="vm-detail-hero-actions" style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
@@ -675,19 +681,15 @@ export default function DockDetailV2() {
                   <div className="vm-detail-status-content" style={{ display: 'flex', gap: 24 }}>
                     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
                       {[
-                        { icon: '📍', label: '区域线路', value: hostName },
-                        { icon: '💻', label: '操作系统', value: getOSDisplayName(config.os_name || ''), extra: <span style={{ color: 'var(--mmui-accent-blue)', cursor: 'pointer', fontSize: 12, marginLeft: 8, fontWeight: 500 }}>重装</span> },
-                        { icon: '⚡', label: '配置', value: `${config.cpu_num || 0}核    ${formatMem(config.mem_num || 0)}内存    ${formatMem(config.hdd_num || 0)}存储    ${config.speed_u || 0}Mbps` },
-                        { icon: '🔑', label: '系统密码', value: showPassword ? config.os_pass : '••••••••••', toggle: () => setShowPassword(!showPassword), copy: config.os_pass },
-                        { icon: '📅', label: '到期时间', value: expiryDate, extra: <span style={{ color: themePalette.success, fontSize: 12, marginLeft: 8 }}>(还有 {daysLeft} 天到期)</span> },
+                        { icon: <EnvironmentOutlined />, label: '区域线路', value: hostName },
+                        { icon: <ThunderboltOutlined />, label: '配置', value: `${config.cpu_num || 0}核    ${formatMem(config.mem_num || 0)}内存    ${formatMem(config.hdd_num || 0)}存储    ${config.speed_u || 0}Mbps` },
+                        { icon: <CalendarOutlined />, label: '到期时间', value: expiryDate, extra: <span style={{ color: themePalette.success, fontSize: 12, marginLeft: 8 }}>(还有 {daysLeft} 天到期)</span> },
                       ].map((item, i) => (
                         <div key={i} className="vm-detail-info-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <span style={{ fontSize: 14 }}>{item.icon}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--mmui-text-muted)', fontSize: 14 }}>{item.icon}</span>
                           <span style={{ fontSize: 13, color: 'var(--mmui-text-muted)', width: 64, flexShrink: 0 }}>{item.label}</span>
                           <span className="vm-detail-info-value" style={{ fontSize: 14, color: 'var(--mmui-text)', fontWeight: 500 }}>{item.value}</span>
                           {item.extra}
-                          {item.toggle && <EyeOutlined style={{ cursor: 'pointer', color: 'var(--mmui-text-muted)', fontSize: 13 }} onClick={item.toggle} />}
-                          {item.copy && <CopyOutlined style={{ cursor: 'pointer', color: 'var(--mmui-text-muted)', fontSize: 13 }} onClick={() => handleCopy(item.copy!, '密码')} />}
                         </div>
                       ))}
                     </div>
@@ -701,14 +703,9 @@ export default function DockDetailV2() {
 
                 <MmuiCard title="资源占用" extra={<span style={{ fontSize: 12, color: 'var(--mmui-text-muted)', cursor: 'pointer' }} onClick={() => loadVMDetail(true)}>实时更新 <ReloadOutlined /></span>}>
                   <div className="vm-detail-gauges">
-                    <MmuiGaugeRing percent={cpuPercent} color={themePalette.chartColors[0]} size={isMobileViewport ? 82 : 96} label="CPU 占用" subLabel={`规格 ${config.cpu_num || 0} 核`} />
-                    <MmuiGaugeRing percent={memPercent} color={themePalette.chartColors[2]} size={isMobileViewport ? 82 : 96} label="内存占用" subLabel={`规格 ${formatMem(config.mem_num || 0)}`} />
-                    <MmuiGaugeRing percent={netLoad > 100 ? 100 : netLoad} color={themePalette.chartColors[1]} size={isMobileViewport ? 82 : 96} label="网络负载" subLabel={`峰值 ${config.speed_u || 0} Mbps`} />
-                  </div>
-                  <div className="vm-detail-gauge-foot">
-                    <span>已用 <b>{Math.round(cpuPercent)}%</b></span>
-                    <span><b>{formatMem(currentStatus.mem_usage || 0)}</b> / {formatMem(config.mem_num || 0)}</span>
-                    <span><b>{currentStatus.network_u || 0}</b> / {config.speed_u || 0} Mbps</span>
+                    <MmuiGaugeRing percent={cpuPercent} color={themePalette.chartColors[0]} size={isMobileViewport ? 82 : 96} label="CPU 占用" />
+                    <MmuiGaugeRing percent={memPercent} color={themePalette.chartColors[2]} size={isMobileViewport ? 82 : 96} label="内存占用" subLabel={`已用 ${formatMem(currentStatus.mem_usage || 0)}`} />
+                    <MmuiGaugeRing percent={netLoad > 100 ? 100 : netLoad} color={themePalette.chartColors[1]} size={isMobileViewport ? 82 : 96} label="网络负载" subLabel={`当前 ${currentStatus.network_u || 0} Mbps`} />
                   </div>
                 </MmuiCard>
               </div>
@@ -744,13 +741,9 @@ export default function DockDetailV2() {
                 <MmuiCard title="账号信息" className="vm-detail-account-card" extra={<span style={{ fontSize: 12, color: 'var(--mmui-accent-blue)', cursor: 'pointer', fontWeight: 500 }} onClick={() => message.info('登录凭据已复制')}>登录凭据 &gt;</span>}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {[
-                  { label: '系统类型', value: getOSDisplayName(config.os_name || '') },
-                  { label: '主机', value: hostName },
                   { label: '远程地址', value: `${vm.ipv4_address || '-'}:${natRules.find(r => r.lan_port === 3389)?.wan_port || 3389}`, copy: true },
                   { label: '系统用户', value: config.os_name?.toLowerCase().includes('windows') ? 'Administrator' : 'root', copy: true },
                   { label: '系统密码', value: config.os_pass, hidden: !showPassword, copy: true, toggle: () => setShowPassword(!showPassword) },
-                  { label: '面板密码', value: config.vc_pass, hidden: !showVncPassword, copy: true, toggle: () => setShowVncPassword(!showVncPassword) },
-                  { label: '到期时间', value: expiryDate },
                   ].map((item, i) => (
                       <div key={i} className="vm-detail-account-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <span style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)' }}>{item.label}</span>
@@ -780,6 +773,9 @@ export default function DockDetailV2() {
                   const nicType = window.prompt('网卡类型 (nat/pub):', 'nat')
                   if (!nicType) return
                   const ip4 = window.prompt('IPv4地址 (留空自动分配):') || ''
+                  // 套餐网络配额：网卡总数与公网/内网 V4/V6 数量不能超过上限
+                  const quotaError = checkAddNicQuota(config, nicType, ip4)
+                  if (quotaError) { message.error(quotaError); return }
                   Modal.confirm({
                     title: '添加网卡确认',
                     content: `将添加网卡 "${nicName}" (${nicType === 'pub' ? '公网' : '内网'})${ip4 ? `，IP: ${ip4}` : ''}，添加后需重启生效。`,
@@ -1038,7 +1034,7 @@ export default function DockDetailV2() {
             }>
               {displayStatus === 'STARTED' && (
                 <div style={{ padding: '8px 12px', marginBottom: 12, borderRadius: 'var(--mmui-radius)', background: 'rgba(255, 152, 0, 0.08)', border: '1px solid rgba(255, 152, 0, 0.2)', fontSize: 12, color: 'var(--mmui-warning)' }}>
-                  ⚠️ PCI 设备直通操作需要先关闭虚拟机
+                  <WarningOutlined style={{ marginRight: 6 }} />PCI 设备直通操作需要先关闭虚拟机
                 </div>
               )}
               {config.pci_all && Object.keys(config.pci_all).length > 0 ? (
@@ -1291,10 +1287,6 @@ export default function DockDetailV2() {
                     { label: 'UUID', value: uuid },
                     { label: '主机节点', value: hostName },
                     { label: '虚拟化类型', value: hostConfig?.server_type || 'KVM' },
-                    { label: '操作系统', value: getOSDisplayName(config.os_name || '') },
-                    { label: 'CPU 核心', value: `${config.cpu_num || 0} 核` },
-                    { label: '内存大小', value: formatMem(config.mem_num || 0) },
-                    { label: '磁盘大小', value: formatMem(config.hdd_num || 0) },
                   ].map((item, i) => (
                     <div key={i} className="vm-detail-info-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <span style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)', width: 80, flexShrink: 0 }}>{item.label}</span>
@@ -1306,8 +1298,6 @@ export default function DockDetailV2() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {[
-                    { label: '上行带宽', value: `${config.speed_u || 0} Mbps` },
-                    { label: '下行带宽', value: `${config.speed_d || 0} Mbps` },
                     { label: 'NAT 配额', value: `${config.nat_all ? Object.keys(config.nat_all).length : 0} / ${config.nat_num || 0}` },
                     { label: '到期时间', value: expiryDate },
                     { label: '剩余天数', value: daysLeft === 999 ? '永不过期' : `${daysLeft} 天` },
@@ -1446,11 +1436,7 @@ export default function DockDetailV2() {
 
           {/* 数据（磁盘管理） */}
           {activeSection === 'data' && (
-            <MmuiCard title="磁盘管理" extra={
-              <span style={{ fontSize: 'var(--mmui-text-caption-size)', color: 'var(--mmui-text-muted)' }}>
-                总容量 {formatMem(config.hdd_num || 0)}
-              </span>
-            }>
+            <MmuiCard title="磁盘管理">
               {config.hdd_all && Object.keys(config.hdd_all).length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {Object.entries(config.hdd_all).map(([path, info]: [string, any], i) => (
@@ -1582,8 +1568,6 @@ export default function DockDetailV2() {
                   { label: 'IPv4 地址', value: vm.ipv4_address || '未分配', copy: true },
                   { label: 'IPv6 地址', value: vm.ipv6_address || '未分配', copy: true },
                   { label: '公网地址', value: vm.public_address || '未分配', copy: true },
-                  { label: '上行带宽', value: `${config.speed_u || 0} Mbps` },
-                  { label: '下行带宽', value: `${config.speed_d || 0} Mbps` },
                   { label: '流量限制', value: config.flu_num ? `${config.flu_num} GB` : '无限制' },
                   { label: '已用流量', value: currentStatus.flu_usage ? `${currentStatus.flu_usage.toFixed(2)} GB` : '0 GB' },
                 ].map((item, i) => (
@@ -1694,7 +1678,7 @@ export default function DockDetailV2() {
 
           {/* ═══ 防火墙（仅平台支持时可见） ═══ */}
           {activeSection === 'firewall' && (
-            <MmuiCard title="防火墙">
+            <MmuiCard title="防火墙管理">
               <FirewallPanel
                 hostName={hostName || ''}
                 vmUuid={uuid || ''}
@@ -1746,24 +1730,31 @@ export default function DockDetailV2() {
         width={560}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '8px 0' }}>
-          {/* 1. VNC/TTY 一键连接 */}
-          {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' && (
-            <div style={{ border: '1px solid var(--mmui-border)', borderRadius: 8, padding: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--mmui-text)' }}>
-                    <DesktopOutlined style={{ marginRight: 8, color: themePalette.chartColors[3] }} />
-                    VNC / TTY 控制台
-                  </div>
-                  <div style={{ color: 'var(--mmui-text-muted)', fontSize: 13, marginTop: 4 }}>网页远程控制台，适合救援排障</div>
+          <div style={{ padding: '9px 12px', borderRadius: 6, background: 'var(--mmui-bg-soft)', color: 'var(--mmui-text-muted)', fontSize: 12 }}>
+            系统登录密码统一在概览的“账号信息”中查看，连接方式中不再重复展示。
+          </div>
+          {/* 1. VNC/TTY 一键连接：图形平台走 noVNC，容器平台走网页终端 */}
+          <div style={{ border: '1px solid var(--mmui-border)', borderRadius: 8, padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--mmui-text)' }}>
+                  <DesktopOutlined style={{ marginRight: 8, color: themePalette.chartColors[3] }} />
+                  {ttyPlatform ? '命令行控制台（TTY）' : 'VNC / TTY 控制台'}
                 </div>
-                <button className="mmui-page-btn mmui-page-btn--primary" onClick={handleOpenVNC} disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.VNC_EDITS)}
-                  style={{ padding: '0 16px', minHeight: 32, borderRadius: 6 }}>
-                  一键连接
-                </button>
+                <div style={{ color: 'var(--mmui-text-muted)', fontSize: 13, marginTop: 4 }}>
+                  {ttyPlatform
+                    ? (hostConfig?.server_type === 'SmolVM'
+                      ? 'Firecracker 仅提供只读串口日志，交互请使用 SSH'
+                      : '网页终端直接进入容器，等价于该平台的 VNC 入口')
+                    : '网页远程控制台，适合救援排障'}
+                </div>
               </div>
+              <button className="mmui-page-btn mmui-page-btn--primary" onClick={handleOpenVNC} disabled={!hostEnabled || !hasVMPermission(VM_PERMISSION.VNC_EDITS)}
+                style={{ padding: '0 16px', minHeight: 32, borderRadius: 6 }}>
+                {ttyPlatform ? '打开终端' : '一键连接'}
+              </button>
             </div>
-          )}
+          </div>
 
           {/* 2. ToDesk远程桌面 - 仅Windows */}
           {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' &&
@@ -1840,14 +1831,6 @@ export default function DockDetailV2() {
                       onClick={() => handleCopy(config.rdp_info?.ms_rdp?.user || 'Administrator', 'RDP用户名')} />
                   </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <span style={{ color: 'var(--mmui-text-muted)', fontSize: 13 }}>密码</span>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <code style={{ fontSize: 13, color: 'var(--mmui-text)' }}>{config.os_pass || '未设置'}</code>
-                    <CopyOutlined style={{ cursor: 'pointer', color: 'var(--mmui-text-muted)' }}
-                      onClick={() => handleCopy(config.os_pass || '', 'RDP密码')} />
-                  </div>
-                </div>
                 <button className="mmui-page-btn mmui-page-btn--primary" style={{ width: '100%', minHeight: 32, borderRadius: 6 }}
                   onClick={() => {
                     const addr = hostConfig?.public_addr?.[0] || vm?.ipv4_address || ''
@@ -1899,14 +1882,6 @@ export default function DockDetailV2() {
                       onClick={() => handleCopy('root', 'SSH用户名')} />
                   </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <span style={{ color: 'var(--mmui-text-muted)', fontSize: 13 }}>密码</span>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <code style={{ fontSize: 13, color: 'var(--mmui-text)' }}>{config.os_pass || '未设置'}</code>
-                    <CopyOutlined style={{ cursor: 'pointer', color: 'var(--mmui-text-muted)' }}
-                      onClick={() => handleCopy(config.os_pass || '', 'SSH密码')} />
-                  </div>
-                </div>
                 <button className="mmui-page-btn mmui-page-btn--primary" style={{ width: '100%', minHeight: 32, borderRadius: 6 }}
                   onClick={() => {
                     const addr = hostConfig?.public_addr?.[0] || vm?.ipv4_address || ''
@@ -1920,6 +1895,24 @@ export default function DockDetailV2() {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* 容器平台命令行控制台（等价 VNC） */}
+      <Modal
+        title="命令行控制台"
+        open={consoleModalVisible}
+        onCancel={() => setConsoleModalVisible(false)}
+        footer={null}
+        width={880}
+        destroyOnClose
+      >
+        {consoleModalVisible && hostName && uuid && (
+          <VMConsolePanel
+            hostName={hostName}
+            vmUuid={uuid}
+            readOnly={hostConfig?.server_type === 'SmolVM'}
+          />
+        )}
       </Modal>
     </div>
   )

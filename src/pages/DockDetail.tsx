@@ -58,13 +58,14 @@ import ReactECharts from 'echarts-for-react'
 import VmDetailTopBar from '@/components/VmDetailTopBar'
 import FirewallPanel from '@/components/FirewallPanel'
 import SnapshotPanel from '@/components/SnapshotPanel'
+import VMConsolePanel from '@/components/vm/VMConsolePanel'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getThemePalette } from '@/config/theme.config'
 import { getVMDetailLayoutKey, readVMDetailLayout, saveVMDetailLayout, type VMDetailLayout } from '@/utils/vmDetailLayout'
 import api from '@/utils/apis.ts'
 import { useUserStore } from '@/utils/data'
 import { startTaskWithNotification, getTaskList } from '@/utils/taskPoller'
-import {VM_PERMISSION, hasPermission, TAB_PERMISSION_MAP, VM_PERMISSION_LABELS, PERMISSION_FIELD_MASK, HIDDEN_TABS, OWNER_ONLY_TABS, getTabQuota, isQuotaExhausted} from '@/types'
+import {VM_PERMISSION, hasPermission, TAB_PERMISSION_MAP, VM_PERMISSION_LABELS, PERMISSION_FIELD_MASK, HIDDEN_TABS, OWNER_ONLY_TABS, getTabQuota, isQuotaExhausted, checkAddNicQuota} from '@/types'
 
 const VM_DETAIL_TAB_ORDER = ['overview', 'ip', 'hdd', 'iso', 'nat', 'firewall', 'proxy', 'pci', 'usb', 'snapshot', 'backup', 'efi', 'owners', 'access']
 
@@ -101,8 +102,10 @@ function FoldCard({ title, defaultOpen = true, className = '', children }: {
 function isVMDetailTabVisible(
     key: string,
     config: Record<string, any>,
-    permissions: { isAdminUser: boolean; isOwnerOrAdmin: boolean; canManageAccessKey: boolean; userPermissions: number; firewallSupported: boolean; snapshotSupported: boolean },
+    permissions: { isAdminUser: boolean; isOwnerOrAdmin: boolean; canManageAccessKey: boolean; userPermissions: number; firewallSupported: boolean; snapshotSupported: boolean; disabledTabs?: string[] },
 ): boolean {
+    // 主机「功能控制」关闭的选项卡：任何身份都直接隐藏（管理员也不放行）
+    if (permissions.disabledTabs?.includes(key)) return false
     // 平台不支持对应能力时隐藏入口（与用户权限无关，避免点进去只能报错）
     if (key === 'firewall' && !permissions.firewallSupported) return false
     if (key === 'snapshot' && !permissions.snapshotSupported) return false
@@ -112,6 +115,40 @@ function isVMDetailTabVisible(
     if (!requiredPermission || permissions.isAdminUser) return true
     if (getTabQuota(config, key) === 0) return false
     return !HIDDEN_TABS.has(key) || hasPermission(permissions.userPermissions, requiredPermission)
+}
+
+/** 流量重置规则文案，与主机「套餐配置」里的表述保持一致 */
+function describeTrafficReset(config: Record<string, any>): string {
+    const mode = config?.flu_rst_mode
+    const unit = config?.flu_rst_unit
+    const num = Number(config?.flu_rst_num) || 0
+    if (mode === 'calendar') {
+        if (unit === 'week') {
+            const days = ['一', '二', '三', '四', '五', '六', '日']
+            return `每周${days[Math.min(Math.max(num, 1), 7) - 1]}重置`
+        }
+        if (unit === 'day') return `每天 ${num} 时重置`
+        return `每月 ${num} 号重置`
+    }
+    if (!mode) {
+        // 旧数据：只有 [重置天数, 超限阈值MB, 上次重置时间戳]
+        const legacyDays = Array.isArray(config?.flu_rst) ? Number(config.flu_rst[0]) || 0 : 0
+        return legacyDays > 0 ? `每 ${legacyDays} 天重置` : '-'
+    }
+    const unitLabel: Record<string, string> = {day: '天', week: '周', month: '月', year: '年'}
+    return `每 ${num || 1} ${unitLabel[unit] || '天'}重置`
+}
+
+/** 流量计费方向文案 */
+function describeTrafficBillDir(config: Record<string, any>): string {
+    switch (config?.flu_bill_dir) {
+        case 'up':
+            return '上行计费'
+        case 'down':
+            return '下行计费'
+        default:
+            return '上下行计费'
+    }
 }
 
 interface VGConfig {
@@ -269,6 +306,10 @@ interface HostConfig {
     system_maps: OSConfigItem[]
     images_maps?: OSConfigItem[]
     tab_lock?: string[]
+    /** 主机「功能控制」里显式关闭的选项卡，与 tab_lock（平台不支持）取并集 */
+    disabled_tabs?: string[]
+    /** 主机是否允许改配；false 时禁止修改虚拟机配置 */
+    allow_reconfigure?: boolean
     server_type?: string
     enable_host?: boolean
     ipaddr_maps?: Record<string, any>
@@ -372,6 +413,8 @@ function VMDetail() {
     const [editPermMask, setEditPermMask] = useState<number>(VM_PERMISSION.FULL_MASK)
     const [unmountHddModalVisible, setUnmountHddModalVisible] = useState(false)
     const [remoteModalVisible, setRemoteModalVisible] = useState(false) // 远程桌面模态框
+    // 容器类平台没有图形帧缓冲，VNC 入口改为网页命令行控制台
+    const [consoleModalVisible, setConsoleModalVisible] = useState(false)
 
     const [ipQuota, setIpQuota] = useState<any>(null)
     const [hdds, setHdds] = useState<HDDInfo[]>([])
@@ -464,6 +507,8 @@ function VMDetail() {
             userPermissions,
             firewallSupported: hostConfig?.capabilities?.firewall === true,
             snapshotSupported: hostConfig?.capabilities?.snapshot === true,
+            // 平台不支持（tab_lock）+ 主机功能控制关闭（disabled_tabs）
+            disabledTabs: [...(hostConfig?.tab_lock || []), ...(hostConfig?.disabled_tabs || [])],
         }
         const config = vm?.config || {}
         const fallbackTab = VM_DETAIL_TAB_ORDER.find(key => isVMDetailTabVisible(key, config, permissions))
@@ -1591,7 +1636,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             // 管理员删除非自己的虚拟机，需要输入主所有者用户名确认
             showConfirmAction(
                 '确认删除',
-                `此操作将永久删除虚拟机 "${uuid}" 且不可恢复。该虚拟机属于用户 "${primaryOwner}"，请输入主所有者用户名以确认删除：`,
+                `此操作将永久删除该虚拟机且不可恢复。该虚拟机属于用户 "${primaryOwner}"，请输入主所有者用户名以确认删除：`,
                 async (confirmInput) => {
                     await api.deleteVM(hostName!, uuid!, false, confirmInput)
                     navigate(`/hosts/${hostName}/vms`)
@@ -1601,10 +1646,10 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                 primaryOwner
             )
         } else {
-            // 普通删除流程，输入虚拟机名称确认
+            // 普通删除流程，输入虚拟机 ID 确认
             showConfirmAction(
                 '确认删除',
-                `此操作将永久删除虚拟机 "${uuid}" 且不可恢复，请输入虚拟机名称以确认删除：`,
+                '此操作将永久删除该虚拟机且不可恢复，请输入虚拟机 ID 以确认删除：',
                 async () => {
                     await api.deleteVM(hostName!, uuid!)
                     navigate(`/hosts/${hostName}/vms`)
@@ -1616,9 +1661,16 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         }
     }
 
+    const ttyPlatform = ['OCInterface', 'LxContainer', 'SmolVM'].includes(hostConfig?.server_type || '')
+
     const handleOpenVNC = async () => {
         if (!hostName || !uuid) return
         if (!hostEnabled) { message.error('该主机已被禁用，无法打开控制台'); return }
+        if (ttyPlatform) {
+            setRemoteModalVisible(false)
+            setConsoleModalVisible(true)
+            return
+        }
         const hide = message.loading('正在获取控制台地址...', 0)
         try {
             const response = await api.getVMConsole(hostName, uuid)
@@ -1677,6 +1729,13 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
 
     const handleAddIPAddress = async (_values: any) => {
         if (!hostEnabled) { message.error('该主机已被禁用，无法操作'); return }
+        // 套餐网络配额：网卡总数不能超过最大网卡数量，
+        // 公网/内网各自的 V4/V6 数量不能超过对应上限
+        const nicQuotaError = checkAddNicQuota(vm?.config, _values?.nic_type || 'nat', _values?.ip4_addr, _values?.ip6_addr)
+        if (nicQuotaError) {
+            message.error(nicQuotaError)
+            return
+        }
         // 显示确认对话框，提示需要重启虚拟机
         Modal.confirm({
             title: '添加网卡确认',
@@ -2321,6 +2380,11 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             message.error('该主机已被禁用，无法修改虚拟机配置')
             return
         }
+        // 主机「允许改配」关闭时，后端也会拒绝，这里提前给出明确提示
+        if (hostConfig?.allow_reconfigure === false) {
+            message.error('该主机已关闭改配，配置不允许变动')
+            return
+        }
         
         if (values.os_pass && !/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/.test(values.os_pass)) {
             message.error('系统密码必须至少8位，且包含字母和数字');
@@ -2566,25 +2630,29 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
     };
 
     const ResourceCard = ({title, icon, value, percent, color}: any) => (
-        <div className="art-metric">
-            <div className="art-metric-head">
-                <span className="art-metric-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{title}</span>
-                <span className="art-metric-value">{value} · {percent}%</span>
+        <div className="art-metric vm-metric">
+            <span className="vm-metric-icon">{icon}</span>
+            <div className="vm-metric-body">
+                <div className="vm-metric-head">
+                    <span className="vm-metric-name">{title}</span>
+                    <span className="vm-metric-percent" style={{color}}>{percent}%</span>
+                </div>
+                <span className="vm-metric-value">{value}</span>
+                <Progress percent={Math.min(percent, 100)} size="small" showInfo={false} strokeColor={color}/>
             </div>
-            <Progress percent={Math.min(percent, 100)} size="small" showInfo={false} strokeColor={color}/>
         </div>
     )
 
     const formatMemory = (mb: number) => {
         if (mb < 1024) return mb + ' MB'
-        if (mb < 1024 * 1024) return (mb / 1024).toFixed(2) + ' GB'
-        return (mb / 1024 / 1024).toFixed(2) + ' TB'
+        if (mb < 1024 * 1024) return Number((mb / 1024).toFixed(2)) + ' GB'
+        return Number((mb / 1024 / 1024).toFixed(2)) + ' TB'
     }
 
     const formatDisk = (mb: number) => {
         if (mb < 1024) return mb + ' MB'
-        if (mb < 1024 * 1024) return (mb / 1024).toFixed(2) + ' GB'
-        return (mb / 1024 / 1024).toFixed(2) + ' TB'
+        if (mb < 1024 * 1024) return Number((mb / 1024).toFixed(2)) + ' GB'
+        return Number((mb / 1024 / 1024).toFixed(2)) + ' TB'
     }
 
     const getProgressBarColor = (percent: number) => {
@@ -2609,12 +2677,85 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
     const hardPowerDisabled = restartDisabled
 
     const isCompactViewport = window.innerWidth < 768
+    const isRunning = currentStatus.ac_status === 'STARTED'
+
+    // 资源占用：先算百分比，再统一取色，避免每个指标重复三目判断
+    const memPercent = config.mem_num > 0 ? Math.round((currentStatus.mem_usage || 0) / config.mem_num * 100) : 0
+    const gpuPercent = config.gpu_mem > 0 ? Math.round((currentStatus.gpu_total || 0) / config.gpu_mem * 100) : 0
+    const hddPercent = config.hdd_num > 0 ? Math.round((currentStatus.hdd_usage || 0) / config.hdd_num * 100) : 0
+    const fluPercent = config.flu_num > 0 ? Math.round((currentStatus.flu_usage || 0) / config.flu_num * 100) : 0
+    const natUsed = config.nat_all ? Object.keys(config.nat_all).length : 0
+    const natPercent = config.nat_num > 0 ? Math.round(natUsed / config.nat_num * 100) : 0
+    const webUsed = config.web_all ? Object.keys(config.web_all).length : 0
+    const webPercent = config.web_num > 0 ? Math.round(webUsed / config.web_num * 100) : 0
+    const netUpPercent = config.speed_u > 0 ? Math.round((currentStatus.network_u || 0) / config.speed_u * 100) : 0
+    const netDownPercent = config.speed_d > 0 ? Math.round((currentStatus.network_d || 0) / config.speed_d * 100) : 0
+
+    const resourceMetrics = [
+        {title: 'CPU', icon: <AreaChartOutlined className="text-blue-500"/>, value: `${config.cpu_num || 0} 核`, percent: Math.round(currentStatus.cpu_usage || 0)},
+        {title: '内存', icon: <DesktopOutlined className="text-green-500"/>, value: `已用 ${formatMemory(currentStatus.mem_usage || 0)} / ${formatMemory(config.mem_num || 0)}`, percent: memPercent},
+        {title: 'GPU', icon: <DesktopOutlined className="text-purple-500"/>, value: `已用 ${formatMemory(currentStatus.gpu_total || 0)} / ${formatMemory(config.gpu_mem || 0)}`, percent: gpuPercent},
+        {title: '系统盘', icon: <HddOutlined className="text-yellow-500"/>, value: `已用 ${formatDisk(currentStatus.hdd_usage || 0)} / ${formatDisk(config.hdd_num || 0)}`, percent: hddPercent},
+        {title: '流量', icon: <AreaChartOutlined className="text-red-500"/>, value: `已用 ${formatDisk(currentStatus.flu_usage || 0)} / ${config.flu_num > 0 ? formatDisk(config.flu_num) : '∞'}`, percent: fluPercent},
+        {title: '端口', icon: <GlobalOutlined className="text-indigo-500"/>, value: `已用 ${natUsed} / ${config.nat_num || 0} 个`, percent: natPercent},
+        {title: '上行带宽', icon: <CloudSyncOutlined className="text-cyan-500"/>, value: `已用 ${currentStatus.network_u || 0} / ${config.speed_u || 0} Mbps`, percent: netUpPercent},
+        {title: '下行带宽', icon: <CloudSyncOutlined className="text-cyan-600"/>, value: `已用 ${currentStatus.network_d || 0} / ${config.speed_d || 0} Mbps`, percent: netDownPercent},
+        {title: '反向代理', icon: <GlobalOutlined className="text-pink-500"/>, value: `已用 ${webUsed} / ${config.web_num || 0} 个`, percent: webPercent},
+    ].map(item => ({...item, color: getProgressBarColor(item.percent)}))
+
+    const networkSpecs: Array<[string, string]> = [
+        ['上行带宽', `${config.speed_u || 0} Mbps`],
+        ['下行带宽', `${config.speed_d || 0} Mbps`],
+        ['端口配额', `${config.nat_num || 0} 个`],
+        ['代理配额', `${config.web_num || 0} 个`],
+        ['流量配额', config.flu_num > 0 ? formatDisk(config.flu_num) : '无限制'],
+        ['计费方向', describeTrafficBillDir(config)],
+        ['重置规则', describeTrafficReset(config)],
+        ['超限后上行', config.flu_over_u ? `${config.flu_over_u} Mbps` : '不限速'],
+        ['超限后下行', config.flu_over_d ? `${config.flu_over_d} Mbps` : '不限速'],
+        ['上次重置', config.flu_last_rst ? new Date(config.flu_last_rst * 1000).toLocaleString() : '-'],
+    ]
+
+    const quotaSpecs: Array<[string, string]> = [
+        ['备份配额', `${config.bak_num ?? 1}`],
+        ['光盘配额', `${config.iso_num ?? 1}`],
+        ['PCI 配额', `${config.pci_num ?? 0}`],
+        ['USB 配额', `${config.usb_num ?? 0}`],
+        ['数据盘配额', `${config.dat_num ?? 1}`],
+        ['数据盘容量', config.dat_all ? formatDisk(config.dat_all) : 'N/A'],
+        ['处理器配额', config.cpu_per ? `${config.cpu_per}%` : 'N/A'],
+        ['系统盘 IOPS', `${config.hdd_iop || 0}`],
+    ]
+
+    const hasHistoryData = Array.isArray(monitorData.labels) && monitorData.labels.length > 0
+
+    const historyChart = (title: string, data: number[], color: string, unit = '%') => (
+        <div className="dock-detail-chart-panel vm-classic-history-chart">
+            {hasHistoryData && Array.isArray(data) && data.length > 0 ? (
+                <ReactECharts
+                    option={getChartOption(title, data, color, monitorData.labels, unit)}
+                    style={{height: '100%', width: '100%'}}
+                    notMerge={true}
+                />
+            ) : (
+                <div className="vm-chart-empty">
+                    <span className="vm-chart-empty-title">{title}</span>
+                    <span className="vm-chart-empty-hint">所选时间范围内暂无监控数据</span>
+                </div>
+            )}
+        </div>
+    )
+
+    const timeRangeOptions: Array<[number, string]> = [
+        [30, '30分'], [180, '3时'], [360, '6时'], [1440, '24时'],
+        [4320, '3天'], [10080, '7天'], [21600, '15天'], [43200, '30天'],
+    ]
 
     const overviewTab = (
         <Row className="vm-classic-overview-row" gutter={[16, 16]}>
             {/* 左侧面板：信息 + 配置 */}
             <Col xs={24} xxl={16}>
-                <div className="space-y-6">
+                <div className="vm-classic-overview-stack">
                     {/* 机器信息区域 */}
                     <FoldCard title="实例信息" defaultOpen={!isCompactViewport}>
                         <Row gutter={[16, 16]} className="vm-classic-instance-details-row">
@@ -2659,8 +2800,16 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                         </Row>
                     </FoldCard>
 
-                    <div className="vm-classic-info-visual vm-classic-info-visual--standalone">
-                                <div className="vm-classic-info-screenshot">
+                    <FoldCard title="控制台与快捷操作" className="vm-classic-console-card">
+                        <div className="vm-console-layout">
+                            <div className="vm-console-pane">
+                                <div className="vm-console-pane-head">
+                                    <span className="vm-console-pane-title">实时画面</span>
+                                    <span className={`vm-console-pane-state${isRunning ? ' is-on' : ''}`}>
+                                        {isRunning ? '运行中' : '未运行'}
+                                    </span>
+                                </div>
+                                <div className="vm-console-screen">
                                     {(() => {
                                         const serverType = hostConfig?.server_type || '';
                                         if (serverType === 'OCInterface' || serverType === 'LxContainer') {
@@ -2694,7 +2843,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                         } else if (currentStatus.ac_status === 'STARTED') {
                             return (
                                 <div
-                                    className="w-full h-full flex items-center justify-center relative overflow-hidden">
+                                    className="vm-console-live w-full flex items-center justify-center relative overflow-hidden">
                                     <Spin spinning={loadingScreenshot} tip={<span style={{whiteSpace: 'nowrap'}}>获取截图中...</span>}>
                                         {screenshotError ? (
                                             <div className="text-center">
@@ -2706,12 +2855,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                                                 <img
                                                     src={vmScreenshot}
                                                     alt="虚拟机截图"
-                                                    style={{
-                                                        maxWidth: '320px',
-                                                        maxHeight: '180px',
-                                                        aspectRatio: '16/9',
-                                                        objectFit: 'contain'
-                                                    }}
+                                                    className="vm-console-live-image"
                                                 />
                                             )
                                         )}
@@ -2730,9 +2874,13 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                                         }
                                     })()}
                                 </div>
-                                <div className="vm-classic-action-groups">
-                                  <section className="vm-classic-action-group">
-                                    <div className="vm-classic-power-grid">
+                            </div>
+                            <section className="vm-classic-action-group vm-console-pane vm-console-actions">
+                                <div className="vm-console-pane-head">
+                                    <span className="vm-console-pane-title">快捷操作</span>
+                                    <span className="vm-console-pane-hint">电源 · 系统 · 访问</span>
+                                </div>
+                                <div className="vm-classic-power-grid">
                                       <Dropdown
                                         trigger={['click']}
                                         menu={{
@@ -2803,7 +2951,9 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
 
                                       <Button size="small" icon={<EditOutlined/>} block
                                               disabled={operationLocked || isIntermediateState() || isSuspendedState() ||
+                                                        hostConfig?.allow_reconfigure === false ||
                                                         !hasPermission(userPermissions, VM_PERMISSION.VM_MODIFY) || !user?.can_modify_vm}
+                                              title={hostConfig?.allow_reconfigure === false ? '该主机已关闭改配' : undefined}
                                               onClick={() => setEditModalVisible(true)}>
                                         <span className="vm-classic-action-label">编辑</span>
                                       </Button>
@@ -2814,199 +2964,101 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                                         <span className="vm-classic-action-label">改密</span>
                                       </Button>
                                     </div>
-                                  </section>
-                                </div>
-                    </div>
+                            </section>
+                        </div>
+                    </FoldCard>
 
                     {/* 实例配置区域 */}
                     <FoldCard title="实例配置" defaultOpen={!isCompactViewport} className="vm-classic-resource-config">
-                        <Row gutter={[16, 16]} className="vm-classic-resource-grid">
-                            <Col xs={24} sm={12} xl={8} className="vm-classic-resource-group">
-                                <div className="space-y-4 vm-classic-resource-stack">
-                                    <ResourceCard title="CPU" icon={<AreaChartOutlined className="text-blue-500"/>}
-                                                  value={`${config.cpu_num || 0} 核`} subValue="利用率"
-                                                  percent={currentStatus.cpu_usage || 0}
-                                                  color={getProgressBarColor(currentStatus.cpu_usage || 0)}/>
-                                    <ResourceCard title="RAM" icon={<DesktopOutlined className="text-green-500"/>}
-                                                  value={`已用 ${formatMemory(currentStatus.mem_usage || 0)} / ${formatMemory(config.mem_num || 0)}`}
-                                                  subValue="使用率"
-                                                  percent={config.mem_num > 0 ? Math.round((currentStatus.mem_usage || 0) / config.mem_num * 100) : 0}
-                                                  color={getProgressBarColor(config.mem_num > 0 ? Math.round((currentStatus.mem_usage || 0) / config.mem_num * 100) : 0)}/>
-                                    <ResourceCard title="GPU" icon={<DesktopOutlined className="text-purple-500"/>}
-                                                  value={`已用 ${formatMemory(currentStatus.gpu_total || 0)} / ${formatMemory(config.gpu_mem || 0)}`}
-                                                  subValue="使用率"
-                                                  percent={config.gpu_mem > 0 ? Math.round((currentStatus.gpu_total || 0) / config.gpu_mem * 100) : 0}
-                                                  color={getProgressBarColor(config.gpu_mem > 0 ? Math.round((currentStatus.gpu_total || 0) / config.gpu_mem * 100) : 0)}/>
-                                </div>
-                            </Col>
-                            <Col xs={24} sm={12} xl={8} className="vm-classic-resource-group">
-                                <div className="space-y-4 vm-classic-resource-stack">
-                                    <ResourceCard title="系统盘" icon={<HddOutlined className="text-yellow-500"/>}
-                                                  value={`已用 ${formatDisk(currentStatus.hdd_usage || 0)} / ${formatDisk(config.hdd_num || 0)}`}
-                                                  subValue="使用率"
-                                                  percent={config.hdd_num > 0 ? Math.round((currentStatus.hdd_usage || 0) / config.hdd_num * 100) : 0}
-                                                  color={getProgressBarColor(config.hdd_num > 0 ? Math.round((currentStatus.hdd_usage || 0) / config.hdd_num * 100) : 0)}/>
-                                    <ResourceCard title="流量" icon={<AreaChartOutlined className="text-red-500"/>}
-                                                  value={`已用 ${formatDisk(currentStatus.flu_usage || 0)} / ${config.flu_num > 0 ? formatDisk(config.flu_num) : '∞'}`}
-                                                  subValue="使用率"
-                                                  percent={config.flu_num > 0 ? Math.round((currentStatus.flu_usage || 0) / config.flu_num * 100) : 0}
-                                                  color={getProgressBarColor(config.flu_num > 0 ? Math.round((currentStatus.flu_usage || 0) / config.flu_num * 100) : 0)}/>
-                                    <ResourceCard title="端口" icon={<GlobalOutlined className="text-indigo-500"/>}
-                                                  value={`已用 ${config.nat_all ? Object.keys(config.nat_all).length : 0} / ${config.nat_num || 0} 个`}
-                                                  subValue="使用率"
-                                                  percent={config.nat_num > 0 ? Math.round((config.nat_all ? Object.keys(config.nat_all).length : 0) / config.nat_num * 100) : 0}
-                                                  color={getProgressBarColor(config.nat_num > 0 ? Math.round((config.nat_all ? Object.keys(config.nat_all).length : 0) / config.nat_num * 100) : 0)}/>
-                                </div>
-                            </Col>
-                            <Col xs={24} sm={12} xl={8} className="vm-classic-resource-group">
-                                <div className="space-y-4 vm-classic-resource-stack">
-                                    <ResourceCard title="上行带宽" icon={<CloudSyncOutlined className="text-cyan-500"/>}
-                                                  value={`已用 ${currentStatus.network_u || 0} / ${config.speed_u || 0} Mbps`}
-                                                  subValue="使用率"
-                                                  percent={config.speed_u > 0 ? Math.round((currentStatus.network_u || 0) / config.speed_u * 100) : 0}
-                                                  color={getProgressBarColor(config.speed_u > 0 ? Math.round((currentStatus.network_u || 0) / config.speed_u * 100) : 0)}/>
-                                    <ResourceCard title="下行带宽" icon={<CloudSyncOutlined className="text-cyan-600"/>}
-                                                  value={`已用 ${currentStatus.network_d || 0} / ${config.speed_d || 0} Mbps`}
-                                                  subValue="使用率"
-                                                  percent={config.speed_d > 0 ? Math.round((currentStatus.network_d || 0) / config.speed_d * 100) : 0}
-                                                  color={getProgressBarColor(config.speed_d > 0 ? Math.round((currentStatus.network_d || 0) / config.speed_d * 100) : 0)}/>
-                                    <ResourceCard title="反向代理" icon={<GlobalOutlined className="text-pink-500"/>}
-                                                  value={`已用 ${config.web_all ? Object.keys(config.web_all).length : 0} / ${config.web_num || 0} 个`}
-                                                  subValue="使用率"
-                                                  percent={config.web_num > 0 ? Math.round((config.web_all ? Object.keys(config.web_all).length : 0) / config.web_num * 100) : 0}
-                                                  color={getProgressBarColor(config.web_num > 0 ? Math.round((config.web_all ? Object.keys(config.web_all).length : 0) / config.web_num * 100) : 0)}/>
-                                </div>
-                            </Col>
-                        </Row>
+                        <div className="vm-metric-grid">
+                            {resourceMetrics.map(metric => (
+                                <ResourceCard key={metric.title} {...metric}/>
+                            ))}
+                        </div>
 
-                        {/* 网络配置 */}
-                        <Divider style={{margin: '12px 0 8px'}}/>
-                        <Descriptions className="vm-classic-properties vm-classic-network-properties" title="网络配置" size="small" column={{ xs: 1, sm: 2, xl: 3 }} bordered>
-                            <Descriptions.Item label="上行带宽">{config.speed_u || 0} Mbps</Descriptions.Item>
-                            <Descriptions.Item label="下行带宽">{config.speed_d || 0} Mbps</Descriptions.Item>
-                            <Descriptions.Item label="端口配额">{config.nat_num || 0} 个</Descriptions.Item>
-                            <Descriptions.Item label="代理配额">{config.web_num || 0} 个</Descriptions.Item>
-                            <Descriptions.Item label="流量配额">{config.flu_num > 0 ? formatDisk(config.flu_num) : '无限制'}</Descriptions.Item>
-                            <Descriptions.Item label="重置周期">{config.flu_rst?.[0] || 31} 天</Descriptions.Item>
-                            <Descriptions.Item label="超限速率">{config.flu_rst?.[1] || 0} Mbps</Descriptions.Item>
-                            <Descriptions.Item label="上次重置">{config.flu_rst?.[2] ? (config.flu_rst[2] > 100 ? new Date(config.flu_rst[2] * 1000).toLocaleDateString() : '-') : '-'}</Descriptions.Item>
-                        </Descriptions>
-                        <br></br>
-                        {/* 配额配置 */}
-                        <Divider style={{margin: '12px 0 8px'}}/>
-                        <Descriptions className="vm-classic-properties vm-classic-quota-properties" title="配额配置" size="small" column={{ xs: 1, sm: 2, xl: 3 }} bordered>
-                            <Descriptions.Item label="备份配额">{config.bak_num ?? 1}</Descriptions.Item>
-                            <Descriptions.Item label="光盘配额">{config.iso_num ?? 1}</Descriptions.Item>
-                            <Descriptions.Item label="PCI 配额">{config.pci_num ?? 0}</Descriptions.Item>
-                            <Descriptions.Item label="USB 配额">{config.usb_num ?? 0}</Descriptions.Item>
-                            <Descriptions.Item label="数据盘配额">{config.dat_num ?? 1}</Descriptions.Item>
-                            <Descriptions.Item label="数据盘容量">{config.dat_all ? formatDisk(config.dat_all) : 'N/A'}</Descriptions.Item>
-                            <Descriptions.Item label="处理器配额">{config.cpu_per ? `${config.cpu_per}%` : 'N/A'}</Descriptions.Item>
-                            <Descriptions.Item label="系统盘IOPS">{config.hdd_iop || 0}</Descriptions.Item>
-                        </Descriptions>
+                        <div className="vm-config-section">
+                            <div className="vm-config-section-title">网络配置</div>
+                            <div className="vm-spec-grid">
+                                {networkSpecs.map(([label, value]) => (
+                                    <div className="vm-spec-item" key={label}>
+                                        <span>{label}</span>
+                                        <strong>{value}</strong>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="vm-config-section">
+                            <div className="vm-config-section-title">配额配置</div>
+                            <div className="vm-spec-grid">
+                                {quotaSpecs.map(([label, value]) => (
+                                    <div className="vm-spec-item" key={label}>
+                                        <span>{label}</span>
+                                        <strong>{value}</strong>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     </FoldCard>
                 </div>
             </Col>
 
             {/* 右侧面板：历史资源用量 */}
-            <Col xs={24} xxl={8} style={{padding: 0}}>
-                <Card title="资源用量" size="small" variant="borderless" className="shadow-sm glass-card-transparent h-full vm-classic-resource-history" style={{padding: '0'}}
-                      extra={
-                          <Radio.Group value={timeRange} onChange={e => setTimeRange(e.target.value)} size="small"
-                                       optionType="button" buttonStyle="solid">
-                              <Radio.Button value={30}>30分</Radio.Button>
-                              <Radio.Button value={180}>3时</Radio.Button>
-                              <Radio.Button value={360}>6时</Radio.Button>
-                              <Radio.Button value={1440}>24时</Radio.Button>
-                              <Radio.Button value={4320}>3天</Radio.Button>
-                              <Radio.Button value={10080}>7天</Radio.Button>
-                              <Radio.Button value={21600}>15天</Radio.Button>
-                              <Radio.Button value={43200}>30天</Radio.Button>
-                          </Radio.Group>
-                      }
+            <Col xs={24} xxl={8}>
+                <Card
+                    title="资源用量"
+                    size="small"
+                    variant="borderless"
+                    className="shadow-sm glass-card-transparent h-full vm-classic-resource-history"
+                    extra={
+                        <Segmented
+                            size="small"
+                            value={chartView}
+                            onChange={value => setChartView(value as 'performance' | 'resource' | 'network')}
+                            options={[
+                                { label: '性能', value: 'performance' },
+                                { label: '资源', value: 'resource' },
+                                { label: '网络', value: 'network' },
+                            ]}
+                        />
+                    }
                 >
-                    <div className="mb-4 text-center">
-                        <Radio.Group value={chartView} onChange={e => setChartView(e.target.value)} size="small">
-                            <Radio.Button value="performance">性能</Radio.Button>
-                            <Radio.Button value="resource">资源</Radio.Button>
-                            <Radio.Button value="network">网络</Radio.Button>
+                    <div className="vm-history-toolbar">
+                        <span className="vm-history-toolbar-label">时间范围</span>
+                        <Radio.Group
+                            className="vm-history-range"
+                            value={timeRange}
+                            onChange={e => setTimeRange(e.target.value)}
+                            size="small"
+                            optionType="button"
+                            buttonStyle="solid"
+                        >
+                            {timeRangeOptions.map(([value, label]) => (
+                                <Radio.Button key={value} value={value}>{label}</Radio.Button>
+                            ))}
                         </Radio.Group>
                     </div>
 
-                    <div className="space-y-4 flex flex-col" style={{padding: '0'}}>
+                    <div className="vm-history-charts">
                         {chartView === 'performance' && (
                             <>
-                                <div className="dock-detail-chart-panel vm-classic-history-chart">
-                                    <ReactECharts
-                                        option={getChartOption('CPU使用率', monitorData.cpu, themePalette.chartColors[0], monitorData.labels)}
-                                        style={{height: '100%', width: '100%'}}
-                                        notMerge={true}
-                                    />
-                                </div>
-                                <div className="dock-detail-chart-panel vm-classic-history-chart">
-                                    <ReactECharts
-                                        option={getChartOption('RAM使用率', monitorData.memory, themePalette.chartColors[2], monitorData.labels)}
-                                        style={{height: '100%', width: '100%'}}
-                                        notMerge={true}
-                                    />
-                                </div>
-                                <div className="dock-detail-chart-panel vm-classic-history-chart">
-                                    <ReactECharts
-                                        option={getChartOption('GPU使用率', monitorData.gpu, themePalette.chartColors[3], monitorData.labels, 'MB')}
-                                        style={{height: '100%', width: '100%'}}
-                                        notMerge={true}
-                                    />
-                                </div>
+                                {historyChart('CPU使用率', monitorData.cpu, themePalette.chartColors[0])}
+                                {historyChart('RAM使用率', monitorData.memory, themePalette.chartColors[2])}
+                                {historyChart('GPU使用率', monitorData.gpu, themePalette.chartColors[3], 'MB')}
                             </>
                         )}
                         {chartView === 'resource' && (
                             <>
-                                <div className="dock-detail-chart-panel vm-classic-history-chart">
-                                    <ReactECharts
-                                        option={getChartOption('硬盘使用率', monitorData.disk, themePalette.chartColors[1], monitorData.labels)}
-                                        style={{height: '100%', width: '100%'}}
-                                        notMerge={true}
-                                    />
-                                </div>
-                                <div className="dock-detail-chart-panel vm-classic-history-chart">
-                                    <ReactECharts
-                                        option={getChartOption('流量使用率', monitorData.traffic, themePalette.chartColors[5], monitorData.labels, 'GB')}
-                                        style={{height: '100%', width: '100%'}}
-                                        notMerge={true}
-                                    />
-                                </div>
-                                <div className="dock-detail-chart-panel vm-classic-history-chart">
-                                    <ReactECharts
-                                        option={getChartOption('端口使用数', monitorData.nat, themePalette.chartColors[4], monitorData.labels, '个')}
-                                        style={{height: '100%', width: '100%'}}
-                                        notMerge={true}
-                                    />
-                                </div>
+                                {historyChart('硬盘使用率', monitorData.disk, themePalette.chartColors[1])}
+                                {historyChart('流量使用率', monitorData.traffic, themePalette.chartColors[5], 'GB')}
+                                {historyChart('端口使用数', monitorData.nat, themePalette.chartColors[4], '个')}
                             </>
                         )}
                         {chartView === 'network' && (
                             <>
-                                <div className="dock-detail-chart-panel vm-classic-history-chart">
-                                    <ReactECharts
-                                        option={getChartOption('上行带宽率', monitorData.netUp, themePalette.chartColors[6], monitorData.labels, 'Mbps')}
-                                        style={{height: '100%', width: '100%'}}
-                                        notMerge={true}
-                                    />
-                                </div>
-                                <div className="dock-detail-chart-panel vm-classic-history-chart">
-                                    <ReactECharts
-                                        option={getChartOption('下行带宽率', monitorData.netDown, themePalette.chartColors[7], monitorData.labels, 'Mbps')}
-                                        style={{height: '100%', width: '100%'}}
-                                        notMerge={true}
-                                    />
-                                </div>
-                                <div className="dock-detail-chart-panel vm-classic-history-chart">
-                                    <ReactECharts
-                                        option={getChartOption('反向代理数', monitorData.proxy, themePalette.chartColors[3], monitorData.labels, '个')}
-                                        style={{height: '100%', width: '100%'}}
-                                        notMerge={true}
-                                    />
-                                </div>
+                                {historyChart('上行带宽率', monitorData.netUp, themePalette.chartColors[6], 'Mbps')}
+                                {historyChart('下行带宽率', monitorData.netDown, themePalette.chartColors[7], 'Mbps')}
+                                {historyChart('反向代理数', monitorData.proxy, themePalette.chartColors[3], '个')}
                             </>
                         )}
                     </div>
@@ -3424,7 +3476,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         },
         {
             key: 'firewall',
-            label: '防火墙',
+            label: '防火墙管理',
             children: (
                 <FirewallPanel
                     hostName={hostName || ''}
@@ -3704,7 +3756,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         },
         {
             key: 'snapshot',
-            label: '快照',
+            label: '快照管理',
             children: (
                 <SnapshotPanel
                     hostName={hostName || ''}
@@ -4167,6 +4219,8 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         // 平台能力：只有支持对应能力的平台才展示该页签
         firewallSupported: hostConfig?.capabilities?.firewall === true,
         snapshotSupported: hostConfig?.capabilities?.snapshot === true,
+        // 平台不支持（tab_lock）+ 主机功能控制关闭（disabled_tabs）
+        disabledTabs: [...(hostConfig?.tab_lock || []), ...(hostConfig?.disabled_tabs || [])],
     }
     const visibleTabItems = tabItems.filter(item => isVMDetailTabVisible(item.key, config, tabVisibility))
     const activeTabItem = visibleTabItems.find(item => item.key === activeTab)
@@ -4243,7 +4297,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
         .find((nic: any) => nic?.ip4_addr === vm.ipv4_address) as any
     const ipv4Scope = activeNic?.nic_type === 'pub' ? '公网' : '内网'
     const ipv6Address = vm.ipv6_address && vm.ipv6_address !== '-' ? vm.ipv6_address : ''
-    const hardwareSummary = `${config.cpu_num || 0}C · ${formatMemory(config.mem_num || 0).replace(/\.00/, '')} · ${formatDisk(config.hdd_num || 0).replace(/\.00/, '')} · ${config.speed_u || 0} Mbps`
+    const hardwareSummary = `${config.cpu_num || 0} 核 · ${formatMemory(config.mem_num || 0)} · ${formatDisk(config.hdd_num || 0)} · ${config.speed_u || 0} Mbps`
 
     return (
         <div className={`vm-unified-detail-page vm-classic-detail-page h-auto is-layout-${detailLayout}`} data-detail-layout={detailLayout}>
@@ -4254,7 +4308,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                     onChange={changeDetailLayout}
                     showLayoutSwitch={!isRestrictedSession}
                 />
-                <div className="vm-classic-hero-wrap px-6 py-4">
+                <div className="vm-classic-hero-wrap">
                     {!hostEnabled && (
                         <Alert
                             message="主机已被禁用"
@@ -4267,8 +4321,7 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                     )}
                     <div className="vm-classic-hero-layout flex justify-between items-center">
                         <div className="vm-classic-hero-identity flex items-center gap-4">
-                            <div
-                                className="vm-classic-hero-icon p-3 rounded text-6xl flex items-center justify-center w-20 h-20">
+                            <div className="vm-classic-hero-icon flex items-center justify-center">
                                 {getOSIcon(config.os_name || '')}
                             </div>
                             <div>
@@ -4286,12 +4339,15 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                                         </span>
                                     </span>
                                 </div>
-                                <div className="vm-classic-hero-meta flex gap-4 mt-2 text-sm ">
-                                    <span>主机名称: {hostName}</span>
-                                    <span>系统: {getOSDisplayName(config.os_name || '')}</span>
-                                    {ipv6Address
-                                        ? <span>IPv6: <code>{ipv6Address}</code></span>
-                                        : <span className="vm-classic-hero-hardware">配置: {hardwareSummary}</span>}
+                                <div className="vm-classic-hero-meta">
+                                    <span className="vm-hero-meta-item"><em>主机</em><strong>{hostName || '-'}</strong></span>
+                                    <span className="vm-hero-meta-item"><em>系统</em><strong>{getOSDisplayName(config.os_name || '')}</strong></span>
+                                    <span className="vm-hero-meta-item"><em>配置</em><strong>{hardwareSummary}</strong></span>
+                                    {ipv6Address && (
+                                        <span className="vm-hero-meta-item">
+                                            <em>IPv6</em><strong className="is-mono">{ipv6Address}</strong>
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -4465,10 +4521,26 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                    mask={false}
                    width={400}>
                 <div className="mb-4"><p>{currentAction?.content}</p></div>
+                {currentAction?.title === '确认删除' && (
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                        <span className="text-sm text-gray-500">虚拟机 ID</span>
+                        <Space size={2}>
+                            <code style={{ fontFamily: 'monospace' }}>{uuid}</code>
+                            <Button
+                                type="text"
+                                size="small"
+                                title="复制虚拟机 ID"
+                                aria-label="复制虚拟机 ID"
+                                icon={<CopyOutlined />}
+                                onClick={() => { void handleCopyText(uuid || '', '虚拟机 ID 已复制') }}
+                            />
+                        </Space>
+                    </div>
+                )}
                 {currentAction?.requireInput && (
                     <div className="mb-4">
                         <Input
-                            placeholder={currentAction.expectedInput === uuid ? "请输入虚拟机名称" : "请输入主所有者用户名"}
+                            placeholder={currentAction.expectedInput === uuid ? "请输入虚拟机 ID" : "请输入主所有者用户名"}
                             value={currentAction.confirmInput}
                             onChange={(e) => setCurrentAction({
                                 ...currentAction,
@@ -4934,23 +5006,27 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
             >
 
                 <div className="remote-modal-cards" style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '8px 0' }}>
-                    {/* 1. VNC/TTY 一键连接 - 所有非docker+lxc系统都有 */}
-                    {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' && (
-                        <div className="remote-card" style={{ padding: 16 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div>
-                                    <div style={{ fontWeight: 600, fontSize: 15 }}>
-                                        <DesktopOutlined style={{ marginRight: 8, color: 'var(--art-chart-4)' }} />
-                                        VNC / TTY 控制台
-                                    </div>
-                                    <div className="remote-card-desc" style={{ fontSize: 13, marginTop: 4 }}>网页远程控制台，适合救援排障</div>
+                    {/* 1. VNC/TTY 一键连接：图形平台走 noVNC，容器平台走网页终端 */}
+                    <div className="remote-card" style={{ padding: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: 15 }}>
+                                    <DesktopOutlined style={{ marginRight: 8, color: 'var(--art-chart-4)' }} />
+                                    {ttyPlatform ? '命令行控制台（TTY）' : 'VNC / TTY 控制台'}
                                 </div>
-                                <Button type="primary" onClick={handleOpenVNC} disabled={!hostEnabled}>
-                                    一键连接
-                                </Button>
+                                <div className="remote-card-desc" style={{ fontSize: 13, marginTop: 4 }}>
+                                    {ttyPlatform
+                                        ? (hostConfig?.server_type === 'SmolVM'
+                                            ? 'Firecracker 仅提供只读串口日志，交互请使用 SSH'
+                                            : '网页终端直接进入容器，等价于该平台的 VNC 入口')
+                                        : '网页远程控制台，适合救援排障'}
+                                </div>
                             </div>
+                            <Button type="primary" onClick={handleOpenVNC} disabled={!hostEnabled}>
+                                {ttyPlatform ? '打开终端' : '一键连接'}
+                            </Button>
                         </div>
-                    )}
+                    </div>
 
                     {/* 2. ToDesk远程桌面 - 仅Windows+非docker+lxc */}
                     {hostConfig?.server_type !== 'OCInterface' && hostConfig?.server_type !== 'LxContainer' &&
@@ -5098,6 +5174,24 @@ const [operationTimeoutId, setOperationTimeoutId] = useState<ReturnType<typeof s
                         </div>
                     )}
                 </div>
+            </Modal>
+
+            {/* 容器平台命令行控制台（等价 VNC） */}
+            <Modal
+                title="命令行控制台"
+                open={consoleModalVisible}
+                onCancel={() => setConsoleModalVisible(false)}
+                footer={null}
+                width={880}
+                destroyOnClose
+            >
+                {consoleModalVisible && hostName && uuid && (
+                    <VMConsolePanel
+                        hostName={hostName}
+                        vmUuid={uuid}
+                        readOnly={hostConfig?.server_type === 'SmolVM'}
+                    />
+                )}
             </Modal>
         </div>
     )

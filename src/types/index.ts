@@ -60,8 +60,7 @@ export interface User {
 // 登录请求
 export interface LoginRequest {
   // access_key：虚拟机访问密钥登录（16 位字母数字，登录后直达该虚拟机）
-  login_type?: 'token' | 'user' | 'access_key';
-  token?: string;
+  login_type?: 'user' | 'access_key';
   username?: string;
   password?: string;
   access_key?: string;
@@ -348,6 +347,63 @@ export const READONLY_TABS: Set<string> = new Set([]);
 // 除管理员/主所有者外，还需排除受限临时身份（临时凭据/访问密钥登录）。
 export const OWNER_ONLY_TABS: Set<string> = new Set(['owners']);
 
+// 虚拟机详情中可由「功能控制」开关的选项卡清单。
+// key 与后端 model.VMTabKeys / DockDetail 的 tabItems 保持一致；
+// 平台本身不支持的项（后端 engine 元信息的 tab_lock）在主机配置里显示为不可勾选。
+export const VM_DETAIL_TAB_OPTIONS: { key: string; label: string }[] = [
+  { key: 'ip', label: '网卡管理' },
+  { key: 'hdd', label: '数据磁盘' },
+  { key: 'iso', label: '光盘镜像' },
+  { key: 'nat', label: '端口映射' },
+  { key: 'firewall', label: '防火墙管理' },
+  { key: 'proxy', label: '反向代理' },
+  { key: 'pci', label: 'PCI 设备' },
+  { key: 'usb', label: 'USB 设备' },
+  { key: 'snapshot', label: '快照管理' },
+  { key: 'backup', label: '备份管理' },
+  { key: 'efi', label: '启动顺序' },
+  { key: 'owners', label: '权限管理' },
+]
+
+// 链接权限（访问密钥 / 访问链接）可勾选的权限项。
+// 「用户权限」刻意不在列表里：链接一旦能管理用户，
+// 就能自己造一个高权限用户绕过链接本身的限制，因此永远不开放。
+export const LINK_PERMISSION_OPTIONS: { field: string; label: string }[] = [
+  { field: 'pwr_edits', label: '电源操作' },
+  { field: 'pwd_edits', label: '修改密码' },
+  { field: 'sys_edits', label: '重装系统' },
+  { field: 'nic_edits', label: '网卡管理' },
+  { field: 'iso_edits', label: '光盘镜像' },
+  { field: 'hdd_edits', label: '数据磁盘' },
+  { field: 'net_edits', label: '端口映射' },
+  { field: 'web_edits', label: '反向代理' },
+  { field: 'vnc_edits', label: '远程桌面' },
+  { field: 'pci_edits', label: 'PCI 设备' },
+  { field: 'usb_edits', label: 'USB 设备' },
+  { field: 'vm_backup', label: '备份与快照' },
+  { field: 'efi_edits', label: '启动顺序' },
+  { field: 'vm_modify', label: '修改配置' },
+  { field: 'vm_delete', label: '删除实例' },
+  { field: 'firewalls', label: '防火墙' },
+]
+
+/** 把 16 位权限掩码拆成 {字段: 是否勾选}，供链接权限弹窗回显 */
+export function maskToPermissionFlags(mask: number): Record<string, boolean> {
+  const flags: Record<string, boolean> = {}
+  LINK_PERMISSION_OPTIONS.forEach(({ field }) => {
+    flags[field] = hasPermission(mask | 0, PERMISSION_FIELD_MASK[field] || 0)
+  })
+  return flags
+}
+
+/** 把 {字段: 是否勾选} 合回 16 位权限掩码 */
+export function permissionFlagsToMask(flags: Record<string, boolean>): number {
+  return LINK_PERMISSION_OPTIONS.reduce(
+    (mask, { field }) => (flags[field] ? mask | (PERMISSION_FIELD_MASK[field] || 0) : mask),
+    0,
+  )
+}
+
 // Tab key 到配额字段的映射（配额为0时隐藏对应Tab）
 export const TAB_QUOTA_MAP: Record<string, string> = {
   ip: 'nic_all',       // 网卡管理 - 通过nic_all对象的key数量判断（特殊处理）
@@ -379,6 +435,64 @@ export function isQuotaExhausted(quota: number | null | undefined, used: number)
   const limit = Number(quota);
   if (!Number.isFinite(limit)) return false;
   return limit < 1 || used >= limit;
+}
+
+/** 网卡与地址使用量：按网卡类型（pub / 内网）与地址族分别统计 */
+export function countNicUsage(nicAll: Record<string, any> | null | undefined) {
+  const usage = { total: 0, pubV4: 0, pubV6: 0, priV4: 0, priV6: 0 };
+  Object.values(nicAll || {}).forEach((nic: any) => {
+    usage.total++;
+    const isPub = nic?.nic_type === 'pub';
+    const hasV4 = String(nic?.ip4_addr ?? '').trim() !== '';
+    const hasV6 = String(nic?.ip6_addr ?? '').trim() !== '';
+    if (isPub) {
+      if (hasV4) usage.pubV4++;
+      if (hasV6) usage.pubV6++;
+    } else {
+      if (hasV4) usage.priV4++;
+      if (hasV6) usage.priV6++;
+    }
+  });
+  return usage;
+}
+
+/**
+ * 添加网卡前的网络配额校验，返回错误文案；null 表示通过。
+ *
+ * 两条约束（与后端 model.CheckNetQuota 一致）：
+ *  1. 网卡总数不能超过套餐的最大网卡数量（nic_num）；
+ *  2. 公网/内网各自的 IPv4、IPv6 地址总数不能超过对应上限。
+ *
+ * 上限为 undefined / null 表示未配置（历史数据），不限制；
+ * 上限为 0 表示明确不允许。
+ * 手动填写的地址会立刻计入校验；留空由后端自动分配时，
+ * 后端会按剩余额度决定分不分配，这里不提前拦截。
+ */
+export function checkAddNicQuota(
+  config: any,
+  nicType: string,
+  ip4?: string,
+  ip6?: string,
+): string | null {
+  if (!config) return null;
+  const usage = countNicUsage(config.nic_all);
+  const nicNum = config.nic_num;
+  if (nicNum !== undefined && nicNum !== null && (Number(nicNum) < 1 || usage.total >= Number(nicNum))) {
+    return `网卡数量已达上限（${usage.total}/${nicNum}）`;
+  }
+  const isPub = nicType === 'pub';
+  const side = isPub ? '公网' : '内网';
+  const limit4 = isPub ? config.ip4_pub : config.ip4_pri;
+  const limit6 = isPub ? config.ip6_pub : config.ip6_pri;
+  const used4 = isPub ? usage.pubV4 : usage.priV4;
+  const used6 = isPub ? usage.pubV6 : usage.priV6;
+  if (limit4 !== undefined && limit4 !== null && String(ip4 ?? '').trim() !== '' && used4 >= Number(limit4)) {
+    return `${side} IPv4 数量已达上限（${used4}/${limit4}）`;
+  }
+  if (limit6 !== undefined && limit6 !== null && String(ip6 ?? '').trim() !== '' && used6 >= Number(limit6)) {
+    return `${side} IPv6 数量已达上限（${used6}/${limit6}）`;
+  }
+  return null;
 }
 
 /**
