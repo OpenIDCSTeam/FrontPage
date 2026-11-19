@@ -26,6 +26,7 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'pt-br', native: 'Português', english: 'Portuguese' },
   { code: 'es-es', native: 'Español', english: 'Spanish' },
   { code: 'ru-ru', native: 'Русский', english: 'Russian' },
+  { code: 'ar-sa', native: 'العربية', english: 'Arabic' },
 ]
 
 type LanguageLoader = () => Promise<string>
@@ -42,6 +43,8 @@ const LANGUAGE_LOADERS: Record<string, LanguageLoader> = {
   'pt-br': async () => (await import('../i18n/locales/pt-br.po?raw')).default,
   'es-es': async () => (await import('../i18n/locales/es-es.po?raw')).default,
   'ru-ru': async () => (await import('../i18n/locales/ru-ru.po?raw')).default,
+  // 阿拉伯语词表尚未落地，先复用英文词表兜底，避免选中后界面无变化
+  'ar-sa': async () => (await import('../i18n/locales/en-us.po?raw')).default,
 }
 
 /**
@@ -330,11 +333,25 @@ function normalizeLanguage(input: string | null | undefined): string {
   if (value.startsWith('pt')) return 'pt-br'
   if (value.startsWith('es')) return 'es-es'
   if (value.startsWith('ru')) return 'ru-ru'
+  if (value.startsWith('ar')) return 'ar-sa'
   return 'zh-cn'
 }
 
+/** 从右到左书写的语言前缀（当前支持阿拉伯语，预留希伯来语/波斯语/乌尔都语） */
+const RTL_LANGUAGE_PREFIXES = ['ar', 'he', 'fa', 'ur']
+
+export function isRTLLanguage(code: string | null | undefined): boolean {
+  if (!code) return false
+  const primary = code.toLowerCase().split('-')[0]
+  return RTL_LANGUAGE_PREFIXES.includes(primary)
+}
+
+/** 跟随浏览器：语言偏好存这个标记，初始化时再解析成具体语言 */
+export const AUTO_LANGUAGE = 'auto'
+
 function getSavedLanguage(): string {
   const saved = localStorage.getItem('language')
+  if (saved === AUTO_LANGUAGE) return normalizeLanguage(navigator.language)
   return normalizeLanguage(saved || navigator.language)
 }
 
@@ -518,22 +535,31 @@ function translateTextNode(textNode: Node, forceRetranslate = false): void {
 
 function translateAttribute(element: Element, name: 'placeholder' | 'title' | 'aria-label' | 'alt'): void {
   const el = element as HTMLElement
-  const value = name === 'aria-label' ? el.getAttribute(name) || '' : (el as any)[name] || ''
-  if (!value) return
+  const current = name === 'aria-label' ? el.getAttribute(name) || '' : (el as any)[name] || ''
+  if (!current) return
 
   let cache = originalAttrs.get(element)
   if (!cache) {
     cache = {}
     originalAttrs.set(element, cache)
   }
-  if (!cache[name]) cache[name] = value
+
+  // 组件重新渲染可能带来新的原文，此时要重新记为源文案；
+  // 只有在当前值仍是我们写入的译文（或原文本身）时才沿用缓存。
+  const knownSource = cache[name]
+  const knownTranslation = knownSource ? i18nState.translations[knownSource] : undefined
+  if (!knownSource || (current !== knownSource && current !== knownTranslation)) {
+    cache[name] = current
+  }
 
   const source = cache[name]
-  const translation = i18nState.translations[source]
-  if (!translation) return
+  // 关键：目标语言缺少该词条时回退到源文案。否则从英文切回中文，
+  // placeholder 会一直停在英文（旧值不是源文案，也没有新译文可写）。
+  const next = i18nState.translations[source] || source
+  if (next === current) return
 
-  if (name === 'aria-label') el.setAttribute(name, translation)
-  else (el as any)[name] = translation
+  if (name === 'aria-label') el.setAttribute(name, next)
+  else (el as any)[name] = next
 }
 
 function translateElement(element: Element, forceRetranslate = false): void {
@@ -600,6 +626,9 @@ export function applyTranslations(root: Element | Document = document.body, forc
 
 function updateLanguageDisplay(): void {
   document.documentElement.lang = i18nState.currentLanguage
+  const rtl = isRTLLanguage(i18nState.currentLanguage)
+  document.documentElement.dir = rtl ? 'rtl' : 'ltr'
+  document.documentElement.dataset.direction = rtl ? 'rtl' : 'ltr'
   const label = SUPPORTED_LANGUAGES.find(item => item.code === i18nState.currentLanguage)?.native || ''
   document.documentElement.dataset.language = i18nState.currentLanguage
   document.getElementById('currentLanguageName')?.replaceChildren(label)
