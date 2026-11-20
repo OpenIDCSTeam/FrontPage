@@ -421,7 +421,7 @@ msgid "关系"
 msgstr "關係"
 
 msgid "内存"
-msgstr "內存"
+msgstr "記憶體"
 
 msgid "内容"
 msgstr "內容"
@@ -532,7 +532,7 @@ msgid "布局"
 msgstr "佈局"
 
 msgid "带宽"
-msgstr "帶寬"
+msgstr "頻寬"
 
 msgid "平台"
 msgstr "平台"
@@ -613,7 +613,7 @@ msgid "方法"
 msgstr "方法"
 
 msgid "日志"
-msgstr "紀錄"
+msgstr "日誌"
 
 msgid "映射"
 msgstr "映射"
@@ -694,7 +694,7 @@ msgid "状态"
 msgstr "狀態"
 
 msgid "用户"
-msgstr "用戶"
+msgstr "使用者"
 
 msgid "用途"
 msgstr "用途"
@@ -721,7 +721,7 @@ msgid "稳定性"
 msgstr "穩定性"
 
 msgid "端口"
-msgstr "端口"
+msgstr "埠"
 
 msgid "策略"
 msgstr "策略"
@@ -2032,7 +2032,7 @@ msgid "系统界面"
 msgstr "系統界面"
 
 msgid "系统盘"
-msgstr "系統盤"
+msgstr "系統碟"
 
 msgid "系统空间"
 msgstr "系統空間"
@@ -2997,3 +2997,243 @@ msgstr "防火牆規則"
 
 msgid "快照管理"
 msgstr "快照管理"
+
+msgid "外观设置"
+msgstr "外觀設定"
+
+msgid "选择工作台风格，偏好自动保存"
+msgstr "選擇工作台風格，偏好自動儲存"
+
+msgid "界面主题"
+msgstr "介面主題"
+
+msgid "明暗模式"
+msgstr "明暗模式"
+
+msgid "跟随"
+msgstr "跟隨"
+
+msgid "跟随浏览器/系统明暗设置"
+msgstr "跟隨瀏覽器/系統明暗設定"
+
+msgid "透明表面"
+msgstr "透明表面"
+
+msgid "柔和背景透过面板"
+msgstr "柔和背景透過面板"
+
+msgid "圆润边角"
+msgstr "圓潤邊角"
+
+msgid "适度放大卡片与控件圆角"
+msgstr "適度放大卡片與控制項圓角"
+
+msgid "界面字体"
+msgstr "介面字型"
+
+msgid "数字与正文可分别优化阅读"
+msgstr "數字與正文可分開最佳化閱讀"
+
+msgid "打开外观设置"
+msgstr "開啟外觀設定"
+
+msgid "简约纯白"
+msgstr "簡約純白"
+
+msgid "明净留白 · 克制蓝"
+msgstr "留白 · 克制藍"
+
+msgid "科技大气"
+msgstr "科技大氣"
+
+msgid "深海蓝 · 电子青"
+msgstr "深海藍 · 電子青"
+
+msgid "科技简约"
+msgstr "科技簡約"
+
+msgid "浅蓝底 · 精密线"
+msgstr "淺藍 · 精密"
+
+msgid "黑金质感"
+msgstr "黑金質感"
+
+msgid "墨黑 · 琥珀金"
+msgstr "墨黑 · 琥珀金"
+
+msgid "清爽可爱"
+msgstr "清爽可愛"
+
+msgid "薄荷绿 · 圆润"
+msgstr "薄荷綠 · 圓潤"
+
+msgid "透明炫酷"
+msgstr "透明炫酷"
+
+msgid "紫雾 · 磨砂层"
+msgstr "紫霧 · 磨砂"
+
+msgid "切换语言"
+msgstr "切換語言"
+
+msgid "控制台与快捷操作"
+msgstr "控制台與快捷操作"
+
+msgid "实时画面"
+msgstr "即時畫面"
+
+msgid "快捷操作"
+msgstr "快捷操作"
+
+msgid "电源 · 系统 · 访问"
+msgstr "電源 · 系統 · 存取"
+
+msgid "未运行"
+msgstr "未執行"
+
+msgid "时间范围"
+msgstr "時間範圍"
+
+msgid "所选时间范围内暂无监控数据"
+msgstr "所選時間範圍內暫無監控資料"
+
+msgid "配额配置"
+msgstr "配額設定"
+
+msgid "实例状态"
+msgstr "實例狀態"
+
+msgid "复制系统密码"
+msgstr "複製系統密碼"
+
+msgid "复制远程密码"
+msgstr "複製遠端密碼"
+
+msgid "显示系统密码"
+msgstr "顯示系統密碼"
+
+msgid "显示远程密码"
+msgstr "顯示遠端密碼"
+
+msgid "隐藏系统密码"
+msgstr "隱藏系統密碼"
+
+msgid "隐藏远程密码"
+msgstr "隱藏遠端密碼"
+
+msgid "修改系统密码"
+msgstr "修改系統密碼"
+
+msgid "修改远程密码"
+msgstr "修改遠端密碼"
+
+msgid "无权限查看"
+msgstr "無權限檢視"
+
+msgid "未设置"
+msgstr "未設定"
+
+msgid "虚拟机截图"
+msgstr "虛擬機截圖"
+
+msgid "虚拟机未运行，无法获取截图"
+msgstr "虛擬機未執行，無法取得截圖"
+
+msgid "无法获取截图"
+msgstr "無法取得截圖"
+
+msgid "获取截图中..."
+msgstr "取得截圖中..."
+
+msgid "此虚拟机所属的物理机不提供桌面截图"
+msgstr "此虛擬機所屬的實體機不提供桌面截圖"
+
+msgid "资源用量"
+msgstr "資源用量"
+
+msgid "IPv4 地址"
+msgstr "IPv4 位址"
+
+msgid "IPv6 地址"
+msgstr "IPv6 位址"
+
+msgid "VNC 端口"
+msgstr "VNC 埠"
+
+msgid "默认布局"
+msgstr "預設佈局"
+
+msgid "竖版菜单"
+msgstr "豎版選單"
+
+msgid "虚拟机详情布局"
+msgstr "虛擬機詳情佈局"
+
+msgid "打开实例导航"
+msgstr "開啟實例導覽"
+
+msgid "展开导航"
+msgstr "展開導覽"
+
+msgid "收起导航"
+msgstr "收合導覽"
+
+msgid "反代"
+msgstr "反代"
+
+msgid "资料"
+msgstr "資料"
+
+msgid "帮助"
+msgstr "說明"
+
+msgid "消息中心"
+msgstr "訊息中心"
+
+msgid "搜索功能..."
+msgstr "搜尋功能..."
+
+msgid "管理控制台"
+msgstr "管理主控台"
+
+msgid "用户控制台"
+msgstr "使用者主控台"
+
+msgid "该主机已关闭改配"
+msgstr "此主機已關閉改配"
+
+msgid "混排（默认）"
+msgstr "混排（預設）"
+
+msgid "系统无衬线"
+msgstr "系統無襯線"
+
+msgid "完全跟随操作系统界面字体"
+msgstr "完全跟隨作業系統介面字型"
+
+msgid "CPU使用率"
+msgstr "CPU 使用率"
+
+msgid "RAM使用率"
+msgstr "RAM 使用率"
+
+msgid "GPU使用率"
+msgstr "GPU 使用率"
+
+msgid "硬盘使用率"
+msgstr "磁碟使用率"
+
+msgid "流量使用率"
+msgstr "流量使用率"
+
+msgid "端口使用数"
+msgstr "埠使用數"
+
+msgid "上行带宽率"
+msgstr "上行頻寬率"
+
+msgid "下行带宽率"
+msgstr "下行頻寬率"
+
+msgid "反向代理数"
+msgstr "反向代理數"

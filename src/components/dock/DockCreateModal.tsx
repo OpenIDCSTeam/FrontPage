@@ -13,7 +13,8 @@ import {
     Slider,
     Alert,
     Divider,
-    Collapse
+    Collapse,
+    Tabs
 } from 'antd'
 import {
     PlusOutlined,
@@ -22,12 +23,38 @@ import {
     ThunderboltOutlined,
     DesktopOutlined,
     GlobalOutlined,
-    ReloadOutlined,
-    AppstoreOutlined
+    ReloadOutlined
 } from '@ant-design/icons'
 import api from '@/utils/apis.ts'
 import { VM_PERMISSION, hasPermission } from '@/types'
 import { startTaskWithNotification } from '@/utils/taskPoller'
+
+/** 套餐卡片上的流量说明：计费方向 + 重置规则 + 超限后带宽 */
+function planTrafficSummary(plan: any): string {
+    const size = plan.flu_num >= 1024 ? `${Math.round(plan.flu_num / 1024)}GB` : `${plan.flu_num}MB`
+    const dirLabel: Record<string, string> = {up: '上行', down: '下行', both: '上下行'}
+    const dir = dirLabel[plan.flu_bill_dir] || '上下行'
+    let reset = ''
+    if (plan.flu_rst_mode === 'calendar') {
+        if (plan.flu_rst_unit === 'week') {
+            reset = `每周${['一', '二', '三', '四', '五', '六', '日'][Math.min(Math.max(plan.flu_rst_num || 1, 1), 7) - 1]}重置`
+        } else if (plan.flu_rst_unit === 'day') {
+            reset = `每天${plan.flu_rst_num ?? 0}时重置`
+        } else {
+            reset = `每月${plan.flu_rst_num ?? 1}号重置`
+        }
+    } else if (plan.flu_rst_mode === 'interval') {
+        const unitLabel: Record<string, string> = {day: '天', week: '周', month: '月', year: '年'}
+        reset = `每${plan.flu_rst_num ?? 1}${unitLabel[plan.flu_rst_unit] || '天'}重置`
+    } else if (Array.isArray(plan.flu_rst) && plan.flu_rst[0]) {
+        // 旧数据
+        reset = `每${plan.flu_rst[0]}天重置`
+    }
+    const overU = plan.flu_over_u ?? 0
+    const overD = plan.flu_over_d ?? 0
+    const over = overU || overD ? ` / 超限后↑${overU}Mbps ↓${overD}Mbps` : ''
+    return `${size} / ${dir}${reset ? ' / ' + reset : ''}${over}`
+}
 
 // Interfaces
 interface UserQuota {
@@ -162,6 +189,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
 }) => {
     const [form] = Form.useForm()
     const isEditMode = !!vmUuid
+    // 重置规则的单位集合随模式变化：interval 用 天/周/月/年，calendar 用 月/周/日
+    const fluRstMode = Form.useWatch('flu_rst_mode', form)
     const [loading, setLoading] = useState(false)
     
     // Internal state
@@ -177,7 +206,8 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
     const [saveConfirmVisible, setSaveConfirmVisible] = useState(false)
     const [pendingValues, setPendingValues] = useState<any>(null)
     const [vmPerms, setVmPerms] = useState<number>(userPermissions ?? VM_PERMISSION.FULL_MASK)
-    // 套餐卡片选择相关状态
+    // 套餐/自定义配置页签与套餐选择
+    const [configurationMode, setConfigurationMode] = useState<'plan' | 'custom'>('plan')
     const [serverPlans, setServerPlans] = useState<Record<string, any>>({})
     const [selectedPlanName, setSelectedPlanName] = useState<string>('')
 
@@ -389,7 +419,9 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                     gpuMdev = config.pci_all[gpuId].gpu_mdev || ''
                     gpuRemark = config.pci_all[gpuId].gpu_hint || ''
                 }
-                const fluRst = config.flu_rst || [31, 10, 0]
+                // 流量重置：优先用新版字段，旧数据回落到 flu_rst=[重置天数, 超限MB, 上次重置]
+                const fluRst = Array.isArray(config.flu_rst) ? config.flu_rst : []
+                const legacyDays = Number(fluRst[0]) || 0
 
                 // USB Config
                 let usbVid = ''
@@ -438,9 +470,12 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                     speed_d: config.speed_d,
                     nat_num: config.nat_num,
                     flu_num: config.flu_num,
-                    flu_rst_day: fluRst[0],
-                    flu_rst_limit: fluRst[1],
-                    flu_rst_time: fluRst[2],
+                    flu_bill_dir: config.flu_bill_dir || 'both',
+                    flu_rst_mode: config.flu_rst_mode || 'interval',
+                    flu_rst_unit: config.flu_rst_unit || (legacyDays > 0 ? 'day' : 'month'),
+                    flu_rst_num: config.flu_rst_num ?? (legacyDays || 1),
+                    flu_over_u: config.flu_over_u ?? 0,
+                    flu_over_d: config.flu_over_d ?? 0,
                     web_num: config.web_num,
                     bak_num: config.bak_num ?? 1,
                     iso_num: config.iso_num ?? 1,
@@ -488,9 +523,26 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
     }
 
     // 根据套餐自动生成网卡列表
+    //
+    // 套餐按「公网V4 / 内网V4 / 公网V6 / 内网V6」的数量描述网络能力，
+    // 而平台侧一张网卡可以同时带 v4 与 v6，所以网卡数取同侧 v4/v6 的较大值：
+    //   公网网卡数 = max(公网V4, 公网V6)，内网网卡数 = max(内网V4, 内网V6)
+    // 具体地址由后端按网卡类型从地址池分配，这里只决定网卡数量与类型。
+    // 套餐还带「最大网卡数量」(nic_num)，推算结果超过它时按上限截断，
+    // 否则创建请求会被后端的网络配额校验拒绝。
     const autoConfigNicsByPlan = (plan: any) => {
-        const nicPub = plan.nic_pub ?? 0
-        const nicPri = plan.nic_pri ?? 1
+        const pubV4 = plan.ip4_pub ?? plan.nic_pub ?? 0
+        const priV4 = plan.ip4_pri ?? plan.nic_pri ?? 1
+        const pubV6 = plan.ip6_pub ?? plan.ip6_max ?? 0
+        const priV6 = plan.ip6_pri ?? 0
+        let nicPri = Math.max(priV4, priV6)
+        let nicPub = Math.max(pubV4, pubV6)
+        const cap = Number(plan.nic_num)
+        if (Number.isFinite(cap) && cap >= 0 && nicPub + nicPri > cap) {
+            nicPri = Math.min(nicPri, cap)
+            nicPub = Math.min(nicPub, Math.max(cap - nicPri, 0))
+            message.warning(`套餐按地址数量需要 ${Math.max(pubV4, pubV6) + Math.max(priV4, priV6)} 张网卡，超过最大网卡数量 ${cap}，已按上限截断`)
+        }
         const newNicList: any[] = []
         let counter = 0
         // 先添加内网网卡
@@ -605,11 +657,12 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                 speed_d: values.speed_d,
                 nat_num: values.nat_num,
                 flu_num: values.flu_num,
-                flu_rst: [
-                    values.flu_rst_day, 
-                    values.flu_rst_limit, 
-                    values.flu_rst_time || Math.floor(Date.now() / 1000)
-                ],
+                flu_bill_dir: values.flu_bill_dir || 'both',
+                flu_rst_mode: values.flu_rst_mode || 'interval',
+                flu_rst_unit: values.flu_rst_unit || 'day',
+                flu_rst_num: values.flu_rst_num ?? 1,
+                flu_over_u: values.flu_over_u ?? 0,
+                flu_over_d: values.flu_over_d ?? 0,
                 web_num: values.web_num,
                 bak_num: values.bak_num,
                 iso_num: values.iso_num,
@@ -660,58 +713,54 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                     message.error(result.msg || '更新失败')
                 }
             } else {
-                try {
-                    const result = await api.createVM(targetHost, vmData as any)
-                    if (result.code === 200 && result.data?.task_id) {
-                        // 立即关闭模态框
-                        onSuccess()
-                        // 顶部转圈圈强提醒，持续轮询直到完成
-                        startTaskWithNotification(result, '创建虚拟机', {
-                            onCompleted: async () => {
-                                // 先刷新列表再补端口映射：
-                                // addNATRule 要走爱快 API，平台响应慢时会把 onSuccess
-                                // 一起拖住（最多 30s 超时），页面看起来就像卡死。
-                                onSuccess()
+                const result = await api.createVM(targetHost, vmData as any)
+                if (result.code === 200 && result.data?.task_id) {
+                    // 立即关闭模态框
+                    onSuccess()
+                    // 顶部转圈圈强提醒，持续轮询直到完成
+                    startTaskWithNotification(result, '创建虚拟机', {
+                        onCompleted: async () => {
+                            // 先刷新列表再补端口映射：
+                            // addNATRule 要走爱快 API，平台响应慢时会把 onSuccess
+                            // 一起拖住（最多 30s 超时），页面看起来就像卡死。
+                            onSuccess()
 
-                                // 根据操作系统类型自动添加默认端口映射
-                                const selectedOs = hostImages.find(it => it.sys_file === values.os_name)
-                                if (selectedOs) {
-                                    let defaultPort = 0
-                                    let portTips = ''
-                                    switch (selectedOs.sys_type) {
-                                        case 'WinNT':
-                                            defaultPort = 3389
-                                            portTips = 'RDP远程桌面'
-                                            break
-                                        case 'Linux':
-                                            defaultPort = 22
-                                            portTips = 'SSH远程连接'
-                                            break
-                                        case 'macOS':
-                                            defaultPort = 5900
-                                            portTips = 'VNC远程桌面'
-                                            break
-                                    }
-                                    if (defaultPort > 0) {
-                                        try {
-                                            await api.addNATRule(targetHost, fullUuid, {
-                                                wan_port: 0,
-                                                lan_port: defaultPort,
-                                                lan_addr: '',
-                                                nat_tips: portTips,
-                                            } as any)
-                                        } catch (e) {
-                                            console.warn('自动添加默认端口映射失败:', e)
-                                        }
+                            // 根据操作系统类型自动添加默认端口映射
+                            const selectedOs = hostImages.find(it => it.sys_file === values.os_name)
+                            if (selectedOs) {
+                                let defaultPort = 0
+                                let portTips = ''
+                                switch (selectedOs.sys_type) {
+                                    case 'WinNT':
+                                        defaultPort = 3389
+                                        portTips = 'RDP远程桌面'
+                                        break
+                                    case 'Linux':
+                                        defaultPort = 22
+                                        portTips = 'SSH远程连接'
+                                        break
+                                    case 'macOS':
+                                        defaultPort = 5900
+                                        portTips = 'VNC远程桌面'
+                                        break
+                                }
+                                if (defaultPort > 0) {
+                                    try {
+                                        await api.addNATRule(targetHost, fullUuid, {
+                                            wan_port: 0,
+                                            lan_port: defaultPort,
+                                            lan_addr: '',
+                                            nat_tips: portTips,
+                                        } as any)
+                                    } catch (e) {
+                                        console.warn('自动添加默认端口映射失败:', e)
                                     }
                                 }
-                            },
-                        })
-                    } else {
-                        message.error(result.msg || '创建失败')
-                    }
-                } catch (error) {
-                    throw error
+                            }
+                        },
+                    })
+                } else {
+                    message.error(result.msg || '创建失败')
                 }
             }
         } catch (error) {
@@ -720,6 +769,11 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
     }
 
     const handleSubmit = async (values: any) => {
+        if (!isEditMode && configurationMode === 'plan' && (!selectedPlanName || !serverPlans[selectedPlanName])) {
+            message.warning('请先选择套餐，或切换到自定义配置')
+            return
+        }
+
         // 套餐模式把硬件分区收进了折叠面板，折叠/未挂载的 Form.Item
         // 不会出现在 onFinish 的 values 里（cpu_num / mem_num / hdd_num 会整个丢失，
         // 后端于是按默认值 2C2G/8G 创建）。用表单 store 的全量值兜底。
@@ -744,6 +798,7 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
     const resetForm = async () => {
         form.resetFields()
         setNicList([])
+        setConfigurationMode('plan')
         setSelectedPlanName('')
 
         if (hostName) {
@@ -779,9 +834,12 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
             speed_u: 100,
             speed_d: 100,
             flu_num: 102400,
-            flu_rst_day: 31,
-            flu_rst_limit: 10,
-            flu_rst_time: Math.floor(Date.now() / 1000),
+            flu_bill_dir: 'both',
+            flu_rst_mode: 'calendar',
+            flu_rst_unit: 'month',
+            flu_rst_num: 1,
+            flu_over_u: 0,
+            flu_over_d: 0,
             nat_num: 100,
             web_num: 100,
             bak_num: 1,
@@ -969,25 +1027,18 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                         </Row>
                     </div>
 
-                    {/* 套餐卡片选择：创建时所有用户都可选，自由配置用户可切回自定义 */}
-                    {!isEditMode && (canFreeConfig ? Object.keys(serverPlans).length > 0 : true) && (
-                        <div className="modal-section">
-                            <div style={sectionTitleStyle}>
-                                <div className="w-8 h-8 rounded-lg section-icon-bg-orange flex items-center justify-center">
-                                    <AppstoreOutlined />
-                                </div>
-                                <span>选择套餐</span>
-                                {canFreeConfig && (
-                                    <Button
-                                        size="small"
-                                        type={selectedPlanName ? 'default' : 'primary'}
-                                        style={{ marginLeft: 'auto' }}
-                                        onClick={() => setSelectedPlanName('')}
-                                    >
-                                        自定义配置
-                                    </Button>
-                                )}
-                            </div>
+                    <Tabs
+                        activeKey={isEditMode ? 'custom' : configurationMode}
+                        tabBarStyle={{ display: isEditMode ? 'none' : undefined }}
+                        onChange={(key) => {
+                            const nextMode = key as 'plan' | 'custom'
+                            setConfigurationMode(nextMode)
+                            if (nextMode === 'custom') setSelectedPlanName('')
+                        }}
+                    >
+                        {!isEditMode && (
+                            <Tabs.TabPane tab="套餐配置" key="plan">
+                                <div className="modal-section">
                             {Object.keys(serverPlans).length === 0 ? (
                                 <Alert message="当前主机暂无可用套餐，请联系管理员" type="warning" showIcon />
                             ) : (
@@ -1051,10 +1102,10 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                                     <div>RAM: {planCfg.mem_num >= 1024 ? `${Math.round(planCfg.mem_num / 1024)}GB` : `${planCfg.mem_num}MB`} / GPU: {planCfg.gpu_mem ? `${planCfg.gpu_mem}MB` : '无'}</div>
                                                     <div>HDD: {planCfg.hdd_num >= 1024 ? `${Math.round(planCfg.hdd_num / 1024)}GB` : `${planCfg.hdd_num}MB`} / IOPS: {planCfg.hdd_iop ?? 1000}</div>
                                                     <div>带宽: ↑{planCfg.speed_u}Mbps ↓{planCfg.speed_d}Mbps</div>
-                                                    <div>流量: {planCfg.flu_num >= 1024 ? `${Math.round(planCfg.flu_num / 1024)}GB` : `${planCfg.flu_num}MB`} / {planCfg.flu_rst?.[0] ?? 31}天 / 超限{planCfg.flu_rst?.[1] ?? 10}M</div>
+                                                    <div>流量: {planTrafficSummary(planCfg)}</div>
                                                     <div>端口: {planCfg.nat_num ?? 0}个 / Web: {planCfg.web_num ?? 0}个</div>
-                                                    <div>网卡: 公网{planCfg.nic_pub ?? 0} + 内网{planCfg.nic_pri ?? 1} </div>
-                                                    <div> IPv4: {planCfg.ip4_max ?? 1} / IPv6: {planCfg.ip6_max ?? 0}</div>
+                                                    <div>V4: 公网{planCfg.ip4_pub ?? planCfg.nic_pub ?? 0} / 内网{planCfg.ip4_pri ?? planCfg.nic_pri ?? 1}</div>
+                                                    <div>V6: 公网{planCfg.ip6_pub ?? planCfg.ip6_max ?? 0} / 内网{planCfg.ip6_pri ?? 0}</div>
                                                     <div>备份数量: {planCfg.bak_num ?? 1} / ISO光盘数: {planCfg.iso_num ?? 1}</div>
                                                     <div>数据盘: {planCfg.dat_num ?? 1}个 / 可用空间: {planCfg.dat_all ? (planCfg.dat_all >= 1024 ? `${Math.round(planCfg.dat_all / 1024)}GB` : `${planCfg.dat_all}MB`) : '0MB'}</div>
                                                 </div>
@@ -1069,9 +1120,11 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                     })}
                                 </Row>
                             )}
-                        </div>
-                    )}
-
+                                </div>
+                            </Tabs.TabPane>
+                        )}
+                        {(isEditMode || canFreeConfig) && (
+                            <Tabs.TabPane tab="自定义配置" key="custom">
                     {/* 硬件相关分区：套餐模式下整体收进默认折叠的面板，展开后可查看明细 */}
                     <HardwareConfigFold
                         fold={isPlanMode}
@@ -1300,14 +1353,81 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                                     disabled={isFieldDisabled('flu_num')} quotaUsed={userQuota?.used_traffic || 0} quotaTotal={userQuota?.quota_traffic || 0} showQuota
                                 />
                             </Col>
-                            <Col span={6}>
-                                <Form.Item label="重置时间" name="flu_rst_day" style={{ marginBottom: 24 }}>
-                                    <InputNumber min={1} max={365} style={{ width: '100%' }} addonAfter="天" disabled={isPlanMode} />
+                            <Col span={12}>
+                                <Form.Item label="计费方向" name="flu_bill_dir" style={{ marginBottom: 24 }}>
+                                    <Select
+                                        disabled={isPlanMode}
+                                        options={[
+                                            { value: 'both', label: '上下行计费（默认）' },
+                                            { value: 'up', label: '上行计费' },
+                                            { value: 'down', label: '下行计费' },
+                                        ]}
+                                    />
+                                </Form.Item>
+                            </Col>
+                        </Row>
+                        <Row gutter={24}>
+                            <Col span={12}>
+                                <Form.Item label="流量重置规则" style={{ marginBottom: 24 }}>
+                                    <Space.Compact style={{ width: '100%' }}>
+                                        <Form.Item name="flu_rst_mode" noStyle>
+                                            <Select
+                                                disabled={isPlanMode}
+                                                style={{ width: 92 }}
+                                                options={[
+                                                    { value: 'interval', label: '每隔' },
+                                                    { value: 'calendar', label: '每当' },
+                                                ]}
+                                                onChange={(mode: string) => {
+                                                    // 模式切换后单位集合不同，越界时回落到该模式的常用单位
+                                                    const unit = form.getFieldValue('flu_rst_unit')
+                                                    if (mode === 'calendar' && !['month', 'week', 'day'].includes(unit)) {
+                                                        form.setFieldValue('flu_rst_unit', 'month')
+                                                        form.setFieldValue('flu_rst_num', 1)
+                                                    }
+                                                    if (mode === 'interval' && !['day', 'week', 'month', 'year'].includes(unit)) {
+                                                        form.setFieldValue('flu_rst_unit', 'day')
+                                                    }
+                                                }}
+                                            />
+                                        </Form.Item>
+                                        <Form.Item name="flu_rst_num" noStyle>
+                                            <InputNumber
+                                                disabled={isPlanMode}
+                                                min={0}
+                                                max={365}
+                                                style={{ width: 76 }}
+                                            />
+                                        </Form.Item>
+                                        <Form.Item name="flu_rst_unit" noStyle>
+                                            <Select
+                                                disabled={isPlanMode}
+                                                style={{ flex: 1 }}
+                                                options={fluRstMode === 'calendar'
+                                                    ? [
+                                                        { value: 'month', label: '号（每月）' },
+                                                        { value: 'week', label: '周几（每周）' },
+                                                        { value: 'day', label: '时（每天）' },
+                                                    ]
+                                                    : [
+                                                        { value: 'day', label: '天' },
+                                                        { value: 'week', label: '周' },
+                                                        { value: 'month', label: '月' },
+                                                        { value: 'year', label: '年' },
+                                                    ]}
+                                            />
+                                        </Form.Item>
+                                    </Space.Compact>
                                 </Form.Item>
                             </Col>
                             <Col span={6}>
-                                <Form.Item label="达标限速" name="flu_rst_limit" style={{ marginBottom: 24 }}>
-                                    <InputNumber min={1} max={1000} style={{ width: '100%' }} addonAfter="Mbps" disabled={isPlanMode} />
+                                <Form.Item label="超限后上行" name="flu_over_u" style={{ marginBottom: 24 }}>
+                                    <InputNumber min={0} max={1000} style={{ width: '100%' }} addonAfter="Mbps" disabled={isPlanMode} />
+                                </Form.Item>
+                            </Col>
+                            <Col span={6}>
+                                <Form.Item label="超限后下行" name="flu_over_d" style={{ marginBottom: 24 }}>
+                                    <InputNumber min={0} max={1000} style={{ width: '100%' }} addonAfter="Mbps" disabled={isPlanMode} />
                                 </Form.Item>
                             </Col>
                         </Row>
@@ -1341,9 +1461,10 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                             <span>网卡配置</span>
                             {isPlanMode && (
                                 <span className="text-xs" style={{ color: 'var(--art-gray-500)', marginLeft: 8 }}>
-                                    (公网{serverPlans[selectedPlanName].nic_pub ?? 0}张 + 内网{serverPlans[selectedPlanName].nic_pri ?? 1}张，
-                                    IPv4最多{serverPlans[selectedPlanName].ip4_max ?? 1}个，
-                                    IPv6最多{serverPlans[selectedPlanName].ip6_max ?? 0}个)
+                                    (V4: 公网{serverPlans[selectedPlanName].ip4_pub ?? serverPlans[selectedPlanName].nic_pub ?? 0} +
+                                    内网{serverPlans[selectedPlanName].ip4_pri ?? serverPlans[selectedPlanName].nic_pri ?? 1}，
+                                    V6: 公网{serverPlans[selectedPlanName].ip6_pub ?? serverPlans[selectedPlanName].ip6_max ?? 0} +
+                                    内网{serverPlans[selectedPlanName].ip6_pri ?? 0})
                                 </span>
                             )}
                         </div>
@@ -1379,6 +1500,9 @@ const DockCreateModal: React.FC<DockCreateModalProps> = ({
                     </div>
                     )}
                     </HardwareConfigFold>
+                            </Tabs.TabPane>
+                        )}
+                    </Tabs>
                 </Form>
             </Modal>
 

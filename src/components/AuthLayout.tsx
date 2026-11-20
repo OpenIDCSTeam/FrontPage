@@ -1,17 +1,13 @@
-import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Dropdown } from 'antd'
 import {
-  TranslationOutlined,
-  CheckOutlined,
   CloudServerOutlined,
   SafetyCertificateOutlined,
   ThunderboltOutlined,
   GlobalOutlined,
 } from '@ant-design/icons'
-import type { MenuProps } from 'antd'
 import AppearanceMenu from '@/components/AppearanceMenu'
-import { changeLanguage, getAvailableLanguages, getCurrentLanguage } from '@/utils/i18n.ts'
+import LanguageMenu from '@/components/LanguageMenu'
+import { useSiteStore } from '@/utils/site.ts'
 
 /**
  * 认证页外壳（登录 / 注册 / 重置密码共用）
@@ -21,34 +17,7 @@ import { changeLanguage, getAvailableLanguages, getCurrentLanguage } from '@/uti
  * 样式定义在 src/styles/art-design.css 的 .art-auth-* 中。
  */
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  const [currentLang, setCurrentLang] = useState(getCurrentLanguage())
-  const [languages, setLanguages] = useState<any[]>([])
-
-  useEffect(() => {
-    setCurrentLang(getCurrentLanguage())
-    setLanguages(getAvailableLanguages())
-
-    const handleLangChange = (e: any) => setCurrentLang(e.detail.language)
-    const handleLangsLoaded = (e: any) => {
-      setLanguages(e.detail.languages)
-      setCurrentLang(getCurrentLanguage())
-    }
-    window.addEventListener('languageChanged', handleLangChange)
-    window.addEventListener('languagesLoaded', handleLangsLoaded)
-    return () => {
-      window.removeEventListener('languageChanged', handleLangChange)
-      window.removeEventListener('languagesLoaded', handleLangsLoaded)
-    }
-  }, [])
-
-  const languageMenuItems: MenuProps['items'] = (languages.length > 0 ? languages : [
-    { code: 'zh-cn', native: '简体中文' },
-    { code: 'en-us', native: 'English' },
-  ]).map(lang => ({
-    key: lang.code,
-    label: lang.native || lang.name,
-    icon: lang.code === currentLang ? <CheckOutlined /> : undefined,
-  }))
+  const siteTitle = useSiteStore(state => state.title)
 
   return (
     <div className="art-auth-page">
@@ -56,7 +25,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       <aside className="art-auth-aside">
         <div className="art-auth-aside-brand">
           <div className="art-auth-aside-logo">OI</div>
-          <span className="art-auth-aside-brand-name">OpenIDCS</span>
+          <span className="art-auth-aside-brand-name" title={siteTitle}>{siteTitle}</span>
         </div>
 
         <div className="art-auth-aside-content">
@@ -97,14 +66,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       <div className="art-auth-main">
         {/* 右上角工具区 */}
         <div className="art-auth-toolbar">
-          <Dropdown
-            menu={{ items: languageMenuItems, onClick: ({ key }) => changeLanguage(key) }}
-            placement="bottomRight"
-            overlayStyle={{ zIndex: 20000, maxHeight: '400px', overflow: 'auto' }}
-          >
-            <Button className="art-auth-tool-btn" icon={<TranslationOutlined />} title="切换语言" />
-          </Dropdown>
-
+          <LanguageMenu triggerClassName="art-auth-tool-btn" />
           <AppearanceMenu />
         </div>
 

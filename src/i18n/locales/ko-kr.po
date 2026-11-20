@@ -181,7 +181,7 @@ msgid "断开"
 msgstr "연결을 끊다"
 
 msgid "暂停"
-msgstr "정지시키다"
+msgstr "일시정지"
 
 msgid "更新"
 msgstr "고쳐 쓰다"
@@ -376,7 +376,7 @@ msgid "一致性"
 msgstr "일관성"
 
 msgid "主机"
-msgstr "주인"
+msgstr "호스트"
 
 msgid "主题"
 msgstr "주제"
@@ -400,7 +400,7 @@ msgid "仪表盘"
 msgstr "계기반"
 
 msgid "任务"
-msgstr "일"
+msgstr "작업"
 
 msgid "使用率"
 msgstr "이용률"
@@ -508,7 +508,7 @@ msgid "定义"
 msgstr "정의"
 
 msgid "实例"
-msgstr "예"
+msgstr "인스턴스"
 
 msgid "容器"
 msgstr "컨테이너"
@@ -613,7 +613,7 @@ msgid "方法"
 msgstr "방법"
 
 msgid "日志"
-msgstr "통나무"
+msgstr "로그"
 
 msgid "映射"
 msgstr "매핑"
@@ -652,7 +652,7 @@ msgid "样式"
 msgstr "스타일"
 
 msgid "核心"
-msgstr "핵심"
+msgstr "코어"
 
 msgid "格式"
 msgstr "체재"
@@ -679,7 +679,7 @@ msgid "注释"
 msgstr "논평"
 
 msgid "流量"
-msgstr "흐름"
+msgstr "트래픽"
 
 msgid "消息"
 msgstr "정보"
@@ -823,7 +823,7 @@ msgid "账户"
 msgstr "계정"
 
 msgid "资源"
-msgstr "의지"
+msgstr "리소스"
 
 msgid "路径"
 msgstr "길"
@@ -2182,7 +2182,7 @@ msgid "转发规则"
 msgstr "전달 규칙"
 
 msgid "运行中"
-msgstr "달리기"
+msgstr "실행 중"
 
 msgid "运行日志"
 msgstr "로그 실행"
@@ -2997,3 +2997,243 @@ msgstr "방화벽 규칙"
 
 msgid "快照管理"
 msgstr "스냅샷 관리"
+
+msgid "外观设置"
+msgstr "모양 설정"
+
+msgid "选择工作台风格，偏好自动保存"
+msgstr "작업 공간 스타일을 선택하세요. 설정은 자동 저장됩니다"
+
+msgid "界面主题"
+msgstr "인터페이스 테마"
+
+msgid "明暗模式"
+msgstr "라이트/다크 모드"
+
+msgid "跟随"
+msgstr "자동"
+
+msgid "跟随浏览器/系统明暗设置"
+msgstr "브라우저/시스템 밝기 설정 따르기"
+
+msgid "透明表面"
+msgstr "투명 표면"
+
+msgid "柔和背景透过面板"
+msgstr "부드러운 배경이 패널에 비침"
+
+msgid "圆润边角"
+msgstr "둥근 모서리"
+
+msgid "适度放大卡片与控件圆角"
+msgstr "카드와 컨트롤 모서리를 조금 더 둥글게"
+
+msgid "界面字体"
+msgstr "인터페이스 글꼴"
+
+msgid "数字与正文可分别优化阅读"
+msgstr "숫자와 본문을 각각 최적화"
+
+msgid "打开外观设置"
+msgstr "모양 설정 열기"
+
+msgid "简约纯白"
+msgstr "심플 화이트"
+
+msgid "明净留白 · 克制蓝"
+msgstr "여백 · 블루"
+
+msgid "科技大气"
+msgstr "테크 그랜드"
+
+msgid "深海蓝 · 电子青"
+msgstr "딥블루 · 시안"
+
+msgid "科技简约"
+msgstr "테크 미니멀"
+
+msgid "浅蓝底 · 精密线"
+msgstr "라이트 · 정밀"
+
+msgid "黑金质感"
+msgstr "블랙 골드"
+
+msgid "墨黑 · 琥珀金"
+msgstr "먹색 · 골드"
+
+msgid "清爽可爱"
+msgstr "프레시 큐트"
+
+msgid "薄荷绿 · 圆润"
+msgstr "민트 · 둥근"
+
+msgid "透明炫酷"
+msgstr "글래스"
+
+msgid "紫雾 · 磨砂层"
+msgstr "보라 · 프로스트"
+
+msgid "切换语言"
+msgstr "언어 전환"
+
+msgid "控制台与快捷操作"
+msgstr "콘솔 및 빠른 작업"
+
+msgid "实时画面"
+msgstr "실시간 화면"
+
+msgid "快捷操作"
+msgstr "빠른 작업"
+
+msgid "电源 · 系统 · 访问"
+msgstr "전원 · 시스템 · 접근"
+
+msgid "未运行"
+msgstr "실행 중 아님"
+
+msgid "时间范围"
+msgstr "시간 범위"
+
+msgid "所选时间范围内暂无监控数据"
+msgstr "선택한 기간에 모니터링 데이터가 없습니다"
+
+msgid "配额配置"
+msgstr "할당량 설정"
+
+msgid "实例状态"
+msgstr "인스턴스 상태"
+
+msgid "复制系统密码"
+msgstr "시스템 비밀번호 복사"
+
+msgid "复制远程密码"
+msgstr "원격 비밀번호 복사"
+
+msgid "显示系统密码"
+msgstr "시스템 비밀번호 표시"
+
+msgid "显示远程密码"
+msgstr "원격 비밀번호 표시"
+
+msgid "隐藏系统密码"
+msgstr "시스템 비밀번호 숨기기"
+
+msgid "隐藏远程密码"
+msgstr "원격 비밀번호 숨기기"
+
+msgid "修改系统密码"
+msgstr "시스템 비밀번호 변경"
+
+msgid "修改远程密码"
+msgstr "원격 비밀번호 변경"
+
+msgid "无权限查看"
+msgstr "볼 권한이 없습니다"
+
+msgid "未设置"
+msgstr "설정 안 됨"
+
+msgid "虚拟机截图"
+msgstr "VM 스크린샷"
+
+msgid "虚拟机未运行，无法获取截图"
+msgstr "VM이 실행 중이 아니어서 스크린샷을 가져올 수 없습니다"
+
+msgid "无法获取截图"
+msgstr "스크린샷을 가져올 수 없습니다"
+
+msgid "获取截图中..."
+msgstr "스크린샷 가져오는 중..."
+
+msgid "此虚拟机所属的物理机不提供桌面截图"
+msgstr "이 VM의 호스트는 데스크톱 스크린샷을 제공하지 않습니다"
+
+msgid "资源用量"
+msgstr "리소스 사용량"
+
+msgid "IPv4 地址"
+msgstr "IPv4 주소"
+
+msgid "IPv6 地址"
+msgstr "IPv6 주소"
+
+msgid "VNC 端口"
+msgstr "VNC 포트"
+
+msgid "默认布局"
+msgstr "기본 레이아웃"
+
+msgid "竖版菜单"
+msgstr "세로 메뉴"
+
+msgid "虚拟机详情布局"
+msgstr "VM 상세 레이아웃"
+
+msgid "打开实例导航"
+msgstr "인스턴스 탐색 열기"
+
+msgid "展开导航"
+msgstr "탐색 펼치기"
+
+msgid "收起导航"
+msgstr "탐색 접기"
+
+msgid "反代"
+msgstr "프록시"
+
+msgid "资料"
+msgstr "프로필"
+
+msgid "帮助"
+msgstr "도움말"
+
+msgid "消息中心"
+msgstr "알림"
+
+msgid "搜索功能..."
+msgstr "기능 검색..."
+
+msgid "管理控制台"
+msgstr "관리 콘솔"
+
+msgid "用户控制台"
+msgstr "사용자 콘솔"
+
+msgid "该主机已关闭改配"
+msgstr "이 호스트는 구성 변경이 비활성화되었습니다"
+
+msgid "混排（默认）"
+msgstr "혼합(기본)"
+
+msgid "系统无衬线"
+msgstr "시스템 산세리프"
+
+msgid "完全跟随操作系统界面字体"
+msgstr "OS UI 글꼴을 그대로 따름"
+
+msgid "CPU使用率"
+msgstr "CPU 사용률"
+
+msgid "RAM使用率"
+msgstr "RAM 사용률"
+
+msgid "GPU使用率"
+msgstr "GPU 사용률"
+
+msgid "硬盘使用率"
+msgstr "디스크 사용률"
+
+msgid "流量使用率"
+msgstr "트래픽 사용률"
+
+msgid "端口使用数"
+msgstr "포트 사용 수"
+
+msgid "上行带宽率"
+msgstr "업로드 대역폭"
+
+msgid "下行带宽率"
+msgstr "다운로드 대역폭"
+
+msgid "反向代理数"
+msgstr "역방향 프록시 수"

@@ -30,6 +30,7 @@ import {
     ThunderboltOutlined,
     EditOutlined,
     DeleteOutlined,
+    CopyOutlined,
     UserOutlined,
     SearchOutlined,
 } from '@ant-design/icons'
@@ -44,6 +45,7 @@ import DockPowerModal from '@/components/dock/DockPowerModal'
 import PageHeader from '@/components/PageHeader'
 import EmptyState from '@/components/EmptyState'
 import { openVNCConsole } from '@/utils/vncHelper'
+import VMConsolePanel from '@/components/vm/VMConsolePanel'
 
 function DockManage() {
     const navigate = useNavigate()
@@ -55,6 +57,7 @@ function DockManage() {
     const [vms, setVMs] = useState<Record<string, any>>({})
     const [loading, setLoading] = useState(false)
     const [availableHosts, setAvailableHosts] = useState<Record<string, any>>({})
+    const [consoleTarget, setConsoleTarget] = useState<{ host: string; uuid: string } | null>(null)
     const [userQuota, setUserQuota] = useState<any>(null)
     const [hostSystemMaps, setHostSystemMaps] = useState<Record<string, any[]>>({})
     
@@ -318,6 +321,16 @@ function DockManage() {
         setDeleteModalOpen(true)
     }
 
+    const handleCopyDeleteVmUuid = async () => {
+        if (!deleteVmUuid) return
+        try {
+            await navigator.clipboard.writeText(deleteVmUuid)
+            message.success('虚拟机 ID 已复制')
+        } catch {
+            message.error('复制失败，请手动选择虚拟机 ID')
+        }
+    }
+
     const executeDelete = async () => {
         if (deleteRequireOwner) {
             if (deleteConfirmInput !== deletePrimaryOwner) {
@@ -326,7 +339,7 @@ function DockManage() {
             }
         } else if (!deleteRecordOnly) {
             if (deleteConfirmInput !== deleteVmUuid) {
-                message.error('输入的虚拟机名称不匹配')
+                message.error('输入的虚拟机 ID 不匹配')
                 return
             }
         }
@@ -407,6 +420,13 @@ function DockManage() {
     const handleOpenVnc = async (uuid: string, host?: string) => {
         const targetHost = host || hostName
         if (!targetHost) return
+
+        // 容器平台没有图形控制台，直接打开网页命令行终端（等价 VNC）
+        const serverType = availableHosts[targetHost]?.server_type || ''
+        if (['OCInterface', 'LxContainer', 'SmolVM'].includes(serverType)) {
+            setConsoleTarget({ host: targetHost, uuid })
+            return
+        }
 
         const hide = message.loading('获取VNC地址...', 0)
         try {
@@ -707,11 +727,11 @@ function DockManage() {
                                 const total = st.mem_total || config.mem_num || 0
                                 const usage = st.mem_usage || 0
                                 const percent = total > 0 ? Math.round((usage / total) * 100) : 0
-                                const unit = total >= 1024 ? 'G' : 'M'
-                                const fmtMem = (mb: number) => total >= 1024 ? (mb / 1024).toFixed(1) : String(Math.round(mb))
+                                // 按数值自动选单位：容器内存常小于 1G，统一用 G 会显示成 0.0
+                                const fmtSize = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)}G` : `${Math.round(mb)}M`
                                 return (
                                     <div>
-                                        <div className="vm-manage-metric-text mb-1">{fmtMem(usage)}/{fmtMem(total)}{unit}</div>
+                                        <div className="vm-manage-metric-text mb-1">{fmtSize(usage)}/{fmtSize(total)}</div>
                                         <Progress percent={percent} size="small" showInfo={false} strokeColor={percent > 80 ? 'var(--art-danger)' : percent > 50 ? 'var(--art-warning)' : 'var(--art-chart-4)'} />
                                     </div>
                                 )
@@ -728,11 +748,11 @@ function DockManage() {
                                 const total = st.hdd_total || config.hdd_num || 0
                                 const usage = st.hdd_usage || 0
                                 const percent = total > 0 ? Math.round((usage / total) * 100) : 0
-                                const unit = total >= 1024 ? 'G' : 'M'
-                                const fmtDisk = (mb: number) => total >= 1024 ? (mb / 1024).toFixed(1) : String(Math.round(mb))
+                                // 容器磁盘通常只有几十 MB，按数值自动选单位避免显示 0.0G
+                                const fmtSize = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)}G` : `${Math.round(mb)}M`
                                 return (
                                     <div>
-                                        <div className="vm-manage-metric-text mb-1">{fmtDisk(usage)}/{fmtDisk(total)}{unit}</div>
+                                        <div className="vm-manage-metric-text mb-1">{fmtSize(usage)}/{fmtSize(total)}</div>
                                         <Progress percent={percent} size="small" showInfo={false} strokeColor={percent > 80 ? 'var(--art-danger)' : percent > 50 ? 'var(--art-warning)' : 'var(--art-success)'} />
                                     </div>
                                 )
@@ -943,9 +963,9 @@ function DockManage() {
             >
                 <div>
                     {deleteRecordOnly ? (
-                        <p>将移除虚拟机 "<strong style={{ color: 'var(--art-warning)' }}>{deleteVmUuid}</strong>" 的纳管记录，<strong>不会删除平台上的虚拟机</strong>。</p>
+                        <p>将移除虚拟机 "<span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><strong style={{ color: 'var(--art-warning)' }}>{deleteVmUuid}</strong><Tooltip title="复制虚拟机 ID"><Button type="text" size="small" aria-label="复制虚拟机 ID" icon={<CopyOutlined />} onClick={() => { void handleCopyDeleteVmUuid() }} /></Tooltip></span>" 的纳管记录，<strong>不会删除平台上的虚拟机</strong>。</p>
                     ) : (
-                        <p>此操作将永久删除虚拟机 "<strong style={{ color: 'var(--art-danger)' }}>{deleteVmUuid}</strong>" 且不可恢复</p>
+                        <p>此操作将永久删除虚拟机 "<span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><strong style={{ color: 'var(--art-danger)' }}>{deleteVmUuid}</strong><Tooltip title="复制虚拟机 ID"><Button type="text" size="small" aria-label="复制虚拟机 ID" icon={<CopyOutlined />} onClick={() => { void handleCopyDeleteVmUuid() }} /></Tooltip></span>" 且不可恢复</p>
                     )}
                     <Checkbox
                         className="mt-2"
@@ -965,15 +985,29 @@ function DockManage() {
                         </>
                     ) : deleteRecordOnly ? null : (
                         <>
-                            <p className="mt-2 mb-2 text-xs">请输入虚拟机名称以确认删除：</p>
+                            <p className="mt-2 mb-2 text-xs">请输入虚拟机 ID 以确认删除：</p>
                             <Input
-                                placeholder="请输入虚拟机名称"
+                                placeholder="请输入虚拟机 ID"
                                 value={deleteConfirmInput}
                                 onChange={(e) => setDeleteConfirmInput(e.target.value)}
                             />
                         </>
                     )}
                 </div>
+            </Modal>
+
+            {/* 容器平台命令行控制台（等价 VNC） */}
+            <Modal
+                title="命令行控制台"
+                open={!!consoleTarget}
+                onCancel={() => setConsoleTarget(null)}
+                footer={null}
+                width={880}
+                destroyOnClose
+            >
+                {consoleTarget && (
+                    <VMConsolePanel hostName={consoleTarget.host} vmUuid={consoleTarget.uuid} />
+                )}
             </Modal>
         </div>
     )

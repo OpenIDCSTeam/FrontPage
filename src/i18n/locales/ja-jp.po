@@ -508,7 +508,7 @@ msgid "定义"
 msgstr "意味"
 
 msgid "实例"
-msgstr "例"
+msgstr "インスタンス"
 
 msgid "容器"
 msgstr "容器"
@@ -679,7 +679,7 @@ msgid "注释"
 msgstr "コメント"
 
 msgid "流量"
-msgstr "流れ"
+msgstr "トラフィック"
 
 msgid "消息"
 msgstr "情報"
@@ -691,7 +691,7 @@ msgid "版本"
 msgstr "バージョン"
 
 msgid "状态"
-msgstr "州"
+msgstr "ステータス"
 
 msgid "用户"
 msgstr "ユーザー"
@@ -2182,7 +2182,7 @@ msgid "转发规则"
 msgstr "転送ルール"
 
 msgid "运行中"
-msgstr "ランニング"
+msgstr "実行中"
 
 msgid "运行日志"
 msgstr "実行ログ"
@@ -2997,3 +2997,243 @@ msgstr "ファイアウォールルール"
 
 msgid "快照管理"
 msgstr "スナップショット管理"
+
+msgid "外观设置"
+msgstr "外観設定"
+
+msgid "选择工作台风格，偏好自动保存"
+msgstr "ワークスペースのスタイルを選択（設定は自動保存）"
+
+msgid "界面主题"
+msgstr "画面テーマ"
+
+msgid "明暗模式"
+msgstr "ライト・ダーク"
+
+msgid "跟随"
+msgstr "自動"
+
+msgid "跟随浏览器/系统明暗设置"
+msgstr "ブラウザ/システムの明暗設定に従う"
+
+msgid "透明表面"
+msgstr "透明サーフェス"
+
+msgid "柔和背景透过面板"
+msgstr "背景がパネルに透ける"
+
+msgid "圆润边角"
+msgstr "丸みのある角"
+
+msgid "适度放大卡片与控件圆角"
+msgstr "カードとコントロールの角丸を少し大きく"
+
+msgid "界面字体"
+msgstr "画面フォント"
+
+msgid "数字与正文可分别优化阅读"
+msgstr "数字と本文を別々に最適化"
+
+msgid "打开外观设置"
+msgstr "外観設定を開く"
+
+msgid "简约纯白"
+msgstr "シンプルホワイト"
+
+msgid "明净留白 · 克制蓝"
+msgstr "余白 · 青"
+
+msgid "科技大气"
+msgstr "テックグランデ"
+
+msgid "深海蓝 · 电子青"
+msgstr "深海 · シアン"
+
+msgid "科技简约"
+msgstr "テックミニマル"
+
+msgid "浅蓝底 · 精密线"
+msgstr "淡青 · 精密"
+
+msgid "黑金质感"
+msgstr "ブラックゴールド"
+
+msgid "墨黑 · 琥珀金"
+msgstr "漆黒 · 金"
+
+msgid "清爽可爱"
+msgstr "フレッシュキュート"
+
+msgid "薄荷绿 · 圆润"
+msgstr "ミント · 丸み"
+
+msgid "透明炫酷"
+msgstr "グラス"
+
+msgid "紫雾 · 磨砂层"
+msgstr "紫 · 磨りガラス"
+
+msgid "切换语言"
+msgstr "言語を切り替え"
+
+msgid "控制台与快捷操作"
+msgstr "コンソールとクイック操作"
+
+msgid "实时画面"
+msgstr "ライブ画面"
+
+msgid "快捷操作"
+msgstr "クイック操作"
+
+msgid "电源 · 系统 · 访问"
+msgstr "電源 · システム · アクセス"
+
+msgid "未运行"
+msgstr "停止中"
+
+msgid "时间范围"
+msgstr "期間"
+
+msgid "所选时间范围内暂无监控数据"
+msgstr "選択した期間の監視データはありません"
+
+msgid "配额配置"
+msgstr "クォータ設定"
+
+msgid "实例状态"
+msgstr "インスタンス状態"
+
+msgid "复制系统密码"
+msgstr "システムパスワードをコピー"
+
+msgid "复制远程密码"
+msgstr "リモートパスワードをコピー"
+
+msgid "显示系统密码"
+msgstr "システムパスワードを表示"
+
+msgid "显示远程密码"
+msgstr "リモートパスワードを表示"
+
+msgid "隐藏系统密码"
+msgstr "システムパスワードを隠す"
+
+msgid "隐藏远程密码"
+msgstr "リモートパスワードを隠す"
+
+msgid "修改系统密码"
+msgstr "システムパスワードを変更"
+
+msgid "修改远程密码"
+msgstr "リモートパスワードを変更"
+
+msgid "无权限查看"
+msgstr "閲覧権限がありません"
+
+msgid "未设置"
+msgstr "未設定"
+
+msgid "虚拟机截图"
+msgstr "VM のスクリーンショット"
+
+msgid "虚拟机未运行，无法获取截图"
+msgstr "VM が停止中のためスクリーンショットを取得できません"
+
+msgid "无法获取截图"
+msgstr "スクリーンショットを取得できません"
+
+msgid "获取截图中..."
+msgstr "スクリーンショットを取得中..."
+
+msgid "此虚拟机所属的物理机不提供桌面截图"
+msgstr "この VM のホストはデスクトップのスクリーンショットを提供しません"
+
+msgid "资源用量"
+msgstr "リソース使用量"
+
+msgid "IPv4 地址"
+msgstr "IPv4 アドレス"
+
+msgid "IPv6 地址"
+msgstr "IPv6 アドレス"
+
+msgid "VNC 端口"
+msgstr "VNC ポート"
+
+msgid "默认布局"
+msgstr "既定のレイアウト"
+
+msgid "竖版菜单"
+msgstr "縦型メニュー"
+
+msgid "虚拟机详情布局"
+msgstr "VM 詳細レイアウト"
+
+msgid "打开实例导航"
+msgstr "インスタンスナビを開く"
+
+msgid "展开导航"
+msgstr "ナビを展開"
+
+msgid "收起导航"
+msgstr "ナビを折りたたむ"
+
+msgid "反代"
+msgstr "プロキシ"
+
+msgid "资料"
+msgstr "プロフィール"
+
+msgid "帮助"
+msgstr "ヘルプ"
+
+msgid "消息中心"
+msgstr "通知"
+
+msgid "搜索功能..."
+msgstr "機能を検索..."
+
+msgid "管理控制台"
+msgstr "管理コンソール"
+
+msgid "用户控制台"
+msgstr "ユーザーコンソール"
+
+msgid "该主机已关闭改配"
+msgstr "このホストは構成変更が無効です"
+
+msgid "混排（默认）"
+msgstr "混在（既定）"
+
+msgid "系统无衬线"
+msgstr "システムサンセリフ"
+
+msgid "完全跟随操作系统界面字体"
+msgstr "OS の UI フォントに完全に従う"
+
+msgid "CPU使用率"
+msgstr "CPU 使用率"
+
+msgid "RAM使用率"
+msgstr "RAM 使用率"
+
+msgid "GPU使用率"
+msgstr "GPU 使用率"
+
+msgid "硬盘使用率"
+msgstr "ディスク使用率"
+
+msgid "流量使用率"
+msgstr "トラフィック使用率"
+
+msgid "端口使用数"
+msgstr "ポート使用数"
+
+msgid "上行带宽率"
+msgstr "上り帯域"
+
+msgid "下行带宽率"
+msgstr "下り帯域"
+
+msgid "反向代理数"
+msgstr "リバースプロキシ数"

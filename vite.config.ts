@@ -22,7 +22,7 @@ export default defineConfig({
   
   // 开发服务器配置
   server: {
-    port: 5171, // 开发服务器端口
+    port: 5179, // 开发服务器端口
     host: true, // 监听所有地址
     proxy: {
       // API代理配置，将/api请求代理到Go后端服务器

@@ -812,31 +812,6 @@
   padding: 8px 0 4px;
 }
 
-.vm-detail-gauge-foot {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  width: 100%;
-  max-width: 760px;
-  margin: 12px auto 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--mmui-divider);
-  color: var(--mmui-text-muted);
-  font-size: 11px;
-  text-align: center;
-}
-
-.vm-detail-gauge-foot span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.vm-detail-gauge-foot b {
-  color: var(--mmui-text);
-  font-weight: var(--mmui-font-weight-semibold);
-  font-variant-numeric: tabular-nums;
-}
-
 .vm-detail-account-row {
   display: grid !important;
   grid-template-columns: 88px minmax(0, 1fr);
@@ -919,14 +894,6 @@
   opacity: 0.4;
 }
 
-.vm-detail-hero-hardware {
-  color: var(--mmui-text-muted);
-}
-
-.vm-detail-hero-hardware--compact {
-  display: none;
-}
-
 @media (max-width: 600px) {
   .vm-detail-hero-meta {
     display: grid !important;
@@ -943,15 +910,6 @@
     display: block;
   }
 
-  .vm-detail-hero-hardware--wide {
-    display: none !important;
-  }
-
-  .vm-detail-hero-hardware--compact {
-    display: block !important;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
 }
 
 .vm-detail-access-grid {
@@ -1085,21 +1043,11 @@
     max-width: 100% !important;
     height: 150px !important;
   }
-
-  .vm-detail-gauge-foot {
-    gap: 6px;
-    font-size: 10px;
-  }
 }
 
 @media (max-width: 420px) {
   .mmui-card__body {
     padding: 12px;
-  }
-
-  .vm-detail-gauge-foot {
-    margin-top: 10px;
-    padding-top: 10px;
   }
 }
 

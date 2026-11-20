@@ -103,7 +103,7 @@ msgid "启用"
 msgstr "activer"
 
 msgid "复制"
-msgstr "copie"
+msgstr "Copier"
 
 msgid "导入"
 msgstr "importer"
@@ -181,7 +181,7 @@ msgid "断开"
 msgstr "déconnecter"
 
 msgid "暂停"
-msgstr "pause"
+msgstr "Pause"
 
 msgid "更新"
 msgstr "renouveler"
@@ -508,7 +508,7 @@ msgid "定义"
 msgstr "définition"
 
 msgid "实例"
-msgstr "Exemple"
+msgstr "Instance"
 
 msgid "容器"
 msgstr "récipient"
@@ -532,7 +532,7 @@ msgid "布局"
 msgstr "mise en page"
 
 msgid "带宽"
-msgstr "bande passante"
+msgstr "Bande passante"
 
 msgid "平台"
 msgstr "plate-forme"
@@ -613,7 +613,7 @@ msgid "方法"
 msgstr "méthode"
 
 msgid "日志"
-msgstr "enregistrer"
+msgstr "Journal"
 
 msgid "映射"
 msgstr "cartographie"
@@ -652,7 +652,7 @@ msgid "样式"
 msgstr "style"
 
 msgid "核心"
-msgstr "cœur"
+msgstr "Cœur"
 
 msgid "格式"
 msgstr "Format"
@@ -679,7 +679,7 @@ msgid "注释"
 msgstr "Commentaire"
 
 msgid "流量"
-msgstr "couler"
+msgstr "Trafic"
 
 msgid "消息"
 msgstr "information"
@@ -694,7 +694,7 @@ msgid "状态"
 msgstr "État"
 
 msgid "用户"
-msgstr "utilisateur"
+msgstr "Utilisateur"
 
 msgid "用途"
 msgstr "utiliser"
@@ -712,7 +712,7 @@ msgid "硬盘"
 msgstr "disque dur"
 
 msgid "磁盘"
-msgstr "disque"
+msgstr "Disque"
 
 msgid "程序"
 msgstr "programme"
@@ -721,7 +721,7 @@ msgid "稳定性"
 msgstr "stabilité"
 
 msgid "端口"
-msgstr "port"
+msgstr "Port"
 
 msgid "策略"
 msgstr "Stratégie"
@@ -808,7 +808,7 @@ msgid "设备"
 msgstr "équipement"
 
 msgid "设置"
-msgstr "installation"
+msgstr "Paramètres"
 
 msgid "详情"
 msgstr "Détails"
@@ -823,7 +823,7 @@ msgid "账户"
 msgstr "Compte"
 
 msgid "资源"
-msgstr "ressource"
+msgstr "Ressource"
 
 msgid "路径"
 msgstr "chemin"
@@ -2032,7 +2032,7 @@ msgid "系统界面"
 msgstr "Interface système"
 
 msgid "系统盘"
-msgstr "disque système"
+msgstr "Disque système"
 
 msgid "系统空间"
 msgstr "espace système"
@@ -2182,7 +2182,7 @@ msgid "转发规则"
 msgstr "Règles de transfert"
 
 msgid "运行中"
-msgstr "En cours d'exécution"
+msgstr "En cours"
 
 msgid "运行日志"
 msgstr "Journal d'exécution"
@@ -2997,3 +2997,243 @@ msgstr "Règle de pare-feu"
 
 msgid "快照管理"
 msgstr "Gestion des instantanés"
+
+msgid "外观设置"
+msgstr "Apparence"
+
+msgid "选择工作台风格，偏好自动保存"
+msgstr "Choisissez un style d'espace de travail ; les préférences sont enregistrées automatiquement"
+
+msgid "界面主题"
+msgstr "Thème de l'interface"
+
+msgid "明暗模式"
+msgstr "Mode clair/sombre"
+
+msgid "跟随"
+msgstr "Auto"
+
+msgid "跟随浏览器/系统明暗设置"
+msgstr "Suivre le mode clair/sombre du navigateur ou du système"
+
+msgid "透明表面"
+msgstr "Surfaces transparentes"
+
+msgid "柔和背景透过面板"
+msgstr "Le fond transparaît à travers les panneaux"
+
+msgid "圆润边角"
+msgstr "Angles arrondis"
+
+msgid "适度放大卡片与控件圆角"
+msgstr "Agrandit légèrement les rayons des cartes et contrôles"
+
+msgid "界面字体"
+msgstr "Police de l'interface"
+
+msgid "数字与正文可分别优化阅读"
+msgstr "Optimiser séparément les chiffres et le texte"
+
+msgid "打开外观设置"
+msgstr "Ouvrir les paramètres d'apparence"
+
+msgid "简约纯白"
+msgstr "Blanc minimal"
+
+msgid "明净留白 · 克制蓝"
+msgstr "Clair · bleu"
+
+msgid "科技大气"
+msgstr "Tech grandiose"
+
+msgid "深海蓝 · 电子青"
+msgstr "Bleu · cyan"
+
+msgid "科技简约"
+msgstr "Tech minimal"
+
+msgid "浅蓝底 · 精密线"
+msgstr "Clair · précis"
+
+msgid "黑金质感"
+msgstr "Noir et or"
+
+msgid "墨黑 · 琥珀金"
+msgstr "Noir · ambre"
+
+msgid "清爽可爱"
+msgstr "Frais et mignon"
+
+msgid "薄荷绿 · 圆润"
+msgstr "Menthe · rond"
+
+msgid "透明炫酷"
+msgstr "Verre"
+
+msgid "紫雾 · 磨砂层"
+msgstr "Violet · givré"
+
+msgid "切换语言"
+msgstr "Changer de langue"
+
+msgid "控制台与快捷操作"
+msgstr "Console et actions rapides"
+
+msgid "实时画面"
+msgstr "Écran en direct"
+
+msgid "快捷操作"
+msgstr "Actions rapides"
+
+msgid "电源 · 系统 · 访问"
+msgstr "Alimentation · Système · Accès"
+
+msgid "未运行"
+msgstr "Arrêté"
+
+msgid "时间范围"
+msgstr "Période"
+
+msgid "所选时间范围内暂无监控数据"
+msgstr "Aucune donnée de surveillance sur la période sélectionnée"
+
+msgid "配额配置"
+msgstr "Quotas"
+
+msgid "实例状态"
+msgstr "État de l'instance"
+
+msgid "复制系统密码"
+msgstr "Copier le mot de passe système"
+
+msgid "复制远程密码"
+msgstr "Copier le mot de passe distant"
+
+msgid "显示系统密码"
+msgstr "Afficher le mot de passe système"
+
+msgid "显示远程密码"
+msgstr "Afficher le mot de passe distant"
+
+msgid "隐藏系统密码"
+msgstr "Masquer le mot de passe système"
+
+msgid "隐藏远程密码"
+msgstr "Masquer le mot de passe distant"
+
+msgid "修改系统密码"
+msgstr "Modifier le mot de passe système"
+
+msgid "修改远程密码"
+msgstr "Modifier le mot de passe distant"
+
+msgid "无权限查看"
+msgstr "Accès non autorisé"
+
+msgid "未设置"
+msgstr "Non défini"
+
+msgid "虚拟机截图"
+msgstr "Capture de la VM"
+
+msgid "虚拟机未运行，无法获取截图"
+msgstr "La VM est arrêtée, impossible d'obtenir une capture"
+
+msgid "无法获取截图"
+msgstr "Impossible d'obtenir une capture"
+
+msgid "获取截图中..."
+msgstr "Capture en cours..."
+
+msgid "此虚拟机所属的物理机不提供桌面截图"
+msgstr "L'hôte de cette VM ne fournit pas de capture d'écran"
+
+msgid "资源用量"
+msgstr "Utilisation des ressources"
+
+msgid "IPv4 地址"
+msgstr "Adresse IPv4"
+
+msgid "IPv6 地址"
+msgstr "Adresse IPv6"
+
+msgid "VNC 端口"
+msgstr "Port VNC"
+
+msgid "默认布局"
+msgstr "Mise en page par défaut"
+
+msgid "竖版菜单"
+msgstr "Menu vertical"
+
+msgid "虚拟机详情布局"
+msgstr "Mise en page du détail VM"
+
+msgid "打开实例导航"
+msgstr "Ouvrir la navigation de l'instance"
+
+msgid "展开导航"
+msgstr "Développer la navigation"
+
+msgid "收起导航"
+msgstr "Réduire la navigation"
+
+msgid "反代"
+msgstr "Proxy"
+
+msgid "资料"
+msgstr "Profil"
+
+msgid "帮助"
+msgstr "Aide"
+
+msgid "消息中心"
+msgstr "Notifications"
+
+msgid "搜索功能..."
+msgstr "Rechercher une fonction..."
+
+msgid "管理控制台"
+msgstr "Console d'administration"
+
+msgid "用户控制台"
+msgstr "Console utilisateur"
+
+msgid "该主机已关闭改配"
+msgstr "La reconfiguration est désactivée pour cet hôte"
+
+msgid "混排（默认）"
+msgstr "Mixte (par défaut)"
+
+msgid "系统无衬线"
+msgstr "Sans système"
+
+msgid "完全跟随操作系统界面字体"
+msgstr "Suivre entièrement la police du système"
+
+msgid "CPU使用率"
+msgstr "Utilisation CPU"
+
+msgid "RAM使用率"
+msgstr "Utilisation RAM"
+
+msgid "GPU使用率"
+msgstr "Utilisation GPU"
+
+msgid "硬盘使用率"
+msgstr "Utilisation disque"
+
+msgid "流量使用率"
+msgstr "Utilisation du trafic"
+
+msgid "端口使用数"
+msgstr "Ports utilisés"
+
+msgid "上行带宽率"
+msgstr "Bande passante montante"
+
+msgid "下行带宽率"
+msgstr "Bande passante descendante"
+
+msgid "反向代理数"
+msgstr "Proxys inverses"

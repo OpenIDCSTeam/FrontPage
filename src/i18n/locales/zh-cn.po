@@ -3066,3 +3066,243 @@ msgstr "防火墙规则"
 
 msgid "快照管理"
 msgstr "快照管理"
+
+msgid "外观设置"
+msgstr "外观设置"
+
+msgid "选择工作台风格，偏好自动保存"
+msgstr "选择工作台风格，偏好自动保存"
+
+msgid "界面主题"
+msgstr "界面主题"
+
+msgid "明暗模式"
+msgstr "明暗模式"
+
+msgid "跟随"
+msgstr "跟随"
+
+msgid "跟随浏览器/系统明暗设置"
+msgstr "跟随浏览器/系统明暗设置"
+
+msgid "透明表面"
+msgstr "透明表面"
+
+msgid "柔和背景透过面板"
+msgstr "柔和背景透过面板"
+
+msgid "圆润边角"
+msgstr "圆润边角"
+
+msgid "适度放大卡片与控件圆角"
+msgstr "适度放大卡片与控件圆角"
+
+msgid "界面字体"
+msgstr "界面字体"
+
+msgid "数字与正文可分别优化阅读"
+msgstr "数字与正文可分别优化阅读"
+
+msgid "打开外观设置"
+msgstr "打开外观设置"
+
+msgid "简约纯白"
+msgstr "简约纯白"
+
+msgid "明净留白 · 克制蓝"
+msgstr "明净留白 · 克制蓝"
+
+msgid "科技大气"
+msgstr "科技大气"
+
+msgid "深海蓝 · 电子青"
+msgstr "深海蓝 · 电子青"
+
+msgid "科技简约"
+msgstr "科技简约"
+
+msgid "浅蓝底 · 精密线"
+msgstr "浅蓝底 · 精密线"
+
+msgid "黑金质感"
+msgstr "黑金质感"
+
+msgid "墨黑 · 琥珀金"
+msgstr "墨黑 · 琥珀金"
+
+msgid "清爽可爱"
+msgstr "清爽可爱"
+
+msgid "薄荷绿 · 圆润"
+msgstr "薄荷绿 · 圆润"
+
+msgid "透明炫酷"
+msgstr "透明炫酷"
+
+msgid "紫雾 · 磨砂层"
+msgstr "紫雾 · 磨砂层"
+
+msgid "切换语言"
+msgstr "切换语言"
+
+msgid "控制台与快捷操作"
+msgstr "控制台与快捷操作"
+
+msgid "实时画面"
+msgstr "实时画面"
+
+msgid "快捷操作"
+msgstr "快捷操作"
+
+msgid "电源 · 系统 · 访问"
+msgstr "电源 · 系统 · 访问"
+
+msgid "未运行"
+msgstr "未运行"
+
+msgid "时间范围"
+msgstr "时间范围"
+
+msgid "所选时间范围内暂无监控数据"
+msgstr "所选时间范围内暂无监控数据"
+
+msgid "配额配置"
+msgstr "配额配置"
+
+msgid "实例状态"
+msgstr "实例状态"
+
+msgid "复制系统密码"
+msgstr "复制系统密码"
+
+msgid "复制远程密码"
+msgstr "复制远程密码"
+
+msgid "显示系统密码"
+msgstr "显示系统密码"
+
+msgid "显示远程密码"
+msgstr "显示远程密码"
+
+msgid "隐藏系统密码"
+msgstr "隐藏系统密码"
+
+msgid "隐藏远程密码"
+msgstr "隐藏远程密码"
+
+msgid "修改系统密码"
+msgstr "修改系统密码"
+
+msgid "修改远程密码"
+msgstr "修改远程密码"
+
+msgid "无权限查看"
+msgstr "无权限查看"
+
+msgid "未设置"
+msgstr "未设置"
+
+msgid "虚拟机截图"
+msgstr "虚拟机截图"
+
+msgid "虚拟机未运行，无法获取截图"
+msgstr "虚拟机未运行，无法获取截图"
+
+msgid "无法获取截图"
+msgstr "无法获取截图"
+
+msgid "获取截图中..."
+msgstr "获取截图中..."
+
+msgid "此虚拟机所属的物理机不提供桌面截图"
+msgstr "此虚拟机所属的物理机不提供桌面截图"
+
+msgid "资源用量"
+msgstr "资源用量"
+
+msgid "IPv4 地址"
+msgstr "IPv4 地址"
+
+msgid "IPv6 地址"
+msgstr "IPv6 地址"
+
+msgid "VNC 端口"
+msgstr "VNC 端口"
+
+msgid "默认布局"
+msgstr "默认布局"
+
+msgid "竖版菜单"
+msgstr "竖版菜单"
+
+msgid "虚拟机详情布局"
+msgstr "虚拟机详情布局"
+
+msgid "打开实例导航"
+msgstr "打开实例导航"
+
+msgid "展开导航"
+msgstr "展开导航"
+
+msgid "收起导航"
+msgstr "收起导航"
+
+msgid "反代"
+msgstr "反代"
+
+msgid "资料"
+msgstr "资料"
+
+msgid "帮助"
+msgstr "帮助"
+
+msgid "消息中心"
+msgstr "消息中心"
+
+msgid "搜索功能..."
+msgstr "搜索功能..."
+
+msgid "管理控制台"
+msgstr "管理控制台"
+
+msgid "用户控制台"
+msgstr "用户控制台"
+
+msgid "该主机已关闭改配"
+msgstr "该主机已关闭改配"
+
+msgid "混排（默认）"
+msgstr "混排（默认）"
+
+msgid "系统无衬线"
+msgstr "系统无衬线"
+
+msgid "完全跟随操作系统界面字体"
+msgstr "完全跟随操作系统界面字体"
+
+msgid "CPU使用率"
+msgstr "CPU使用率"
+
+msgid "RAM使用率"
+msgstr "RAM使用率"
+
+msgid "GPU使用率"
+msgstr "GPU使用率"
+
+msgid "硬盘使用率"
+msgstr "硬盘使用率"
+
+msgid "流量使用率"
+msgstr "流量使用率"
+
+msgid "端口使用数"
+msgstr "端口使用数"
+
+msgid "上行带宽率"
+msgstr "上行带宽率"
+
+msgid "下行带宽率"
+msgstr "下行带宽率"
+
+msgid "反向代理数"
+msgstr "反向代理数"

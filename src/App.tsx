@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary'
 import MainLayout from './pages/MainLayout'
 import Login from './pages/UserLogins'
+import SystemInit from './pages/SystemInit'
 import Register from './pages/UserPostin'
 import ResetPassword from './pages/UserPasswd'
 import Dashboard from './pages/Dashboards'
@@ -18,6 +20,7 @@ import WebProxys from './pages/HttpProxys'
 import UserVMs from './pages/DockManage'
 import UserNAT from './user/PortManage'
 import { useUserStore } from '@/utils/data.ts'
+import { useSiteStore } from '@/utils/site.ts'
 
 // 路由守卫：未登录时重定向到登录页
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -35,7 +38,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
  */
 function App() {
   const { user } = useUserStore()
+  const loadSiteInfo = useSiteStore(state => state.load)
   const defaultRoute = user?.is_admin ? '/dashboard' : '/user/dashboard'
+
+  // 全站共用一次站点信息请求：拿到系统标题并判断是否需要初始化
+  useEffect(() => {
+    loadSiteInfo()
+  }, [loadSiteInfo])
 
   return (
     <ErrorBoundary>
@@ -43,6 +52,7 @@ function App() {
       <Routes>
         {/* 公开路由 - 无需登录 */}
         <Route path="/login" element={<Login />} />
+        <Route path="/init" element={<SystemInit />} />
         <Route path="/register" element={<Register />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         

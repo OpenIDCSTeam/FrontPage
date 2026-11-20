@@ -3,13 +3,14 @@ import { Form, Input, Button, Switch, message, InputNumber, Alert, Tooltip, Radi
 import { DatabaseOutlined, EyeOutlined, EyeInvisibleOutlined, CopyOutlined, ReloadOutlined, SaveOutlined, FolderOpenOutlined, MailOutlined, SettingOutlined, SafetyCertificateOutlined, QuestionCircleOutlined, SyncOutlined, InfoCircleOutlined, TeamOutlined } from '@ant-design/icons'
 import { VM_PERMISSION_LABELS, PERMISSION_FIELD_MASK, hasPermission } from '@/types'
 import api from '@/utils/apis.ts'
+import { useSiteStore } from '@/utils/site.ts'
 import { SystemStats } from '@/types'
 import PageHeader from '@/components/PageHeader'
 
 const { TextArea } = Input
 
 const SETTINGS_SECTIONS = [
-  { key: 'token', label: '访问与安全', description: 'Token、验证码与登录保护', icon: <SafetyCertificateOutlined /> },
+  { key: 'token', label: '访问与安全', description: 'API Token、验证码与登录保护', icon: <SafetyCertificateOutlined /> },
   { key: 'registration', label: '注册与权限', description: '注册开关、默认权限与配额', icon: <TeamOutlined /> },
   { key: 'sync', label: '同步与接口', description: '自动同步、远程地址与 API', icon: <SyncOutlined /> },
   { key: 'email', label: '邮件服务', description: 'Resend 发信与测试', icon: <MailOutlined /> },
@@ -21,6 +22,7 @@ const SETTINGS_SECTIONS = [
  * 系统设置页面
  */
 function CoreConfig() {
+  const siteTitle = useSiteStore(state => state.title)
   const [loading, setLoading] = useState(false)
   const [tokenVisible, setTokenVisible] = useState(false)
   const [currentToken, setCurrentToken] = useState('')
@@ -398,7 +400,7 @@ function CoreConfig() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">当前Token</label>
+              <label className="block text-sm font-medium mb-2">API 访问 Token</label>
               <div className="settings-token-control flex gap-2">
                 <Input
                   type={tokenVisible ? 'text' : 'password'}
@@ -415,14 +417,9 @@ function CoreConfig() {
                   setNewToken({ newToken: token })
                 }} title="随机生成16位Token" />
               </div>
+              <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>仅用于 API、CLI 与插件调用，Web 登录请使用管理员账号与密码</p>
             </div>
 
-            <Alert
-              message="安全提示"
-              description="修改Token后，所有使用旧Token的API调用都将失效。请确保更新所有相关配置。"
-              type="warning"
-              showIcon
-            />
 
             <div className="border-t pt-4">
               <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
@@ -593,7 +590,7 @@ function CoreConfig() {
           <div className="settings-info-grid">
             <div className="settings-info-item">
               <span>系统名称</span>
-              <strong>OpenIDCS受控端</strong>
+              <strong>{siteTitle}</strong>
             </div>
             <div className="settings-info-item">
               <span>版本</span>

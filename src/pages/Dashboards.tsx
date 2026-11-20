@@ -1215,9 +1215,19 @@ function Dashboards() {
                           <div>内存: {Math.round(planCfg.mem_num / 1024)}GB / GPU: {planCfg.gpu_mem ? `${planCfg.gpu_mem}MB` : '无'}</div>
                           <div>硬盘: {Math.round(planCfg.hdd_num / 1024)}GB / IOPS: {planCfg.hdd_iop ?? 1000}</div>
                           <div>带宽: ↑{planCfg.speed_u}Mbps ↓{planCfg.speed_d}Mbps</div>
-                          <div>流量: {planCfg.flu_num >= 1024 ? `${Math.round(planCfg.flu_num / 1024)}GB` : `${planCfg.flu_num}MB`} / {planCfg.flu_rst?.[0] ?? 31}天重置 / 超限{planCfg.flu_rst?.[1] ?? 10}Mbps</div>
+                          <div>
+                            流量: {planCfg.flu_num >= 1024 ? `${Math.round(planCfg.flu_num / 1024)}GB` : `${planCfg.flu_num}MB`}
+                            {' / '}{planCfg.flu_rst_mode === 'calendar'
+                              ? (planCfg.flu_rst_unit === 'week'
+                                ? `每周${['一', '二', '三', '四', '五', '六', '日'][Math.min(Math.max(planCfg.flu_rst_num || 1, 1), 7) - 1]}重置`
+                                : planCfg.flu_rst_unit === 'day'
+                                  ? `每天${planCfg.flu_rst_num ?? 0}时重置`
+                                  : `每月${planCfg.flu_rst_num ?? 1}号重置`)
+                              : `每${planCfg.flu_rst_num ?? planCfg.flu_rst?.[0] ?? 31}${({day: '天', week: '周', month: '月', year: '年'} as Record<string, string>)[planCfg.flu_rst_unit || 'day'] || '天'}重置`}
+                            {' / '}超限后↑{planCfg.flu_over_u ?? 0}Mbps ↓{planCfg.flu_over_d ?? 0}Mbps
+                          </div>
                           <div>NAT: {planCfg.nat_num ?? 0}个 / Web: {planCfg.web_num ?? 0}个</div>
-                          <div>网卡: 公网{planCfg.nic_pub ?? 0}张 + 内网{planCfg.nic_pri ?? 1}张 / IPv4: {planCfg.ip4_max ?? 1} / IPv6: {planCfg.ip6_max ?? 0}</div>
+                          <div>V4: 公网{planCfg.ip4_pub ?? planCfg.nic_pub ?? 0} / 内网{planCfg.ip4_pri ?? planCfg.nic_pri ?? 1} ｜ V6: 公网{planCfg.ip6_pub ?? planCfg.ip6_max ?? 0} / 内网{planCfg.ip6_pri ?? 0}</div>
                           <div>备份: {planCfg.bak_num ?? 1} / 光盘: {planCfg.iso_num ?? 1}</div>
                           <div>数据盘: {planCfg.dat_num ?? 1}个 / 空间: {planCfg.dat_all ? (planCfg.dat_all >= 1024 ? `${Math.round(planCfg.dat_all / 1024)}GB` : `${planCfg.dat_all}MB`) : '0MB'}</div>
                         </div>

@@ -1,4 +1,4 @@
-import {useState, useEffect, useMemo, useCallback} from 'react'
+import {useState, useEffect, useMemo, useCallback, useRef} from 'react'
 import {Outlet, useNavigate, useLocation} from 'react-router-dom'
 import {Layout, Menu, Avatar, Dropdown, Badge, Button, Input, Tooltip, Breadcrumb, Drawer} from 'antd'
 import {
@@ -14,19 +14,44 @@ import {
     MenuUnfoldOutlined,
     GlobalOutlined,
     SwapOutlined,
-    TranslationOutlined,
-    CheckOutlined,
     SearchOutlined,
     QuestionCircleOutlined,
     CloseOutlined,
 } from '@ant-design/icons'
 import {useUserStore} from '@/utils/data.ts'
+import {useSiteStore} from '@/utils/site.ts'
 import api from '@/utils/apis.ts'
-import { changeLanguage, getAvailableLanguages, getCurrentLanguage, SUPPORTED_LANGUAGES } from '@/utils/i18n.ts'
 import AppearanceMenu from '@/components/AppearanceMenu'
+import LanguageMenu from '@/components/LanguageMenu'
 import type {MenuProps} from 'antd'
 
 const {Header, Sider, Content} = Layout
+
+/**
+ * 侧栏菜单标签：展开态显示完整名称，折叠态只显示两字短标签。
+ * 短标签由 CSS 控制显隐，保证同一份 DOM 无需重渲染即可切换。
+ */
+function MenuLabel({ text, short }: { text: string; short: string }) {
+    return (
+        <span className="art-menu-label">
+            <span className="art-menu-label-full">{text}</span>
+            <span className="art-menu-label-short">{short}</span>
+        </span>
+    )
+}
+
+const SIDEBAR_COLLAPSED_KEY = 'openidcs:sidebar-collapsed:v1'
+
+/** 读取上次的折叠选择；没有记录时回退到默认值（竖版详情默认折叠） */
+function readSidebarCollapsed(fallback: boolean): boolean {
+    try {
+        const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
+        if (saved === 'true' || saved === 'false') return saved === 'true'
+    } catch {
+        // 浏览器禁用本地存储时使用默认值
+    }
+    return fallback
+}
 
 /**
  * 主布局组件
@@ -38,13 +63,13 @@ function MainLayout() {
     const navigate = useNavigate()
     const location = useLocation()
     const {user, logout, setUser} = useUserStore()
+    const siteTitle = useSiteStore(state => state.title)
     const isRestrictedSession = Boolean((user as any)?.temp_login || ((user as any)?.temp_hs_name && (user as any)?.temp_vm_uuid))
-    const [collapsed, setCollapsed] = useState(() => window.location.pathname.endsWith('/v2'))
+    // 折叠状态持久化：刷新后沿用上次的选择；无记录时按当前路由给默认值
+    const [collapsed, setCollapsed] = useState(() => readSidebarCollapsed(window.location.pathname.endsWith('/v2')))
     const [isMobile, setIsMobile] = useState(false)
     const [drawerOpen, setDrawerOpen] = useState(false)
     const [notifications, setNotifications] = useState(0)
-    const [currentLang, setCurrentLang] = useState('zh-cn')
-    const [languages, setLanguages] = useState<any[]>([])
 
     useEffect(() => {
         if (!user || user.is_admin === undefined) {
@@ -55,22 +80,6 @@ function MainLayout() {
             }).catch(() => {})
         }
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-    useEffect(() => {
-        setCurrentLang(getCurrentLanguage())
-        setLanguages(getAvailableLanguages())
-        const handleLangChange = (e: any) => { setCurrentLang(e.detail.language) }
-        const handleLangsLoaded = (e: any) => {
-            setLanguages(e.detail.languages)
-            setCurrentLang(getCurrentLanguage())
-        }
-        window.addEventListener('languageChanged', handleLangChange)
-        window.addEventListener('languagesLoaded', handleLangsLoaded)
-        return () => {
-            window.removeEventListener('languageChanged', handleLangChange)
-            window.removeEventListener('languagesLoaded', handleLangsLoaded)
-        }
-    }, [])
 
     // 移动端（< 992px）使用抽屉式导航，避免侧边栏挤压内容区
     useEffect(() => {
@@ -89,38 +98,43 @@ function MainLayout() {
 
     const isVerticalDetail = location.pathname.endsWith('/v2')
 
-    // 进入竖版详情时默认折叠主菜单，用户仍可通过侧栏底部按钮展开
+    // 折叠状态落盘：顶部按钮、侧栏底部按钮和竖版详情自动折叠都会走到这里
     useEffect(() => {
-        if (isVerticalDetail) setCollapsed(true)
-    }, [isVerticalDetail])
+        try {
+            localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
+        } catch {
+            // 浏览器禁用本地存储时忽略
+        }
+    }, [collapsed])
 
-    // 语言菜单项
-    const languageMenuItems: MenuProps['items'] = (languages.length > 0 ? languages : SUPPORTED_LANGUAGES).map(lang => ({
-        key: lang.code,
-        label: lang.native || lang.name,
-        icon: lang.code === currentLang ? <CheckOutlined /> : undefined,
-    }))
+    // 进入竖版详情时默认折叠主菜单，用户仍可通过侧栏底部按钮展开；
+    // 首屏不强制覆盖，交给上面持久化的状态，刷新后才能保留上次的选择。
+    const wasVerticalDetailRef = useRef(isVerticalDetail)
+    useEffect(() => {
+        if (isVerticalDetail && !wasVerticalDetailRef.current) setCollapsed(true)
+        wasVerticalDetailRef.current = isVerticalDetail
+    }, [isVerticalDetail])
 
     // 用户界面菜单项
     const userMenuItems: MenuProps['items'] = [
-        { key: '/user/dashboard', icon: <DashboardOutlined/>, label: '资源概览' },
-        { key: '/user/vms',       icon: <CloudServerOutlined/>, label: '实例管理' },
-        { key: '/user/proxys',    icon: <GlobalOutlined/>,      label: '反向代理' },
-        { key: '/user/nat',       icon: <SwapOutlined/>,        label: '端口转发' },
-        { key: '/profile',        icon: <UserOutlined/>,        label: '个人资料' },
+        { key: '/user/dashboard', icon: <DashboardOutlined/>, label: <MenuLabel text="资源概览" short="概览"/> },
+        { key: '/user/vms',       icon: <CloudServerOutlined/>, label: <MenuLabel text="实例管理" short="实例"/> },
+        { key: '/user/proxys',    icon: <GlobalOutlined/>,      label: <MenuLabel text="反向代理" short="反代"/> },
+        { key: '/user/nat',       icon: <SwapOutlined/>,        label: <MenuLabel text="端口转发" short="端口"/> },
+        { key: '/profile',        icon: <UserOutlined/>,        label: <MenuLabel text="个人资料" short="资料"/> },
     ]
 
     // 系统界面菜单项（仅管理员可见）
     const adminMenuItems: MenuProps['items'] = [
-        { key: '/dashboard',  icon: <DashboardOutlined/>,   label: '系统概览' },
-        { key: '/hosts',      icon: <CloudServerOutlined/>, label: '主机管理' },
-        { key: '/vms',        icon: <CloudServerOutlined/>, label: '实例管理' },
-        { key: '/web-proxys', icon: <GlobalOutlined/>,      label: '反向代理' },
-        { key: '/nat-rules',  icon: <SwapOutlined/>,        label: '端口转发' },
-        { key: '/users',      icon: <UserOutlined/>,        label: '用户管理' },
-        { key: '/tasks',      icon: <ScheduleOutlined/>,    label: '任务管理' },
-        { key: '/logs',       icon: <FileTextOutlined/>,    label: '日志查看' },
-        { key: '/settings',   icon: <SettingOutlined/>,     label: '系统设置' },
+        { key: '/dashboard',  icon: <DashboardOutlined/>,   label: <MenuLabel text="系统概览" short="概览"/> },
+        { key: '/hosts',      icon: <CloudServerOutlined/>, label: <MenuLabel text="主机管理" short="主机"/> },
+        { key: '/vms',        icon: <CloudServerOutlined/>, label: <MenuLabel text="实例管理" short="实例"/> },
+        { key: '/web-proxys', icon: <GlobalOutlined/>,      label: <MenuLabel text="反向代理" short="反代"/> },
+        { key: '/nat-rules',  icon: <SwapOutlined/>,        label: <MenuLabel text="端口转发" short="端口"/> },
+        { key: '/users',      icon: <UserOutlined/>,        label: <MenuLabel text="用户管理" short="用户"/> },
+        { key: '/tasks',      icon: <ScheduleOutlined/>,    label: <MenuLabel text="任务管理" short="任务"/> },
+        { key: '/logs',       icon: <FileTextOutlined/>,    label: <MenuLabel text="日志查看" short="日志"/> },
+        { key: '/settings',   icon: <SettingOutlined/>,     label: <MenuLabel text="系统设置" short="设置"/> },
     ]
 
     /**
@@ -262,7 +276,7 @@ function MainLayout() {
                     <div className="art-header-brand" onClick={isRestrictedSession ? undefined : goHome}>
                         <div className="art-header-logo">OI</div>
                         <div className="art-header-brand-text">
-                            <span className="art-header-brand-name">OpenIDCS</span>
+                            <span className="art-header-brand-name">{siteTitle}</span>
                             <span className="art-header-brand-desc">{user?.is_admin ? '管理控制台' : '用户控制台'}</span>
                         </div>
                     </div>
@@ -284,20 +298,7 @@ function MainLayout() {
                         <AppearanceMenu />
 
                         {/* 语言切换 */}
-                        <Dropdown
-                            menu={{ items: languageMenuItems, onClick: ({key}) => changeLanguage(key) }}
-                            placement="bottomRight"
-                            overlayStyle={{ zIndex: 1050 }}
-                            getPopupContainer={() => document.body}
-                        >
-                            <Tooltip title={`切换语言 · ${SUPPORTED_LANGUAGES.find(lang => lang.code === currentLang)?.native || ''}`}>
-                                <Button
-                                    type="text"
-                                    className="art-header-btn"
-                                    icon={<TranslationOutlined />}
-                                />
-                            </Tooltip>
-                        </Dropdown>
+                        <LanguageMenu />
 
                         {/* 帮助 */}
                         <Tooltip title="帮助">
@@ -354,7 +355,7 @@ function MainLayout() {
                         <div className="art-sidebar-header">
                             <div className="art-logo">OI</div>
                             <div className="art-logo-text">
-                                <span className="art-logo-title">OpenIDCS</span>
+                                <span className="art-logo-title">{siteTitle}</span>
                                 <span className="art-logo-desc">{user?.is_admin ? '管理控制台' : '用户控制台'}</span>
                             </div>
                             <Button
@@ -397,8 +398,8 @@ function MainLayout() {
                     </main>
                     {/* 底部 Footer */}
                     <footer className="art-footer">
-                        <div>OpenIDCS 虚拟化管理平台 · v{__APP_VERSION__}</div>
-                        <div className="art-footer-copyright">© {new Date().getFullYear()} OpenIDCS Team. All rights reserved.</div>
+                        <div>{siteTitle} · v{__APP_VERSION__}</div>
+                        <div className="art-footer-copyright" dir="ltr">© {new Date().getFullYear()} OpenIDCS Team. All rights reserved.</div>
                     </footer>
                 </Content>
                 </Layout>

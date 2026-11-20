@@ -51,7 +51,7 @@ npm install
 npm run dev
 ```
 
-前端将运行在 `http://localhost:3000`
+前端将运行在 `http://localhost:5179`
 
 ### 3. 启动Flask后端
 

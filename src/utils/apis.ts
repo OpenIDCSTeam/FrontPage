@@ -23,8 +23,31 @@ import type {
 /**
  * 用户登录
  */
-export const login = (data: LoginRequest): Promise<ApiResponse<{ token: string; user_info: User; redirect: string; is_token: boolean }>> => {
+export const login = (data: LoginRequest): Promise<ApiResponse<{ user_info: User; redirect: string }>> => {
   return http.post('/api/login', data);
+};
+
+/**
+ * 站点信息：是否已完成初始化 + 系统标题（无需认证）
+ */
+export interface SiteInfo {
+  initialized: boolean;
+  system_title: string;
+}
+
+export const getSiteInfo = (): Promise<ApiResponse<SiteInfo>> => {
+  return http.get('/api/public/site-info', { silent: true });
+};
+
+/**
+ * 首次部署初始化：创建管理员密码并设置系统标题（仅未初始化时可用）
+ */
+export const initializeSystem = (data: {
+  password: string;
+  confirm_password: string;
+  system_title: string;
+}): Promise<ApiResponse<{ username: string; system_title: string }>> => {
+  return http.post('/api/system/init', data);
 };
 
 /**
@@ -1071,6 +1094,19 @@ export interface HostTerminalTicket {
   user: string;
 }
 
+export interface VMConsoleTicket {
+  ws_url: string;
+  token: string;
+  type: string;
+  command: string;
+  read_only: boolean;
+}
+
+/** 容器类平台（Docker/LXD/SmolVM）命令行控制台票据 */
+export const requestVMConsole = (hsName: string, vmUuid: string): Promise<ApiResponse<VMConsoleTicket>> => {
+  return http.post(`/api/client/console/${hsName}/${vmUuid}`, {}, { silent: true });
+};
+
 export const requestHostTerminal = (hsName: string): Promise<ApiResponse<HostTerminalTicket>> => {
   return http.post(`/api/server/ops/${hsName}/terminal`, {}, { silent: true });
 };
@@ -1178,6 +1214,8 @@ export default {
   logout,
   getCurrentUser,
   getTurnstileConfig,
+  getSiteInfo,
+  initializeSystem,
   forgotPassword,
   resetPassword,
   
@@ -1218,6 +1256,7 @@ export default {
   unbindHostImageFile,
   getHostPlatformInfo,
   requestHostTerminal,
+  requestVMConsole,
   getHostProcesses,
   killHostProcess,
   getHostServices,

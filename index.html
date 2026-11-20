@@ -12,9 +12,13 @@
         try {
           var root = document.documentElement;
           var mode = localStorage.getItem('theme');
+          if (mode === 'system') {
+            mode = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+          }
           if (mode !== 'light' && mode !== 'dark') mode = localStorage.getItem('mmui-dark-mode') === 'enabled' ? 'dark' : 'light';
           root.setAttribute('data-theme', mode);
           root.setAttribute('data-mmui-theme', mode);
+          root.style.colorScheme = mode;
           var preset = localStorage.getItem('themePreset');
           if (preset !== 'minimal' && preset !== 'tech' && preset !== 'cute') {
             var legacyPreset = localStorage.getItem('activeAnimeTheme');
@@ -27,6 +31,15 @@
           if (font === 'maple' || font === 'hybrid' || font === 'sans') root.setAttribute('data-font', font);
           if (localStorage.getItem('transparentMode') === 'true') root.setAttribute('data-transparent', 'true');
           if (localStorage.getItem('roundedMode') === 'true') root.setAttribute('data-rounded', 'true');
+
+          // 阿拉伯语等 RTL 语言：首屏就把书写方向定下来，避免先按 LTR 排版再翻转
+          var lang = localStorage.getItem('language');
+          if (!lang || lang === 'auto') lang = navigator.language || 'zh-cn';
+          lang = String(lang).toLowerCase();
+          root.setAttribute('lang', lang);
+          var primary = lang.split('-')[0];
+          var rtl = primary === 'ar' || primary === 'he' || primary === 'fa' || primary === 'ur';
+          root.setAttribute('dir', rtl ? 'rtl' : 'ltr');
         } catch (e) {
           /* localStorage 不可用时静默降级到默认主题 */
         }

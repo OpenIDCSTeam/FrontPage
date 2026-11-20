@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Form, Input, Button, Modal, message, Alert } from 'antd'
-import { UserOutlined, LockOutlined, KeyOutlined, LoginOutlined, MailOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { UserOutlined, LockOutlined, LoginOutlined, MailOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { useUserStore } from '@/utils/data.ts'
+import { useSiteStore } from '@/utils/site.ts'
 import api from '@/utils/apis.ts'
 import AuthLayout from '@/components/AuthLayout'
 
@@ -12,13 +13,6 @@ import AuthLayout from '@/components/AuthLayout'
 interface LoginForm {
   username: string
   password: string
-}
-
-/**
- * Token登录表单数据接口
- */
-interface TokenLoginForm {
-  token: string
 }
 
 /**
@@ -45,14 +39,14 @@ interface ForgotPasswordForm {
  */
 function UserLogins() {
   const navigate = useNavigate()
-  const { setUser, setToken } = useUserStore()
+  const { setUser } = useUserStore()
+  const { title: siteTitle, initialized, load: loadSiteInfo } = useSiteStore()
   const [loading, setLoading] = useState(false)
-  const [loginType, setLoginType] = useState<'user' | 'token' | 'access'>('user') // 登录方式：用户登录、Token登录或访问密钥登录
+  const [loginType, setLoginType] = useState<'user' | 'access'>('user') // 登录方式：用户登录或访问密钥登录
   const [errorMsg, setErrorMsg] = useState('') // 错误提示信息
   const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false) // 找回密码模态框显示状态
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false) // 找回密码加载状态
   const [userForm] = Form.useForm() // 用户登录表单实例
-  const [tokenForm] = Form.useForm() // Token登录表单实例
   const [accessKeyForm] = Form.useForm() // 访问密钥登录表单实例
   const [forgotPasswordForm] = Form.useForm() // 找回密码表单实例
   // Turnstile验证码状态
@@ -61,6 +55,17 @@ function UserLogins() {
   const [turnstileToken, setTurnstileToken] = useState('')
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null)
   const turnstileWidgetId = useRef<string | null>(null)
+
+  // 首次部署时直接进入初始化页面，避免在登录页反复尝试
+  useEffect(() => {
+    loadSiteInfo()
+  }, [loadSiteInfo])
+
+  useEffect(() => {
+    if (initialized === false) {
+      navigate('/init', { replace: true })
+    }
+  }, [initialized, navigate])
 
   // 加载Turnstile配置
   useEffect(() => {
@@ -164,10 +169,7 @@ function UserLogins() {
         turnstile_token: turnstileToken,
       } as any)
       
-      // 保存用户信息和token
-      if (response.data?.token) {
-        setToken(response.data.token)
-      }
+      // 保存用户信息
       // 优先用后端返回的user_info，否则构造基础对象保证isAuthenticated=true
       const userInfo = response.data?.user_info || { username: values.username, is_admin: false }
       setUser(userInfo as any)
@@ -178,47 +180,6 @@ function UserLogins() {
       navigate(redirectTo)
     } catch (error: any) {
       const errMsg = error?.response?.data?.msg || '登录失败，请检查用户名和密码'
-      setErrorMsg(errMsg)
-      resetTurnstile()
-      // 4秒后自动隐藏错误提示
-      setTimeout(() => setErrorMsg(''), 4000)
-      setLoading(false)
-    }
-  }
-
-  /**
-   * 处理Token登录提交
-   */
-  const handleTokenLogin = async (values: TokenLoginForm) => {
-    try {
-      // Turnstile验证检查
-      if (turnstileEnabled && !turnstileToken) {
-        setErrorMsg('请完成验证码验证')
-        return
-      }
-      setLoading(true)
-      setErrorMsg('')
-      
-      // 调用登录API
-      const response = await api.login({
-        login_type: 'token',
-        token: values.token,
-        turnstile_token: turnstileToken,
-      } as any)
-      
-      // 保存用户信息和token
-      if (response.data?.token) {
-        setToken(response.data.token)
-      }
-      // 优先用后端返回的user_info，否则构造基础对象保证isAuthenticated=true
-      const userInfo = response.data?.user_info || { username: 'admin', is_admin: true }
-      setUser(userInfo as any)
-      
-      message.success('登录成功')
-      const redirectTo = response.data?.redirect || '/dashboard'
-      navigate(redirectTo)
-    } catch (error: any) {
-      const errMsg = error?.response?.data?.msg || 'Token登录失败，请检查Token是否正确'
       setErrorMsg(errMsg)
       resetTurnstile()
       // 4秒后自动隐藏错误提示
@@ -278,7 +239,7 @@ function UserLogins() {
   /**
    * 切换登录方式
    */
-  const switchLoginType = (type: 'user' | 'token' | 'access') => {
+  const switchLoginType = (type: 'user' | 'access') => {
     setLoginType(type)
     setErrorMsg('')
   }
@@ -339,7 +300,7 @@ function UserLogins() {
             <SafetyCertificateOutlined style={{ fontSize: 26 }} />
           </div>
           <h1 className="art-auth-title">
-            OpenIDCS 受控端
+            {siteTitle}
           </h1>
           <p className="art-auth-subtitle">
             <LockOutlined />
@@ -356,14 +317,6 @@ function UserLogins() {
           >
             <UserOutlined style={{ marginRight: 4 }} />
             用户登录
-          </button>
-          <button
-            type="button"
-            className={`art-auth-tab${loginType === 'token' ? ' is-active' : ''}`}
-            onClick={() => switchLoginType('token')}
-          >
-            <KeyOutlined style={{ marginRight: 4 }} />
-            Token登录
           </button>
           <button
             type="button"
@@ -461,71 +414,6 @@ function UserLogins() {
               <span className="art-auth-link" onClick={openForgotPasswordModal}>
                 忘记密码？
               </span>
-            </div>
-          </Form>
-        )}
-
-        {/* Token登录表单 */}
-        {loginType === 'token' && (
-          <Form
-            form={tokenForm}
-            name="tokenLogin"
-            onFinish={handleTokenLogin}
-            autoComplete="off"
-            layout="vertical"
-          >
-            {/* Token输入框 */}
-            <Form.Item
-              label={
-                <span className="art-auth-label">
-                  <KeyOutlined />
-                  访问Token
-                </span>
-              }
-              name="token"
-              rules={[{ required: true, message: '请输入访问Token' }]}
-            >
-              <Input.Password
-                size="large"
-                placeholder="请输入访问Token"
-              />
-            </Form.Item>
-
-            {/* 错误提示 */}
-            {errorMsg && (
-              <Alert
-                message={errorMsg}
-                type="error"
-                showIcon
-                style={{ marginBottom: 16, borderRadius: '8px' }}
-              />
-            )}
-
-            {/* Turnstile验证码 */}
-            {turnstileEnabled && turnstileSiteKey && (
-              <div className="turnstile-container" style={{ marginBottom: 16, width: '100%' }}>
-                <div ref={turnstileRef} style={{ width: '100%' }} />
-              </div>
-            )}
-
-            {/* 登录按钮 */}
-            <Form.Item>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={loading}
-                block
-                size="large"
-                icon={<LoginOutlined />}
-                style={{ height: 44, fontWeight: 500 }}
-              >
-                登 录
-              </Button>
-            </Form.Item>
-
-            {/* 提示信息 */}
-            <div className="art-auth-tip">
-              启动服务时会在控制台显示访问 Token
             </div>
           </Form>
         )}

@@ -103,7 +103,7 @@ msgid "启用"
 msgstr "aktivieren"
 
 msgid "复制"
-msgstr "Kopie"
+msgstr "Kopieren"
 
 msgid "导入"
 msgstr "Import"
@@ -376,7 +376,7 @@ msgid "一致性"
 msgstr "Konsistenz"
 
 msgid "主机"
-msgstr "Gastgeber"
+msgstr "Host"
 
 msgid "主题"
 msgstr "Thema"
@@ -421,7 +421,7 @@ msgid "关系"
 msgstr "Beziehung"
 
 msgid "内存"
-msgstr "Erinnerung"
+msgstr "Arbeitsspeicher"
 
 msgid "内容"
 msgstr "Inhalt"
@@ -508,7 +508,7 @@ msgid "定义"
 msgstr "Definition"
 
 msgid "实例"
-msgstr "Beispiel"
+msgstr "Instanz"
 
 msgid "容器"
 msgstr "Container"
@@ -661,7 +661,7 @@ msgid "桌面"
 msgstr "Desktop"
 
 msgid "概览"
-msgstr "Überblick"
+msgstr "Übersicht"
 
 msgid "模块"
 msgstr "Modul"
@@ -679,7 +679,7 @@ msgid "注释"
 msgstr "Kommentar"
 
 msgid "流量"
-msgstr "fließen"
+msgstr "Traffic"
 
 msgid "消息"
 msgstr "Information"
@@ -691,7 +691,7 @@ msgid "版本"
 msgstr "Version"
 
 msgid "状态"
-msgstr "Zustand"
+msgstr "Status"
 
 msgid "用户"
 msgstr "Benutzer"
@@ -712,7 +712,7 @@ msgid "硬盘"
 msgstr "Festplatte"
 
 msgid "磁盘"
-msgstr "Scheibe"
+msgstr "Datenträger"
 
 msgid "程序"
 msgstr "Programm"
@@ -721,7 +721,7 @@ msgid "稳定性"
 msgstr "Stabilität"
 
 msgid "端口"
-msgstr "Hafen"
+msgstr "Port"
 
 msgid "策略"
 msgstr "Strategie"
@@ -808,7 +808,7 @@ msgid "设备"
 msgstr "Ausrüstung"
 
 msgid "设置"
-msgstr "aufstellen"
+msgstr "Einstellungen"
 
 msgid "详情"
 msgstr "Details"
@@ -2032,7 +2032,7 @@ msgid "系统界面"
 msgstr "Systemschnittstelle"
 
 msgid "系统盘"
-msgstr "Systemfestplatte"
+msgstr "Systemplatte"
 
 msgid "系统空间"
 msgstr "Systemraum"
@@ -2997,3 +2997,243 @@ msgstr "Firewall-Regel"
 
 msgid "快照管理"
 msgstr "Snapshot-Verwaltung"
+
+msgid "外观设置"
+msgstr "Darstellung"
+
+msgid "选择工作台风格，偏好自动保存"
+msgstr "Arbeitsbereich-Stil wählen; Einstellungen werden automatisch gespeichert"
+
+msgid "界面主题"
+msgstr "Oberflächen-Theme"
+
+msgid "明暗模式"
+msgstr "Hell/Dunkel"
+
+msgid "跟随"
+msgstr "Auto"
+
+msgid "跟随浏览器/系统明暗设置"
+msgstr "Helligkeit des Browsers/Systems übernehmen"
+
+msgid "透明表面"
+msgstr "Transparente Oberflächen"
+
+msgid "柔和背景透过面板"
+msgstr "Sanfter Hintergrund scheint durch Paneele"
+
+msgid "圆润边角"
+msgstr "Abgerundete Ecken"
+
+msgid "适度放大卡片与控件圆角"
+msgstr "Karten- und Steuerelement-Radien etwas vergrößern"
+
+msgid "界面字体"
+msgstr "Schriftart der Oberfläche"
+
+msgid "数字与正文可分别优化阅读"
+msgstr "Zahlen und Fließtext getrennt optimieren"
+
+msgid "打开外观设置"
+msgstr "Darstellungseinstellungen öffnen"
+
+msgid "简约纯白"
+msgstr "Minimal Weiß"
+
+msgid "明净留白 · 克制蓝"
+msgstr "Klar · Blau"
+
+msgid "科技大气"
+msgstr "Tech Grandeur"
+
+msgid "深海蓝 · 电子青"
+msgstr "Tiefsee · Cyan"
+
+msgid "科技简约"
+msgstr "Tech Minimal"
+
+msgid "浅蓝底 · 精密线"
+msgstr "Hell · präzise"
+
+msgid "黑金质感"
+msgstr "Schwarz-Gold"
+
+msgid "墨黑 · 琥珀金"
+msgstr "Schwarz · Gold"
+
+msgid "清爽可爱"
+msgstr "Frisch & niedlich"
+
+msgid "薄荷绿 · 圆润"
+msgstr "Mint · rund"
+
+msgid "透明炫酷"
+msgstr "Glas"
+
+msgid "紫雾 · 磨砂层"
+msgstr "Violett · Glas"
+
+msgid "切换语言"
+msgstr "Sprache wechseln"
+
+msgid "控制台与快捷操作"
+msgstr "Konsole & Schnellaktionen"
+
+msgid "实时画面"
+msgstr "Live-Bild"
+
+msgid "快捷操作"
+msgstr "Schnellaktionen"
+
+msgid "电源 · 系统 · 访问"
+msgstr "Strom · System · Zugriff"
+
+msgid "未运行"
+msgstr "Nicht aktiv"
+
+msgid "时间范围"
+msgstr "Zeitraum"
+
+msgid "所选时间范围内暂无监控数据"
+msgstr "Keine Überwachungsdaten im gewählten Zeitraum"
+
+msgid "配额配置"
+msgstr "Kontingente"
+
+msgid "实例状态"
+msgstr "Instanzstatus"
+
+msgid "复制系统密码"
+msgstr "Systempasswort kopieren"
+
+msgid "复制远程密码"
+msgstr "Remotepasswort kopieren"
+
+msgid "显示系统密码"
+msgstr "Systempasswort anzeigen"
+
+msgid "显示远程密码"
+msgstr "Remotepasswort anzeigen"
+
+msgid "隐藏系统密码"
+msgstr "Systempasswort verbergen"
+
+msgid "隐藏远程密码"
+msgstr "Remotepasswort verbergen"
+
+msgid "修改系统密码"
+msgstr "Systempasswort ändern"
+
+msgid "修改远程密码"
+msgstr "Remotepasswort ändern"
+
+msgid "无权限查看"
+msgstr "Keine Berechtigung"
+
+msgid "未设置"
+msgstr "Nicht gesetzt"
+
+msgid "虚拟机截图"
+msgstr "VM-Screenshot"
+
+msgid "虚拟机未运行，无法获取截图"
+msgstr "VM ist nicht aktiv, kein Screenshot möglich"
+
+msgid "无法获取截图"
+msgstr "Screenshot nicht verfügbar"
+
+msgid "获取截图中..."
+msgstr "Screenshot wird geladen..."
+
+msgid "此虚拟机所属的物理机不提供桌面截图"
+msgstr "Der Host dieser VM stellt keine Desktop-Screenshots bereit"
+
+msgid "资源用量"
+msgstr "Ressourcennutzung"
+
+msgid "IPv4 地址"
+msgstr "IPv4-Adresse"
+
+msgid "IPv6 地址"
+msgstr "IPv6-Adresse"
+
+msgid "VNC 端口"
+msgstr "VNC-Port"
+
+msgid "默认布局"
+msgstr "Standardlayout"
+
+msgid "竖版菜单"
+msgstr "Vertikales Menü"
+
+msgid "虚拟机详情布局"
+msgstr "VM-Detail-Layout"
+
+msgid "打开实例导航"
+msgstr "Instanznavigation öffnen"
+
+msgid "展开导航"
+msgstr "Navigation ausklappen"
+
+msgid "收起导航"
+msgstr "Navigation einklappen"
+
+msgid "反代"
+msgstr "Proxy"
+
+msgid "资料"
+msgstr "Profil"
+
+msgid "帮助"
+msgstr "Hilfe"
+
+msgid "消息中心"
+msgstr "Benachrichtigungen"
+
+msgid "搜索功能..."
+msgstr "Funktionen suchen..."
+
+msgid "管理控制台"
+msgstr "Verwaltungskonsole"
+
+msgid "用户控制台"
+msgstr "Benutzerkonsole"
+
+msgid "该主机已关闭改配"
+msgstr "Neukonfiguration ist für diesen Host deaktiviert"
+
+msgid "混排（默认）"
+msgstr "Gemischt (Standard)"
+
+msgid "系统无衬线"
+msgstr "System-Sans"
+
+msgid "完全跟随操作系统界面字体"
+msgstr "Systemschrift vollständig übernehmen"
+
+msgid "CPU使用率"
+msgstr "CPU-Auslastung"
+
+msgid "RAM使用率"
+msgstr "RAM-Auslastung"
+
+msgid "GPU使用率"
+msgstr "GPU-Auslastung"
+
+msgid "硬盘使用率"
+msgstr "Festplattenauslastung"
+
+msgid "流量使用率"
+msgstr "Datenverbrauch"
+
+msgid "端口使用数"
+msgstr "Genutzte Ports"
+
+msgid "上行带宽率"
+msgstr "Upload-Bandbreite"
+
+msgid "下行带宽率"
+msgstr "Download-Bandbreite"
+
+msgid "反向代理数"
+msgstr "Reverse-Proxys"

@@ -1,15 +1,16 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Button, Dropdown, Segmented, Select, Switch, Tooltip } from 'antd'
-import { BgColorsOutlined, CheckOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons'
+import { BgColorsOutlined, CheckOutlined, DesktopOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons'
 import type { CSSProperties } from 'react'
-import type { ThemeMode } from '@/config/theme.config'
+import type { ThemePreference } from '@/config/theme.config'
 import { THEME_PRESET_OPTIONS } from '@/config/theme.config'
 import { FONT_OPTIONS } from '@/config/fonts.config'
 import { useTheme } from '@/contexts/ThemeContext'
 
 export default function AppearanceMenu() {
+    const [open, setOpen] = useState(false)
     const {
-        theme,
+        themePreference,
         setTheme,
         themePreset,
         setThemePreset,
@@ -73,13 +74,21 @@ export default function AppearanceMenu() {
 
             <div className="appearance-panel-row">
                 <div className="appearance-panel-label">明暗模式</div>
-                <Segmented<ThemeMode>
+                <Segmented<ThemePreference>
                     size="small"
-                    value={theme}
+                    value={themePreference}
                     onChange={setTheme}
                     options={[
                         { value: 'light', label: <span><SunOutlined />浅色</span> },
                         { value: 'dark', label: <span><MoonOutlined />深色</span> },
+                        {
+                            value: 'system',
+                            label: (
+                                <span title="跟随浏览器/系统明暗设置">
+                                    <DesktopOutlined />跟随
+                                </span>
+                            ),
+                        },
                     ]}
                 />
             </div>
@@ -114,9 +123,7 @@ export default function AppearanceMenu() {
                 />
             </div>
         </section>
-    ), [theme, setTheme, themePreset, setThemePreset, transparentMode, toggleTransparentMode, roundedMode, toggleRoundedMode, fontId, setFontId])
-
-    const isCustomized = themePreset !== 'minimal' || theme === 'dark' || transparentMode || roundedMode
+    ), [themePreference, setTheme, themePreset, setThemePreset, transparentMode, toggleTransparentMode, roundedMode, toggleRoundedMode, fontId, setFontId])
 
     return (
         <Dropdown
@@ -124,12 +131,14 @@ export default function AppearanceMenu() {
             placement="bottomRight"
             overlayStyle={{ zIndex: 1050 }}
             getPopupContainer={() => document.body}
+            open={open}
+            onOpenChange={setOpen}
             popupRender={() => panel}
         >
             <Tooltip title="外观设置">
                 <Button
                     type="text"
-                    className={`art-header-btn${isCustomized ? ' is-active' : ''}`}
+                    className={`art-header-btn${open ? ' is-active' : ''}`}
                     icon={<BgColorsOutlined />}
                     aria-label="打开外观设置"
                 />

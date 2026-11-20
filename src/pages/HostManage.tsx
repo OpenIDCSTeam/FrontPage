@@ -16,7 +16,8 @@ import {
     Progress,
     Table,
     Spin,
-    Segmented
+    Segmented,
+    Checkbox
 } from 'antd'
 import EmptyState from '@/components/EmptyState'
 import {
@@ -41,6 +42,8 @@ import {
     EyeInvisibleOutlined,
     ClearOutlined,
     MergeCellsOutlined,
+    ControlOutlined,
+    LinkOutlined,
 } from '@ant-design/icons'
 import {useNavigate} from 'react-router-dom'
 import api from '@/utils/apis.ts'
@@ -48,6 +51,12 @@ import PageHeader from '@/components/PageHeader'
 import HostConfigBackupActions from '@/components/HostConfigBackupActions'
 import HostImageManager from '@/components/HostImageManager'
 import {REGION_GROUPS} from '@/constants/regions'
+import {
+    VM_DETAIL_TAB_OPTIONS,
+    LINK_PERMISSION_OPTIONS,
+    maskToPermissionFlags,
+    permissionFlagsToMask,
+} from '@/types'
 
 // 主机配置接口
 // OS镜像配置项（system_maps/images_maps通用结构）
@@ -100,8 +109,91 @@ interface HostConfig {
     n_cpu_price?: number
     n_mem_price?: number
     n_hdd_price?: number
+    /** 数据盘单价（按容量） */
+    n_dat_price?: number
+    /** 上行 / 下行带宽单价（按 Mbps） */
+    n_speed_u_price?: number
+    n_speed_d_price?: number
+    /** 流量单价（每 GB） */
+    n_flu_price?: number
+    /** NAT 端口单价（按个） */
+    n_nat_price?: number
+    /** 反向代理单价（按个） */
+    n_web_price?: number
+    /** 备份单价（按个） */
+    n_bak_price?: number
+    /** 公网 IPv4 / IPv6 单价（按个） */
+    n_ip4_price?: number
+    n_ip6_price?: number
+    /** 旧版带宽单价，仅作兼容保留 */
     n_net_price?: number
     server_plan?: Record<string, any>
+    /** 允许改配：allow=允许（默认），deny=关闭后配置不允许变动 */
+    allow_reconfigure?: string
+    /** 功能控制：被关闭的虚拟机详情选项卡 key */
+    disabled_tabs?: string[]
+    /** 链接权限：访问密钥/访问链接的默认权限掩码（16 位，0=内置默认） */
+    link_permission?: number
+}
+
+// 流量计费方向
+type FluBillDir = 'up' | 'down' | 'both'
+// 流量重置模式：每隔 N 个周期，或每月/每周/每天固定时点
+type FluRstMode = 'interval' | 'calendar'
+// 流量重置单位：interval 取 day/week/month/year；calendar 取 month/week/day
+type FluResetUnit = 'day' | 'week' | 'month' | 'year' | 'hour'
+
+const FLU_BILL_DIR_LABELS: Record<FluBillDir, string> = {
+    both: '上下行计费',
+    up: '上行计费',
+    down: '下行计费',
+}
+
+/**
+ * 链接权限的内置默认掩码（35287），与后端 model.VirtualUserMask 保持一致：
+ * 保留 电源/密码/系统/光盘/网络/网页/桌面/备份/防火墙，
+ * 不含 网卡/硬盘/PCI/USB/启动顺序/改配/删除。
+ */
+const LINK_DEFAULT_MASK = 35287
+
+/** 链接权限实际生效的掩码：0 表示沿用内置默认 */
+const resolveLinkMask = (mask: number) => (mask || LINK_DEFAULT_MASK)
+
+/** 统计链接权限里已开启的项数，用于按钮上的摘要 */
+const countLinkPermissions = (mask: number) => {
+    const flags = maskToPermissionFlags(resolveLinkMask(mask))
+    return LINK_PERMISSION_OPTIONS.filter(({field}) => flags[field]).length
+}
+
+/**
+ * 重置规则下拉：把「模式 + 单位」压成一个选项，配合左侧数字框使用。
+ * 值形如 interval:day / calendar:month，parseFluRule 负责拆回 mode/unit。
+ */
+const FLU_RULE_OPTIONS: { value: string; label: string }[] = [
+    {value: 'interval:day', label: '每隔 N 天'},
+    {value: 'interval:week', label: '每隔 N 周'},
+    {value: 'interval:month', label: '每隔 N 月'},
+    {value: 'interval:year', label: '每隔 N 年'},
+    {value: 'calendar:month', label: '每月 N 号'},
+    {value: 'calendar:week', label: '每周 N（周一=1）'},
+    {value: 'calendar:day', label: '每天 N 时'},
+]
+
+const fluRuleValue = (mode: string, unit: string) => `${mode}:${unit}`
+
+const parseFluRule = (value: string): [FluRstMode, FluResetUnit] => {
+    const [mode, unit] = String(value).split(':')
+    return [mode as FluRstMode, unit as FluResetUnit]
+}
+
+/** 重置规则的数值上下限：随模式/单位切换（每月 1-31 号、每周 1-7、每天 0-23 时） */
+function fluResetNumRange(mode: FluRstMode, unit: FluResetUnit): { min: number; max: number } {
+    if (mode === 'calendar') {
+        if (unit === 'week') return {min: 1, max: 7}
+        if (unit === 'day') return {min: 0, max: 23}
+        return {min: 1, max: 31}
+    }
+    return {min: 1, max: 365}
 }
 
 // 套餐配置行接口
@@ -125,11 +217,28 @@ interface ServerPlanRow {
     nat_num: number
     web_num: number
     flu_num: number
-    flu_rst: number[]
-    nic_pub: number
-    nic_pri: number
-    ip4_max: number
-    ip6_max: number
+    /** 计费方向：up=上行 down=下行 both=上下行 */
+    flu_bill_dir: FluBillDir
+    /** 重置模式：interval=每隔N天/周/月/年；calendar=每月X号/每周周X/每天X时 */
+    flu_rst_mode: FluRstMode
+    /** interval: day/week/month/year；calendar: month/week/day */
+    flu_rst_unit: FluResetUnit
+    /** interval 的间隔数；calendar 的日期(1-31)/周几(1-7)/小时(0-23) */
+    flu_rst_num: number
+    /** 超限后上行带宽(Mbps)，0=不额外限速 */
+    flu_over_u: number
+    /** 超限后下行带宽(Mbps)，0=不额外限速 */
+    flu_over_d: number
+    /** 最大网卡数量（公网 + 内网），V4/V6 推算出的网卡数不能超过它 */
+    nic_num: number
+    /** 公网 IPv4 数量（每地址一张公网网卡） */
+    ip4_pub: number
+    /** 内网 IPv4 数量 */
+    ip4_pri: number
+    /** 公网 IPv6 数量 */
+    ip6_pub: number
+    /** 内网 IPv6 数量 */
+    ip6_pri: number
 }
 
 /**
@@ -159,13 +268,34 @@ function createDefaultPlanRow(planName = ''): ServerPlanRow {
         nat_num: 100,
         web_num: 100,
         flu_num: 102400,
-        // [重置天数, 超限阈值MB, 上次重置时间戳]；时间戳 0 表示尚未重置过
-        flu_rst: [31, 10, 0],
-        nic_pub: 0,
-        nic_pri: 1,
-        ip4_max: 1,
-        ip6_max: 0,
+        // 默认上下行合计计费、每月 1 号重置、超限后不额外限速
+        flu_bill_dir: 'both',
+        flu_rst_mode: 'calendar',
+        flu_rst_unit: 'month',
+        flu_rst_num: 1,
+        flu_over_u: 0,
+        flu_over_d: 0,
+        // 默认允许 2 张网卡：1 张公网 + 1 张内网
+        nic_num: 2,
+        // 默认：1 个内网 IPv4，公网与 IPv6 从 0 开始
+        ip4_pub: 0,
+        ip4_pri: 1,
+        ip6_pub: 0,
+        ip6_pri: 0,
     }
+}
+
+/**
+ * 套餐实际需要的网卡数。
+ *
+ * 一个地址占一张同侧网卡，而一张网卡可以同时带 V4 与 V6，
+ * 因此公网网卡数 = max(公网V4, 公网V6)，内网网卡数 = max(内网V4, 内网V6)，
+ * 与创建虚拟机时按套餐自动生成网卡的规则保持一致。
+ */
+function planNicCount(row: ServerPlanRow): { pub: number; pri: number; total: number } {
+    const pub = Math.max(row.ip4_pub || 0, row.ip6_pub || 0)
+    const pri = Math.max(row.ip4_pri || 0, row.ip6_pri || 0)
+    return {pub, pri, total: pub + pri}
 }
 
 /**
@@ -190,6 +320,8 @@ const HOST_FORM_DEFAULTS: Record<string, any> = {
     ports_close: 60000,
     remote_port: 5900,
     limits_nums: 0,
+    // 默认允许改配；功能控制/链接权限由独立弹窗维护，不挂在 Form 上
+    allow_reconfigure: 'allow',
     proxy_mode: 'direct',
     relay_addr: '',
     vnc_ip: '',
@@ -201,7 +333,15 @@ const HOST_FORM_DEFAULTS: Record<string, any> = {
     n_cpu_price: 0,
     n_mem_price: 0,
     n_hdd_price: 0,
-    n_net_price: 0,
+    n_dat_price: 0,
+    n_speed_u_price: 0,
+    n_speed_d_price: 0,
+    n_flu_price: 0,
+    n_nat_price: 0,
+    n_web_price: 0,
+    n_bak_price: 0,
+    n_ip4_price: 0,
+    n_ip6_price: 0,
 }
 
 /**
@@ -350,8 +490,16 @@ const FIELD_HINTS: Record<string, FieldHint> = {
     limits_nums: {base: '该主机最多允许创建的虚拟机数量；0 表示不限制'},
     n_cpu_price: {base: '按 CPU 核心计费时的单价，0 表示不单独计费'},
     n_mem_price: {base: '按内存容量计费时的单价，0 表示不单独计费'},
-    n_hdd_price: {base: '按硬盘容量计费时的单价，0 表示不单独计费'},
-    n_net_price: {base: '按带宽计费时的单价，0 表示不单独计费'},
+    n_hdd_price: {base: '按系统盘容量计费时的单价，0 表示不单独计费'},
+    n_dat_price: {base: '按数据盘容量计费时的单价，0 表示不单独计费'},
+    n_speed_u_price: {base: '按上行带宽计费时的单价（每 Mbps）'},
+    n_speed_d_price: {base: '按下行带宽计费时的单价（每 Mbps）'},
+    n_flu_price: {base: '按流量计费时的单价（每 GB）'},
+    n_nat_price: {base: '按 NAT 端口数量计费时的单价（每个）'},
+    n_web_price: {base: '按反向代理数量计费时的单价（每个）'},
+    n_bak_price: {base: '按备份数量计费时的单价（每个）'},
+    n_ip4_price: {base: '按公网 IPv4 地址数量计费时的单价（每个）'},
+    n_ip6_price: {base: '按公网 IPv6 地址数量计费时的单价（每个）'},
 
     // ===== 网络配置 =====
     i_kuai_addr: {base: '爱快路由器 Web 地址；配置后才会下发端口映射、DHCP/ARP 静态绑定与公网地址转换'},
@@ -402,7 +550,12 @@ const PLAN_FIELD_HINTS: Record<string, string> = {
     cpu_num: '单台虚拟机的 CPU 核心数',
     mem_num: '内存容量，单位 MB',
     hdd_num: '系统盘容量，单位 MB',
-    flu_num: '每月可用流量，单位 MB；超出后按超限阈值处理',
+    flu_num: '计费周期内可用流量，单位 MB；超出后按「超限后带宽」处理',
+    flu_bill_dir: '流量按哪个方向统计：上下行合计（默认）、仅上行或仅下行',
+    flu_rst_mode: '重置方式：每隔 N 天/周/月/年，或在每月 X 号 / 每周周 X / 每天 X 时重置',
+    flu_rst_num: '间隔数量，或固定重置点的日期 / 周几 / 小时',
+    flu_over_u: '流量超出后上行带宽上限，单位 Mbps；0 表示不额外限速',
+    flu_over_d: '流量超出后下行带宽上限，单位 Mbps；0 表示不额外限速',
     speed_u: '上行带宽上限，单位 Mbps；0 表示不限速',
     speed_d: '下行带宽上限，单位 Mbps；0 表示不限速',
     nat_num: '可创建的端口映射数量',
@@ -416,13 +569,11 @@ const PLAN_FIELD_HINTS: Record<string, string> = {
     usb_num: '可直通的 USB 设备数量',
     dat_num: '可挂载的数据盘数量',
     dat_all: '数据盘容量合计上限，单位 MB',
-    flu_rst_days: '每隔多少天重置一次流量统计',
-    flu_rst_over: '流量超出上限多少 MB 后开始限速或断网',
-    flu_rst_at: '上一次重置的时间戳（Unix 秒）；0 表示尚未重置',
-    nic_pub: '创建虚拟机时默认分配的公网网卡数量',
-    nic_pri: '创建虚拟机时默认分配的内网网卡数量',
-    ip4_max: '单台虚拟机最多可分配的 IPv4 地址数量',
-    ip6_max: '单台虚拟机最多可分配的 IPv6 地址数量',
+    nic_num: '套餐允许的最大网卡数量（公网 + 内网）；按 V4/V6 数量推算出的网卡数不能超过它',
+    ip4_pub: '公网 IPv4 地址数量，每个地址分配一张公网网卡',
+    ip4_pri: '内网 IPv4 地址数量，每个地址分配一张内网网卡',
+    ip6_pub: '公网 IPv6 地址数量；可与公网 IPv4 复用同一张网卡',
+    ip6_pri: '内网 IPv6 地址数量；可与内网 IPv4 复用同一张网卡',
 }
 
 // 主机数据接口
@@ -463,6 +614,8 @@ interface EngineTypeConfig {
     description: string
     messages?: string[]
     options?: Record<string, string>
+    /** 该平台不支持的虚拟机详情选项卡 key，功能控制里不可勾选 */
+    tab_lock?: string[]
 }
 
 // 系统镜像行接口
@@ -549,8 +702,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '主机名称',
             key: 'name',
-            width: 160,
-            fixed: 'left' as const,
+            width: 132,
             render: (_: any, record: any) => {
                 const isActive = record.host.status === 'active'
                 const dotColor = isActive ? 'var(--art-success)' : 'var(--art-danger)'
@@ -573,7 +725,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '引擎',
             key: 'type',
-            width: 140,
+            width: 130,
             render: (_: any, record: any) => {
                 const typeInfo = engineTypes[record.host.type] || {}
                 const engineDetail = [record.host.type, record.host.config?.server_user].filter(Boolean).join(' · ')
@@ -588,7 +740,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '连接地址',
             key: 'connection',
-            width: 160,
+            width: 140,
             render: (_: any, record: any) => {
                 const address = record.host.addr || record.host.config?.server_addr || ''
                 const port = record.host.config?.server_port
@@ -603,7 +755,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '公网地址',
             key: 'public',
-            width: 160,
+            width: 140,
             render: (_: any, record: any) => {
                 const publicAddrs = record.host.config?.public_addr || []
                 const showPublic = visiblePublicAddr[record.name]
@@ -661,7 +813,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '内存',
             key: 'mem',
-            width: 110,
+            width: 100,
             render: (_: any, record: any) => {
                 const status = record.status
                 const memPercent = status && status.mem_total ? Math.min((status.mem_usage || 0) / status.mem_total * 100, 100) : 0
@@ -684,7 +836,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '磁盘',
             key: 'hdd',
-            width: 110,
+            width: 100,
             render: (_: any, record: any) => {
                 const status = record.status
                 const hddPercent = status && status.hdd_total ? Math.min((status.hdd_usage || 0) / status.hdd_total * 100, 100) : 0
@@ -741,7 +893,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '区域',
             key: 'area',
-            width: 96,
+            width: 56,
             render: (_: any, record: any) => {
                 const area = record.host.config?.server_area
                 return area ? <span className="art-table-strong">{area}</span> : <span className="art-table-muted">-</span>
@@ -750,12 +902,12 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '端口',
             key: 'ports',
-            width: 130,
+            width: 120,
             render: (_: any, record: any) => {
                 const { ports_start, ports_close, remote_port } = record.host.config || {}
                 const range = ports_start && ports_close ? `${ports_start}–${ports_close}` : '-'
                 return (
-                    <div className="art-cell-stack">
+                    <div className="art-cell-stack" title={`TCP ${range} / VNC ${remote_port || '-'}`}>
                         <span className="art-table-mono">TCP {range}</span>
                         <span className="art-cell-sub">VNC {remote_port || '-'}</span>
                     </div>
@@ -765,8 +917,7 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         {
             title: '操作',
             key: 'actions',
-            width: 148,
-            fixed: 'right' as const,
+            width: 180,
             render: (_: any, record: any) => {
                 const isActive = record.host.status === 'active'
                 return (
@@ -796,12 +947,23 @@ function HostTableView({ hosts, hostsStatus, engineTypes, navigate, handleEdit, 
         },
     ]
 
+    // 列宽自适应压缩：
+    // 上面每列的 width 只是「权重」，这里换算成百分比（总和恒为 100%），
+    // 配合 table-layout: fixed 让表格宽度严格等于容器宽度。
+    // 以前的 scroll.x='max-content' 会按内容撑宽，窗口窄了就出横向滚动条；
+    // 放不下的文本改由 .host-manage-table 的省略号规则截断。
+    const totalWeight = columns.reduce((sum: number, col: any) => sum + (col.width || 0), 0) || 1
+    const fittedColumns = columns.map((col: any) => ({
+        ...col,
+        width: `${(((col.width || 0) / totalWeight) * 100).toFixed(2)}%`,
+    }))
+
     return (
         <Table
             dataSource={dataSource}
-            columns={columns}
+            columns={fittedColumns}
             size="small"
-            scroll={{ x: 'max-content' }}
+            tableLayout="fixed"
             pagination={{
                 pageSize: 10,
                 showSizeChanger: true,
@@ -865,6 +1027,17 @@ function HostManage() {
     const [ipaddrMaps, setIpaddrMaps] = useState<IpaddrMapRow[]>([])
     const [serverPlans, setServerPlans] = useState<ServerPlanRow[]>([])
     const [selectedHostType, setSelectedHostType] = useState<string>('')
+
+    // ===== 功能控制 / 链接权限 =====
+    // 功能控制：被关闭的选项卡 key（平台本身不支持的项由 tab_lock 决定，不在这里记录）
+    const [disabledTabs, setDisabledTabs] = useState<string[]>([])
+    // 链接权限：访问密钥/访问链接的默认权限掩码
+    const [linkPermission, setLinkPermission] = useState<number>(0)
+    const [featureModalVisible, setFeatureModalVisible] = useState(false)
+    const [linkPermModalVisible, setLinkPermModalVisible] = useState(false)
+    // 弹窗内的草稿，取消时不回写
+    const [featureDraft, setFeatureDraft] = useState<string[]>([])
+    const [linkPermDraft, setLinkPermDraft] = useState<Record<string, boolean>>({})
 
     // 加载引擎类型
     const loadEngineTypes = async () => {
@@ -985,7 +1158,32 @@ function HostManage() {
         // 默认带一个套餐，避免「套餐配置」页一片空白；
         // 不需要时用户可以删除。
         setServerPlans([createDefaultPlanRow('默认套餐')])
+        // 新建主机：所有选项卡开启、链接权限用内置默认（0 = 系统默认掩码）
+        setDisabledTabs([])
+        setLinkPermission(0)
         setModalVisible(true)
+    }
+
+    // 打开「功能控制」弹窗：草稿从当前状态复制一份
+    const openFeatureModal = () => {
+        setFeatureDraft([...disabledTabs])
+        setFeatureModalVisible(true)
+    }
+
+    const applyFeatureModal = () => {
+        setDisabledTabs([...featureDraft])
+        setFeatureModalVisible(false)
+    }
+
+    // 打开「链接权限」弹窗
+    const openLinkPermModal = () => {
+        setLinkPermDraft(maskToPermissionFlags(linkPermission || LINK_DEFAULT_MASK))
+        setLinkPermModalVisible(true)
+    }
+
+    const applyLinkPermModal = () => {
+        setLinkPermission(permissionFlagsToMask(linkPermDraft))
+        setLinkPermModalVisible(false)
     }
 
     // 切换服务器类型：带出该平台的连接参数与存储/网络默认值。
@@ -1059,6 +1257,7 @@ function HostManage() {
                     ports_close: config.ports_close,
                     remote_port: config.remote_port,
                     limits_nums: config.limits_nums,
+                    allow_reconfigure: config.allow_reconfigure === 'deny' ? 'deny' : 'allow',
                     proxy_mode: config.proxy_mode || 'direct',
                     relay_addr: config.relay_addr,
                     vnc_ip: config.vnc_ip,
@@ -1073,7 +1272,16 @@ function HostManage() {
                     n_cpu_price: config.n_cpu_price ?? 0,
                     n_mem_price: config.n_mem_price ?? 0,
                     n_hdd_price: config.n_hdd_price ?? 0,
-                    n_net_price: config.n_net_price ?? 0
+                    n_dat_price: config.n_dat_price ?? 0,
+                    // 老配置只有合并的带宽单价：上下行都没填时用它兜底
+                    n_speed_u_price: config.n_speed_u_price ?? config.n_net_price ?? 0,
+                    n_speed_d_price: config.n_speed_d_price ?? config.n_net_price ?? 0,
+                    n_flu_price: config.n_flu_price ?? 0,
+                    n_nat_price: config.n_nat_price ?? 0,
+                    n_web_price: config.n_web_price ?? 0,
+                    n_bak_price: config.n_bak_price ?? 0,
+                    n_ip4_price: config.n_ip4_price ?? 0,
+                    n_ip6_price: config.n_ip6_price ?? 0,
                 })
 
                 // 加载系统镜像列表
@@ -1169,15 +1377,31 @@ function HostManage() {
                             nat_num: planCfg.nat_num ?? planDefaults.nat_num,
                             web_num: planCfg.web_num ?? planDefaults.web_num,
                             flu_num: planCfg.flu_num ?? planDefaults.flu_num,
-                            flu_rst: Array.isArray(planCfg.flu_rst) ? planCfg.flu_rst : planDefaults.flu_rst,
-                            nic_pub: planCfg.nic_pub ?? planDefaults.nic_pub,
-                            nic_pri: planCfg.nic_pri ?? planDefaults.nic_pri,
-                            ip4_max: planCfg.ip4_max ?? planDefaults.ip4_max,
-                            ip6_max: planCfg.ip6_max ?? planDefaults.ip6_max,
+                            // 旧数据只有 flu_rst=[重置天数, 超限阈值MB, 上次重置时间戳]：
+                            // 重置天数迁移为「每 N 天」，其余回落默认
+                            flu_bill_dir: (planCfg.flu_bill_dir || planDefaults.flu_bill_dir) as FluBillDir,
+                            flu_rst_mode: (planCfg.flu_rst_mode
+                                || (Array.isArray(planCfg.flu_rst) ? 'interval' : planDefaults.flu_rst_mode)) as FluRstMode,
+                            flu_rst_unit: (planCfg.flu_rst_unit
+                                || (Array.isArray(planCfg.flu_rst) ? 'day' : planDefaults.flu_rst_unit)) as FluResetUnit,
+                            flu_rst_num: planCfg.flu_rst_num
+                                ?? (Array.isArray(planCfg.flu_rst) && planCfg.flu_rst[0] > 0 ? planCfg.flu_rst[0] : planDefaults.flu_rst_num),
+                            flu_over_u: planCfg.flu_over_u ?? planDefaults.flu_over_u,
+                            flu_over_d: planCfg.flu_over_d ?? planDefaults.flu_over_d,
+                            nic_num: planCfg.nic_num ?? planDefaults.nic_num,
+                            // 旧套餐：nic_pub/nic_pri 是网卡数、ip6_max 是 IPv6 数，按新语义迁移
+                            ip4_pub: planCfg.ip4_pub ?? planCfg.nic_pub ?? planDefaults.ip4_pub,
+                            ip4_pri: planCfg.ip4_pri ?? planCfg.nic_pri ?? planDefaults.ip4_pri,
+                            ip6_pub: planCfg.ip6_pub ?? planCfg.ip6_max ?? planDefaults.ip6_pub,
+                            ip6_pri: planCfg.ip6_pri ?? planDefaults.ip6_pri,
                         })
                     })
                 }
                 setServerPlans(serverPlansData)
+
+                // 功能控制 / 链接权限
+                setDisabledTabs(Array.isArray(config.disabled_tabs) ? config.disabled_tabs : [])
+                setLinkPermission(Number(config.link_permission) || 0)
 
                 setModalVisible(true)
             }
@@ -1246,6 +1470,22 @@ function HostManage() {
                 }
             }
 
+            // 网络配额校验：
+            // 1) 网卡不能超过最大网卡数量（公网网卡 = max(公网V4, 公网V6)，内网同理）；
+            // 2) 每个套餐至少要允许 1 张网卡，否则创建出来的虚拟机没有网络。
+            for (const row of serverPlans) {
+                if (!row.planName) continue
+                if (!row.nic_num || row.nic_num < 1) {
+                    message.error(`套餐「${row.planName}」的最大网卡数量必须大于 0`)
+                    return
+                }
+                const need = planNicCount(row)
+                if (need.total > row.nic_num) {
+                    message.error(`套餐「${row.planName}」需要 ${need.total} 张网卡（公网 ${need.pub} + 内网 ${need.pri}），超过最大网卡数量 ${row.nic_num}`)
+                    return
+                }
+            }
+
             // 构建套餐配置
             const server_plan: Record<string, any> = {}
             serverPlans.forEach(row => {
@@ -1268,11 +1508,17 @@ function HostManage() {
                         nat_num: row.nat_num,
                         web_num: row.web_num,
                         flu_num: row.flu_num,
-                        flu_rst: Array.isArray(row.flu_rst) && row.flu_rst.length === 3 ? row.flu_rst : [31, 10, 0],
-                        nic_pub: row.nic_pub,
-                        nic_pri: row.nic_pri,
-                        ip4_max: row.ip4_max,
-                        ip6_max: row.ip6_max,
+                        flu_bill_dir: row.flu_bill_dir || 'both',
+                        flu_rst_mode: row.flu_rst_mode || 'calendar',
+                        flu_rst_unit: row.flu_rst_unit || 'month',
+                        flu_rst_num: row.flu_rst_num ?? 1,
+                        flu_over_u: row.flu_over_u ?? 0,
+                        flu_over_d: row.flu_over_d ?? 0,
+                        nic_num: row.nic_num,
+                        ip4_pub: row.ip4_pub,
+                        ip4_pri: row.ip4_pri,
+                        ip6_pub: row.ip6_pub,
+                        ip6_pri: row.ip6_pri,
                     }
                 }
             })
@@ -1320,8 +1566,20 @@ function HostManage() {
                 n_cpu_price: Number(values.n_cpu_price) || 0,
                 n_mem_price: Number(values.n_mem_price) || 0,
                 n_hdd_price: Number(values.n_hdd_price) || 0,
-                n_net_price: Number(values.n_net_price) || 0,
+                n_dat_price: Number(values.n_dat_price) || 0,
+                n_speed_u_price: Number(values.n_speed_u_price) || 0,
+                n_speed_d_price: Number(values.n_speed_d_price) || 0,
+                n_flu_price: Number(values.n_flu_price) || 0,
+                n_nat_price: Number(values.n_nat_price) || 0,
+                n_web_price: Number(values.n_web_price) || 0,
+                n_bak_price: Number(values.n_bak_price) || 0,
+                n_ip4_price: Number(values.n_ip4_price) || 0,
+                n_ip6_price: Number(values.n_ip6_price) || 0,
                 server_plan,
+                // 允许改配（下拉）/ 功能控制（弹窗）/ 链接权限（弹窗）
+                allow_reconfigure: values.allow_reconfigure === 'deny' ? 'deny' : 'allow',
+                disabled_tabs: disabledTabs,
+                link_permission: linkPermission || 0,
             }
 
             if (editMode === 'add') {
@@ -2035,6 +2293,37 @@ function HostManage() {
                                                     <InputNumber placeholder="例如: 100" min={0} className="w-full"/>
                                                 </Form.Item>
                                             </Col>
+                                            <Col span={6}>
+                                                <Form.Item name="allow_reconfigure" label="允许改配"
+                                                           tooltip="关闭后，该主机下所有虚拟机不接受配置变更（CPU/内存/带宽/网卡等）；开关机、改密、重装不受影响">
+                                                    <Select
+                                                        options={[
+                                                            {value: 'allow', label: '允许（默认）'},
+                                                            {value: 'deny', label: '禁止改配'},
+                                                        ]}
+                                                    />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item label="功能控制"
+                                                           tooltip="控制虚拟机详情页展示哪些选项卡；平台本身不支持的项不可勾选">
+                                                    <Button icon={<ControlOutlined/>} block
+                                                            onClick={openFeatureModal}>
+                                                        {disabledTabs.length > 0
+                                                            ? `已关闭 ${disabledTabs.length} / ${VM_DETAIL_TAB_OPTIONS.length}`
+                                                            : `全部开启 (${VM_DETAIL_TAB_OPTIONS.length})`}
+                                                    </Button>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item label="链接权限"
+                                                           tooltip="生成访问密钥 / 访问链接时的默认权限；用户权限永远不开放给链接">
+                                                    <Button icon={<LinkOutlined/>} block
+                                                            onClick={openLinkPermModal}>
+                                                        已开启 {countLinkPermissions(linkPermission)} / {LINK_PERMISSION_OPTIONS.length} 项
+                                                    </Button>
+                                                </Form.Item>
+                                            </Col>
                                         </Row>
 
                                     </div>
@@ -2092,7 +2381,7 @@ function HostManage() {
                                         </Row>
 
                                         <h4 className="font-medium mb-3 mt-4">售价配置</h4>
-                                        <Row gutter={8} className="mb-4">
+                                        <Row gutter={8}>
                                             <Col span={6}>
                                                 <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_cpu_price')}>处理器核心单价</div>
                                                 <Form.Item name="n_cpu_price" noStyle>
@@ -2106,14 +2395,66 @@ function HostManage() {
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
-                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_hdd_price')}>虚拟机硬盘单价</div>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_hdd_price')}>系统盘单价</div>
                                                 <Form.Item name="n_hdd_price" noStyle>
                                                     <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
                                                 </Form.Item>
                                             </Col>
                                             <Col span={6}>
-                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_net_price')}>虚拟机带宽单价</div>
-                                                <Form.Item name="n_net_price" noStyle>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_dat_price')}>数据盘单价</div>
+                                                <Form.Item name="n_dat_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                        <Row gutter={8} className="mt-3">
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_speed_u_price')}>上行带宽单价</div>
+                                                <Form.Item name="n_speed_u_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_speed_d_price')}>下行带宽单价</div>
+                                                <Form.Item name="n_speed_d_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_flu_price')}>流量单价(GB)</div>
+                                                <Form.Item name="n_flu_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_nat_price')}>NAT端口单价</div>
+                                                <Form.Item name="n_nat_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                        <Row gutter={8} className="mt-3 mb-4">
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_web_price')}>反向代理单价</div>
+                                                <Form.Item name="n_web_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_bak_price')}>备份数量单价</div>
+                                                <Form.Item name="n_bak_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_ip4_price')}>公网IPv4单价</div>
+                                                <Form.Item name="n_ip4_price" noStyle>
+                                                    <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <div className="text-xs text-gray-500 mb-1" title={fieldHint('n_ip6_price')}>公网IPv6单价</div>
+                                                <Form.Item name="n_ip6_price" noStyle>
                                                     <InputNumber min={0} step={0.01} className="w-full" placeholder="0.00"/>
                                                 </Form.Item>
                                             </Col>
@@ -2157,7 +2498,6 @@ function HostManage() {
                                             </Col>
                                         </Row>
 
-                                        <h4 className="font-medium mb-3 mt-4">端口与访问</h4>
                                         <Row gutter={16}>
                                             <Col span={6}>
                                                 <Form.Item name="ports_start" label="TCP端口起始"
@@ -2648,7 +2988,7 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.hdd_num}>硬盘(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.hdd_num}>系统盘(MB)</div>
                                                             <InputNumber
                                                                 value={row.hdd_num}
                                                                 min={1024}
@@ -2662,15 +3002,15 @@ function HostManage() {
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_num}>流量(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.dat_all}>数据盘总容量(MB)</div>
                                                             <InputNumber
-                                                                value={row.flu_num}
+                                                                value={row.dat_all}
                                                                 min={0}
                                                                 step={1024}
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    newPlans[index].flu_num = v ?? 102400
+                                                                    newPlans[index].dat_all = v ?? 0
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
@@ -2843,60 +3183,57 @@ function HostManage() {
                                                     </Row>
                                                     <Row gutter={8} className="mt-2">
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.dat_all}>数据盘总容量(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_num}>流量(MB)</div>
                                                             <InputNumber
-                                                                value={row.dat_all}
+                                                                value={row.flu_num}
                                                                 min={0}
                                                                 step={1024}
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    newPlans[index].dat_all = v ?? 0
+                                                                    newPlans[index].flu_num = v ?? 102400
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_rst_days}>流量重置(天)</div>
-                                                            <InputNumber
-                                                                value={row.flu_rst?.[0] ?? 31}
-                                                                min={1}
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_bill_dir}>流量计费方向</div>
+                                                            <Select
+                                                                value={row.flu_bill_dir}
                                                                 className="w-full"
-                                                                onChange={(v) => {
+                                                                options={(['both', 'up', 'down'] as FluBillDir[]).map(v => ({
+                                                                    value: v,
+                                                                    label: v === 'both' ? `${FLU_BILL_DIR_LABELS[v]}（默认）` : FLU_BILL_DIR_LABELS[v],
+                                                                }))}
+                                                                onChange={(v: FluBillDir) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    const cur = Array.isArray(newPlans[index].flu_rst) ? [...newPlans[index].flu_rst] : [31, 10, 0]
-                                                                    cur[0] = v ?? 31
-                                                                    newPlans[index].flu_rst = [cur[0], cur[1] ?? 10, cur[2] ?? 0]
+                                                                    newPlans[index].flu_bill_dir = v
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_rst_over}>超限阈值(MB)</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_over_u}>超限后上行(Mbps)</div>
                                                             <InputNumber
-                                                                value={row.flu_rst?.[1] ?? 10}
+                                                                value={row.flu_over_u}
                                                                 min={0}
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    const cur = Array.isArray(newPlans[index].flu_rst) ? [...newPlans[index].flu_rst] : [31, 10, 0]
-                                                                    cur[1] = v ?? 10
-                                                                    newPlans[index].flu_rst = [cur[0] ?? 31, cur[1], cur[2] ?? 0]
+                                                                    newPlans[index].flu_over_u = v ?? 0
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_rst_at}>上次重置时间戳</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_over_d}>超限后下行(Mbps)</div>
                                                             <InputNumber
-                                                                value={row.flu_rst?.[2] ?? 0}
+                                                                value={row.flu_over_d}
                                                                 min={0}
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    const cur = Array.isArray(newPlans[index].flu_rst) ? [...newPlans[index].flu_rst] : [31, 10, 0]
-                                                                    cur[2] = v ?? 0
-                                                                    newPlans[index].flu_rst = [cur[0] ?? 31, cur[1] ?? 10, cur[2]]
+                                                                    newPlans[index].flu_over_d = v ?? 0
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
@@ -2904,58 +3241,108 @@ function HostManage() {
                                                     </Row>
                                                     <Row gutter={8} className="mt-2">
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.nic_pub}>公网网卡数量</div>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.flu_rst_mode}>流量重置规则</div>
+                                                            <Space.Compact style={{width: '100%'}}>
+                                                                <InputNumber
+                                                                    value={row.flu_rst_num}
+                                                                    min={fluResetNumRange(row.flu_rst_mode, row.flu_rst_unit).min}
+                                                                    max={fluResetNumRange(row.flu_rst_mode, row.flu_rst_unit).max}
+                                                                    style={{width: '38%'}}
+                                                                    onChange={(v) => {
+                                                                        const newPlans = [...serverPlans]
+                                                                        newPlans[index].flu_rst_num = v ?? 1
+                                                                        setServerPlans(newPlans)
+                                                                    }}
+                                                                />
+                                                                <Select
+                                                                    value={fluRuleValue(row.flu_rst_mode, row.flu_rst_unit)}
+                                                                    style={{flex: 1, minWidth: 0}}
+                                                                    options={FLU_RULE_OPTIONS}
+                                                                    onChange={(v: string) => {
+                                                                        const [mode, unit] = parseFluRule(v)
+                                                                        const newPlans = [...serverPlans]
+                                                                        const target = newPlans[index]
+                                                                        target.flu_rst_mode = mode
+                                                                        target.flu_rst_unit = unit
+                                                                        const range = fluResetNumRange(mode, unit)
+                                                                        target.flu_rst_num = Math.min(Math.max(target.flu_rst_num || range.min, range.min), range.max)
+                                                                        setServerPlans(newPlans)
+                                                                    }}
+                                                                />
+                                                            </Space.Compact>
+                                                        </Col>
+                                                        <Col span={6}>
+                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.nic_num}>最大网卡数量</div>
                                                             <InputNumber
-                                                                value={row.nic_pub}
-                                                                min={0}
+                                                                value={row.nic_num}
+                                                                min={1}
                                                                 className="w-full"
                                                                 onChange={(v) => {
                                                                     const newPlans = [...serverPlans]
-                                                                    newPlans[index].nic_pub = v ?? 0
+                                                                    newPlans[index].nic_num = v ?? 1
                                                                     setServerPlans(newPlans)
                                                                 }}
                                                             />
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.nic_pri}>内网网卡数量</div>
-                                                            <InputNumber
-                                                                value={row.nic_pri}
-                                                                min={0}
-                                                                className="w-full"
-                                                                onChange={(v) => {
-                                                                    const newPlans = [...serverPlans]
-                                                                    newPlans[index].nic_pri = v ?? 1
-                                                                    setServerPlans(newPlans)
-                                                                }}
-                                                            />
+                                                            <div className="text-xs text-gray-500 mb-1"
+                                                                 title={`${PLAN_FIELD_HINTS.ip4_pub}；${PLAN_FIELD_HINTS.ip4_pri}`}>
+                                                                IPv4 数量（公网 / 内网）
+                                                            </div>
+                                                            <Space.Compact style={{width: '100%'}}>
+                                                                <InputNumber
+                                                                    addonBefore="公网"
+                                                                    value={row.ip4_pub}
+                                                                    min={0}
+                                                                    style={{width: '50%'}}
+                                                                    onChange={(v) => {
+                                                                        const newPlans = [...serverPlans]
+                                                                        newPlans[index].ip4_pub = v ?? 0
+                                                                        setServerPlans(newPlans)
+                                                                    }}
+                                                                />
+                                                                <InputNumber
+                                                                    addonBefore="内网"
+                                                                    value={row.ip4_pri}
+                                                                    min={0}
+                                                                    style={{width: '50%'}}
+                                                                    onChange={(v) => {
+                                                                        const newPlans = [...serverPlans]
+                                                                        newPlans[index].ip4_pri = v ?? 0
+                                                                        setServerPlans(newPlans)
+                                                                    }}
+                                                                />
+                                                            </Space.Compact>
                                                         </Col>
                                                         <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.ip4_max}>IPv4最大数量</div>
-                                                            <InputNumber
-                                                                value={row.ip4_max}
-                                                                min={0}
-                                                                max={(row.nic_pub || 0) + (row.nic_pri || 0)}
-                                                                className="w-full"
-                                                                onChange={(v) => {
-                                                                    const newPlans = [...serverPlans]
-                                                                    newPlans[index].ip4_max = v ?? 1
-                                                                    setServerPlans(newPlans)
-                                                                }}
-                                                            />
-                                                        </Col>
-                                                        <Col span={6}>
-                                                            <div className="text-xs text-gray-500 mb-1" title={PLAN_FIELD_HINTS.ip6_max}>IPv6最大数量</div>
-                                                            <InputNumber
-                                                                value={row.ip6_max}
-                                                                min={0}
-                                                                max={(row.nic_pub || 0) + (row.nic_pri || 0)}
-                                                                className="w-full"
-                                                                onChange={(v) => {
-                                                                    const newPlans = [...serverPlans]
-                                                                    newPlans[index].ip6_max = v ?? 0
-                                                                    setServerPlans(newPlans)
-                                                                }}
-                                                            />
+                                                            <div className="text-xs text-gray-500 mb-1"
+                                                                 title={`${PLAN_FIELD_HINTS.ip6_pub}；${PLAN_FIELD_HINTS.ip6_pri}`}>
+                                                                IPv6 数量（公网 / 内网）
+                                                            </div>
+                                                            <Space.Compact style={{width: '100%'}}>
+                                                                <InputNumber
+                                                                    addonBefore="公网"
+                                                                    value={row.ip6_pub}
+                                                                    min={0}
+                                                                    style={{width: '50%'}}
+                                                                    onChange={(v) => {
+                                                                        const newPlans = [...serverPlans]
+                                                                        newPlans[index].ip6_pub = v ?? 0
+                                                                        setServerPlans(newPlans)
+                                                                    }}
+                                                                />
+                                                                <InputNumber
+                                                                    addonBefore="内网"
+                                                                    value={row.ip6_pri}
+                                                                    min={0}
+                                                                    style={{width: '50%'}}
+                                                                    onChange={(v) => {
+                                                                        const newPlans = [...serverPlans]
+                                                                        newPlans[index].ip6_pri = v ?? 0
+                                                                        setServerPlans(newPlans)
+                                                                    }}
+                                                                />
+                                                            </Space.Compact>
                                                         </Col>
                                                     </Row>
                                                 </div>
@@ -2975,6 +3362,98 @@ function HostManage() {
                         ]}
                     />
                 </Form>
+            </Modal>
+
+            {/* 功能控制：逐项开关虚拟机详情页的选项卡 */}
+            <Modal
+                title="功能控制"
+                open={featureModalVisible}
+                onCancel={() => setFeatureModalVisible(false)}
+                onOk={applyFeatureModal}
+                okText="应用"
+                cancelText="取消"
+                width="min(680px, calc(100vw - 32px))"
+            >
+                {(() => {
+                    const platformTabLock = engineTypes[selectedHostType]?.tab_lock || []
+                    return (
+                        <>
+                            <p className="text-xs text-gray-500 mb-3">
+                                勾选＝在虚拟机详情页展示该选项卡。默认全部开启；标注「平台不支持」的项由所选服务器类型决定，无法勾选。
+                            </p>
+                            <div className="grid grid-cols-2 gap-2 max-h-[min(50dvh,420px)] overflow-y-auto pr-1">
+                                {VM_DETAIL_TAB_OPTIONS.map(tab => {
+                                    const locked = platformTabLock.includes(tab.key)
+                                    const checked = !locked && !featureDraft.includes(tab.key)
+                                    return (
+                                        <label
+                                            key={tab.key}
+                                            className={`flex items-center gap-2 rounded-md border px-3 py-2 ${locked ? 'opacity-55 cursor-not-allowed border-gray-200' : 'cursor-pointer border-gray-200 hover:border-blue-400'}`}
+                                        >
+                                            <Checkbox
+                                                checked={checked}
+                                                disabled={locked}
+                                                onChange={(e) => {
+                                                    setFeatureDraft(prev => e.target.checked
+                                                        ? prev.filter(k => k !== tab.key)
+                                                        : [...prev, tab.key])
+                                                }}
+                                            />
+                                            <span className="text-sm">{tab.label}</span>
+                                            {locked && <Tag className="!m-0 !ml-auto" color="default">平台不支持</Tag>}
+                                        </label>
+                                    )
+                                })}
+                            </div>
+                        </>
+                    )
+                })()}
+            </Modal>
+
+            {/* 链接权限：访问密钥 / 访问链接的默认权限 */}
+            <Modal
+                title="链接权限"
+                open={linkPermModalVisible}
+                onCancel={() => setLinkPermModalVisible(false)}
+                onOk={applyLinkPermModal}
+                okText="应用"
+                cancelText="取消"
+                width="min(680px, calc(100vw - 32px))"
+            >
+                <p className="text-xs text-gray-500 mb-3">
+                    这里是访问密钥 / 访问链接登录后的默认权限，按主机分别设置。
+                    「用户权限」强制关闭：链接若能管理用户，就可以自建高权限用户绕过本限制。
+                </p>
+                <div className="grid grid-cols-2 gap-2 max-h-[min(50dvh,420px)] overflow-y-auto pr-1">
+                    <label className="flex items-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-2 opacity-55 cursor-not-allowed">
+                        <Checkbox checked={false} disabled/>
+                        <span className="text-sm">用户权限</span>
+                        <Tag className="!m-0 !ml-auto" color="default">强制关闭</Tag>
+                    </label>
+                    {LINK_PERMISSION_OPTIONS.map(opt => (
+                        <label
+                            key={opt.field}
+                            className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 cursor-pointer hover:border-blue-400"
+                        >
+                            <Checkbox
+                                checked={!!linkPermDraft[opt.field]}
+                                onChange={(e) => setLinkPermDraft(prev => ({...prev, [opt.field]: e.target.checked}))}
+                            />
+                            <span className="text-sm">{opt.label}</span>
+                        </label>
+                    ))}
+                </div>
+                <div className="mt-3 flex items-center justify-between">
+                    <Button
+                        size="small"
+                        onClick={() => setLinkPermDraft(maskToPermissionFlags(LINK_DEFAULT_MASK))}
+                    >
+                        恢复内置默认
+                    </Button>
+                    <span className="text-xs text-gray-500">
+                        已选 {LINK_PERMISSION_OPTIONS.filter(o => linkPermDraft[o.field]).length} / {LINK_PERMISSION_OPTIONS.length} 项
+                    </span>
+                </div>
             </Modal>
 
             {/* 管理主机：系统模板 / ISO 目录文件与镜像绑定 */}

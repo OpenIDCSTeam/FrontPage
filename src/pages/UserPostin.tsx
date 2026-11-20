@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { Form, Input, Button, Alert } from 'antd'
 import { UserOutlined, LockOutlined, MailOutlined, UserAddOutlined, CheckCircleOutlined, CloseCircleOutlined, GlobalOutlined } from '@ant-design/icons'
 import api from '@/utils/apis.ts'
+import { useSiteStore } from '@/utils/site.ts'
 import AuthLayout from '@/components/AuthLayout'
 
 /**
@@ -21,6 +22,7 @@ interface RegisterForm {
  */
 function UserPostin() {
   const navigate = useNavigate()
+  const { initialized, load: loadSiteInfo } = useSiteStore()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
   const [success, setSuccess] = useState<string>('')
@@ -29,6 +31,17 @@ function UserPostin() {
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('')
   const [turnstileToken, setTurnstileToken] = useState('')
   const turnstileWidgetId = useRef<string | null>(null)
+
+  // 未初始化时先完成管理员创建，注册出来的普通账号无法登录后台
+  useEffect(() => {
+    loadSiteInfo()
+  }, [loadSiteInfo])
+
+  useEffect(() => {
+    if (initialized === false) {
+      navigate('/init', { replace: true })
+    }
+  }, [initialized, navigate])
 
   // 加载Turnstile配置
   useEffect(() => {

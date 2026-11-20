@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, ReactNode } from 'react'
 import { ConfigProvider } from 'antd'
 import type { ThemeConfig } from 'antd'
 import type { Locale } from 'antd/es/locale'
@@ -28,9 +28,11 @@ import {
   getThemeCssVariables,
   getThemePalette,
   ThemeMode,
+  ThemePreference,
   ThemePreset,
 } from '../config/theme.config'
 import { FontId, getSavedFontId, saveFontId, applyFontId } from '../config/fonts.config'
+import { isRTLLanguage } from '../utils/i18n'
 
 const ANTD_LOCALES: Record<string, Locale> = {
   'zh-cn': zhCN,
@@ -44,6 +46,8 @@ const ANTD_LOCALES: Record<string, Locale> = {
   'pt-br': ptPT,
   'es-es': esES,
   'ru-ru': ruRU,
+  // 阿拉伯语界面暂以英文词表兜底，内置组件文案也用英文，避免混入中文
+  'ar-sa': enUS,
 }
 
 const DAYJS_LOCALES: Record<string, string> = {
@@ -58,13 +62,33 @@ const DAYJS_LOCALES: Record<string, string> = {
   'pt-br': 'pt',
   'es-es': 'es',
   'ru-ru': 'ru',
+  'ar-sa': 'en',
 }
 
-const resolveLanguage = () => localStorage.getItem('language') || 'zh-cn'
+const resolveLanguage = () => {
+  const saved = localStorage.getItem('language')
+  if (!saved || saved === 'auto') return (navigator.language || 'zh-cn').toLowerCase()
+  return saved.toLowerCase()
+}
+
+/** 用户偏好；system 需要实时解析成当前实际生效的 light / dark */
+function prefersDarkScheme(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+function resolveThemeMode(preference: ThemePreference): ThemeMode {
+  if (preference === 'system') return prefersDarkScheme() ? 'dark' : 'light'
+  return preference
+}
 
 interface ThemeContextType {
+  /** 实际生效的明暗模式（system 已解析） */
   theme: ThemeMode
-  setTheme: (theme: ThemeMode) => void
+  /** 用户选择的偏好，可能是 system */
+  themePreference: ThemePreference
+  setTheme: (preference: ThemePreference) => void
   toggleTheme: () => void
   themePreset: ThemePreset
   setThemePreset: (preset: ThemePreset) => void
@@ -79,6 +103,7 @@ interface ThemeContextType {
 
 type AppearanceState = {
   theme: ThemeMode
+  themePreference: ThemePreference
   themePreset: ThemePreset
   transparentMode: boolean
   roundedMode: boolean
@@ -87,10 +112,10 @@ type AppearanceState = {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 const PRESET_KEY = 'themePreset'
-const VALID_PRESETS: ThemePreset[] = ['minimal', 'tech', 'cute']
+const VALID_PRESETS: ThemePreset[] = ['minimal', 'tech', 'techLite', 'gold', 'cute', 'glass']
 
 function readInitialAppearance(): AppearanceState {
-  let theme: ThemeMode = 'light'
+  let themePreference: ThemePreference = 'light'
   let themePreset: ThemePreset = 'minimal'
   let transparentMode = false
   let roundedMode = false
@@ -98,10 +123,10 @@ function readInitialAppearance(): AppearanceState {
   try {
     const savedMode = localStorage.getItem('theme')
     const legacyMmuiMode = localStorage.getItem('mmui-dark-mode')
-    if (savedMode === 'dark' || savedMode === 'light') {
-      theme = savedMode
+    if (savedMode === 'dark' || savedMode === 'light' || savedMode === 'system') {
+      themePreference = savedMode
     } else if (legacyMmuiMode === 'enabled') {
-      theme = 'dark'
+      themePreference = 'dark'
     }
 
     const savedPreset = localStorage.getItem(PRESET_KEY)
@@ -119,7 +144,14 @@ function readInitialAppearance(): AppearanceState {
     // 浏览器禁用本地存储时使用默认外观。
   }
 
-  return { theme, themePreset, transparentMode, roundedMode, fontId: getSavedFontId() }
+  return {
+    theme: resolveThemeMode(themePreference),
+    themePreference,
+    themePreset,
+    transparentMode,
+    roundedMode,
+    fontId: getSavedFontId(),
+  }
 }
 
 function applyAppearance(state: AppearanceState): void {
@@ -167,6 +199,7 @@ interface ThemeProviderProps {
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeMode>(initialAppearance.theme)
+  const [themePreference, setThemePreference] = useState<ThemePreference>(initialAppearance.themePreference)
   const [themePreset, setThemePresetState] = useState<ThemePreset>(initialAppearance.themePreset)
   const [transparentMode, setTransparentMode] = useState(initialAppearance.transparentMode)
   const [roundedMode, setRoundedMode] = useState(initialAppearance.roundedMode)
@@ -187,19 +220,31 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   }, [localeCode])
 
   const antdLocale = ANTD_LOCALES[localeCode] || zhCN
+  const direction: 'ltr' | 'rtl' = isRTLLanguage(localeCode) ? 'rtl' : 'ltr'
   const tableLocale = {
     ...(antdLocale.Table || {}),
     emptyText: <div className="art-table-empty"><p>暂无数据</p></div>,
   }
 
   useLayoutEffect(() => {
-    const appearance = { theme, themePreset, transparentMode, roundedMode, fontId }
+    const appearance = { theme, themePreference, themePreset, transparentMode, roundedMode, fontId }
     applyAppearance(appearance)
-    localStorage.setItem('theme', theme)
+    localStorage.setItem('theme', themePreference)
     localStorage.setItem(PRESET_KEY, themePreset)
     localStorage.setItem('transparentMode', String(transparentMode))
     localStorage.setItem('roundedMode', String(roundedMode))
-  }, [theme, themePreset, transparentMode, roundedMode, fontId])
+  }, [theme, themePreference, themePreset, transparentMode, roundedMode, fontId])
+
+  // 跟随浏览器：系统配色变化时实时切换，无需刷新页面
+  useEffect(() => {
+    if (themePreference !== 'system') return
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = () => setThemeState(media.matches ? 'dark' : 'light')
+    apply()
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
+  }, [themePreference])
 
   useLayoutEffect(() => {
     applyFontId(fontId)
@@ -216,9 +261,21 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     document.documentElement.removeAttribute('data-anime-blur')
   }, [])
 
-  const setTheme = useCallback((nextTheme: ThemeMode) => setThemeState(nextTheme), [])
+  // 记录当前实际生效的模式，供「跟随」状态下的一次点击切换使用
+  const themeRef = useRef<ThemeMode>(theme)
+  useEffect(() => {
+    themeRef.current = theme
+  }, [theme])
+
+  const setTheme = useCallback((nextPreference: ThemePreference) => {
+    setThemePreference(nextPreference)
+    setThemeState(resolveThemeMode(nextPreference))
+  }, [])
   const toggleTheme = useCallback(() => {
-    setThemeState(current => current === 'light' ? 'dark' : 'light')
+    const nextTheme: ThemeMode = themeRef.current === 'light' ? 'dark' : 'light'
+    themeRef.current = nextTheme
+    setThemePreference(nextTheme)
+    setThemeState(nextTheme)
   }, [])
   const setThemePreset = useCallback((nextPreset: ThemePreset) => {
     if (VALID_PRESETS.includes(nextPreset)) setThemePresetState(nextPreset)
@@ -238,6 +295,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   return (
     <ThemeContext.Provider value={{
       theme,
+      themePreference,
       setTheme,
       toggleTheme,
       themePreset,
@@ -252,6 +310,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     }}>
       <ConfigProvider
         theme={themeConfig}
+        direction={direction}
         locale={{ ...antdLocale, Table: tableLocale }}
         modal={{ mask: false } as any}
       >

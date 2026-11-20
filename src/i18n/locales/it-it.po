@@ -103,7 +103,7 @@ msgid "启用"
 msgstr "abilitare"
 
 msgid "复制"
-msgstr "copia"
+msgstr "Copia"
 
 msgid "导入"
 msgstr "importare"
@@ -181,7 +181,7 @@ msgid "断开"
 msgstr "disconnettersi"
 
 msgid "暂停"
-msgstr "pausa"
+msgstr "Pausa"
 
 msgid "更新"
 msgstr "rinnovare"
@@ -376,7 +376,7 @@ msgid "一致性"
 msgstr "coerenza"
 
 msgid "主机"
-msgstr "Ospite"
+msgstr "Host"
 
 msgid "主题"
 msgstr "tema"
@@ -400,7 +400,7 @@ msgid "仪表盘"
 msgstr "Pannello di controllo"
 
 msgid "任务"
-msgstr "Compito"
+msgstr "Attività"
 
 msgid "使用率"
 msgstr "Tasso di utilizzo"
@@ -508,7 +508,7 @@ msgid "定义"
 msgstr "definizione"
 
 msgid "实例"
-msgstr "Esempio"
+msgstr "Istanza"
 
 msgid "容器"
 msgstr "contenitore"
@@ -532,7 +532,7 @@ msgid "布局"
 msgstr "disposizione"
 
 msgid "带宽"
-msgstr "larghezza di banda"
+msgstr "Larghezza di banda"
 
 msgid "平台"
 msgstr "piattaforma"
@@ -613,7 +613,7 @@ msgid "方法"
 msgstr "metodo"
 
 msgid "日志"
-msgstr "tronco d'albero"
+msgstr "Registro"
 
 msgid "映射"
 msgstr "mappatura"
@@ -652,7 +652,7 @@ msgid "样式"
 msgstr "stile"
 
 msgid "核心"
-msgstr "nucleo"
+msgstr "Core"
 
 msgid "格式"
 msgstr "Formato"
@@ -679,7 +679,7 @@ msgid "注释"
 msgstr "Commento"
 
 msgid "流量"
-msgstr "fluire"
+msgstr "Traffico"
 
 msgid "消息"
 msgstr "informazioni"
@@ -691,10 +691,10 @@ msgid "版本"
 msgstr "Versione"
 
 msgid "状态"
-msgstr "stato"
+msgstr "Stato"
 
 msgid "用户"
-msgstr "utente"
+msgstr "Utente"
 
 msgid "用途"
 msgstr "utilizzo"
@@ -712,7 +712,7 @@ msgid "硬盘"
 msgstr "disco rigido"
 
 msgid "磁盘"
-msgstr "disco"
+msgstr "Disco"
 
 msgid "程序"
 msgstr "programma"
@@ -721,7 +721,7 @@ msgid "稳定性"
 msgstr "stabilità"
 
 msgid "端口"
-msgstr "porta"
+msgstr "Porta"
 
 msgid "策略"
 msgstr "Strategia"
@@ -808,7 +808,7 @@ msgid "设备"
 msgstr "attrezzatura"
 
 msgid "设置"
-msgstr "impostare"
+msgstr "Impostazioni"
 
 msgid "详情"
 msgstr "Dettagli"
@@ -823,7 +823,7 @@ msgid "账户"
 msgstr "Account"
 
 msgid "资源"
-msgstr "risorsa"
+msgstr "Risorsa"
 
 msgid "路径"
 msgstr "sentiero"
@@ -2032,7 +2032,7 @@ msgid "系统界面"
 msgstr "Interfaccia di sistema"
 
 msgid "系统盘"
-msgstr "disco di sistema"
+msgstr "Disco di sistema"
 
 msgid "系统空间"
 msgstr "spazio del sistema"
@@ -2182,7 +2182,7 @@ msgid "转发规则"
 msgstr "Regole di inoltro"
 
 msgid "运行中"
-msgstr "Corsa"
+msgstr "In esecuzione"
 
 msgid "运行日志"
 msgstr "Esegui registro"
@@ -2997,3 +2997,243 @@ msgstr "Regola del firewall"
 
 msgid "快照管理"
 msgstr "Gestione snapshot"
+
+msgid "外观设置"
+msgstr "Aspetto"
+
+msgid "选择工作台风格，偏好自动保存"
+msgstr "Scegli uno stile dell'area di lavoro; le preferenze vengono salvate automaticamente"
+
+msgid "界面主题"
+msgstr "Tema dell'interfaccia"
+
+msgid "明暗模式"
+msgstr "Modalità chiara/scura"
+
+msgid "跟随"
+msgstr "Auto"
+
+msgid "跟随浏览器/系统明暗设置"
+msgstr "Segui il tema chiaro/scuro del browser o del sistema"
+
+msgid "透明表面"
+msgstr "Superfici trasparenti"
+
+msgid "柔和背景透过面板"
+msgstr "Lo sfondo traspare dai pannelli"
+
+msgid "圆润边角"
+msgstr "Angoli arrotondati"
+
+msgid "适度放大卡片与控件圆角"
+msgstr "Aumenta leggermente i raggi di schede e controlli"
+
+msgid "界面字体"
+msgstr "Carattere dell'interfaccia"
+
+msgid "数字与正文可分别优化阅读"
+msgstr "Ottimizza separatamente cifre e testo"
+
+msgid "打开外观设置"
+msgstr "Apri impostazioni aspetto"
+
+msgid "简约纯白"
+msgstr "Bianco minimal"
+
+msgid "明净留白 · 克制蓝"
+msgstr "Pulito · blu"
+
+msgid "科技大气"
+msgstr "Tech imponente"
+
+msgid "深海蓝 · 电子青"
+msgstr "Blu · ciano"
+
+msgid "科技简约"
+msgstr "Tech minimale"
+
+msgid "浅蓝底 · 精密线"
+msgstr "Chiaro · preciso"
+
+msgid "黑金质感"
+msgstr "Nero oro"
+
+msgid "墨黑 · 琥珀金"
+msgstr "Nero · ambra"
+
+msgid "清爽可爱"
+msgstr "Fresco e carino"
+
+msgid "薄荷绿 · 圆润"
+msgstr "Menta · tondo"
+
+msgid "透明炫酷"
+msgstr "Vetro"
+
+msgid "紫雾 · 磨砂层"
+msgstr "Viola · opaco"
+
+msgid "切换语言"
+msgstr "Cambia lingua"
+
+msgid "控制台与快捷操作"
+msgstr "Console e azioni rapide"
+
+msgid "实时画面"
+msgstr "Schermo live"
+
+msgid "快捷操作"
+msgstr "Azioni rapide"
+
+msgid "电源 · 系统 · 访问"
+msgstr "Alimentazione · Sistema · Accesso"
+
+msgid "未运行"
+msgstr "Non in esecuzione"
+
+msgid "时间范围"
+msgstr "Intervallo"
+
+msgid "所选时间范围内暂无监控数据"
+msgstr "Nessun dato di monitoraggio nell'intervallo selezionato"
+
+msgid "配额配置"
+msgstr "Quote"
+
+msgid "实例状态"
+msgstr "Stato istanza"
+
+msgid "复制系统密码"
+msgstr "Copia password di sistema"
+
+msgid "复制远程密码"
+msgstr "Copia password remota"
+
+msgid "显示系统密码"
+msgstr "Mostra password di sistema"
+
+msgid "显示远程密码"
+msgstr "Mostra password remota"
+
+msgid "隐藏系统密码"
+msgstr "Nascondi password di sistema"
+
+msgid "隐藏远程密码"
+msgstr "Nascondi password remota"
+
+msgid "修改系统密码"
+msgstr "Modifica password di sistema"
+
+msgid "修改远程密码"
+msgstr "Modifica password remota"
+
+msgid "无权限查看"
+msgstr "Nessuna autorizzazione"
+
+msgid "未设置"
+msgstr "Non impostato"
+
+msgid "虚拟机截图"
+msgstr "Schermata VM"
+
+msgid "虚拟机未运行，无法获取截图"
+msgstr "La VM non è in esecuzione, impossibile ottenere lo screenshot"
+
+msgid "无法获取截图"
+msgstr "Impossibile ottenere lo screenshot"
+
+msgid "获取截图中..."
+msgstr "Acquisizione schermata..."
+
+msgid "此虚拟机所属的物理机不提供桌面截图"
+msgstr "L'host di questa VM non fornisce screenshot del desktop"
+
+msgid "资源用量"
+msgstr "Utilizzo risorse"
+
+msgid "IPv4 地址"
+msgstr "Indirizzo IPv4"
+
+msgid "IPv6 地址"
+msgstr "Indirizzo IPv6"
+
+msgid "VNC 端口"
+msgstr "Porta VNC"
+
+msgid "默认布局"
+msgstr "Layout predefinito"
+
+msgid "竖版菜单"
+msgstr "Menu verticale"
+
+msgid "虚拟机详情布局"
+msgstr "Layout dettagli VM"
+
+msgid "打开实例导航"
+msgstr "Apri navigazione istanza"
+
+msgid "展开导航"
+msgstr "Espandi navigazione"
+
+msgid "收起导航"
+msgstr "Comprimi navigazione"
+
+msgid "反代"
+msgstr "Proxy"
+
+msgid "资料"
+msgstr "Profilo"
+
+msgid "帮助"
+msgstr "Aiuto"
+
+msgid "消息中心"
+msgstr "Notifiche"
+
+msgid "搜索功能..."
+msgstr "Cerca funzioni..."
+
+msgid "管理控制台"
+msgstr "Console di amministrazione"
+
+msgid "用户控制台"
+msgstr "Console utente"
+
+msgid "该主机已关闭改配"
+msgstr "Riconfigurazione disattivata per questo host"
+
+msgid "混排（默认）"
+msgstr "Misto (predefinito)"
+
+msgid "系统无衬线"
+msgstr "Sans di sistema"
+
+msgid "完全跟随操作系统界面字体"
+msgstr "Segui completamente il font di sistema"
+
+msgid "CPU使用率"
+msgstr "Utilizzo CPU"
+
+msgid "RAM使用率"
+msgstr "Utilizzo RAM"
+
+msgid "GPU使用率"
+msgstr "Utilizzo GPU"
+
+msgid "硬盘使用率"
+msgstr "Utilizzo disco"
+
+msgid "流量使用率"
+msgstr "Utilizzo traffico"
+
+msgid "端口使用数"
+msgstr "Porte usate"
+
+msgid "上行带宽率"
+msgstr "Banda in upload"
+
+msgid "下行带宽率"
+msgstr "Banda in download"
+
+msgid "反向代理数"
+msgstr "Proxy inversi"

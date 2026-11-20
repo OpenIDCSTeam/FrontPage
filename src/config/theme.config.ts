@@ -1,7 +1,9 @@
 import { ThemeConfig, theme } from 'antd'
 
 export type ThemeMode = 'light' | 'dark'
-export type ThemePreset = 'minimal' | 'tech' | 'cute'
+/** 用户选择的明暗偏好；system 表示跟随浏览器/系统 */
+export type ThemePreference = ThemeMode | 'system'
+export type ThemePreset = 'minimal' | 'tech' | 'techLite' | 'gold' | 'cute' | 'glass'
 
 type GrayScale = Record<100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900, string>
 type ThemeAccent = {
@@ -77,10 +79,28 @@ export const THEME_PRESET_OPTIONS: readonly ThemePresetOption[] = [
     preview: ['#0c1726', '#17314b', '#38c7ee'],
   },
   {
+    id: 'techLite',
+    name: '科技简约',
+    description: '浅蓝底 · 精密线',
+    preview: ['#edf6fc', '#fafdff', '#087fbd'],
+  },
+  {
+    id: 'gold',
+    name: '黑金质感',
+    description: '墨黑 · 琥珀金',
+    preview: ['#f6f8fc', '#ffffff', '#f2a12e'],
+  },
+  {
     id: 'cute',
-    name: '可爱简约',
-    description: '暖白粉 · 柔和莓红',
-    preview: ['#fffafa', '#fff0f3', '#dc6688'],
+    name: '清爽可爱',
+    description: '薄荷绿 · 圆润',
+    preview: ['#effaf5', '#fbfffd', '#17836c'],
+  },
+  {
+    id: 'glass',
+    name: '透明炫酷',
+    description: '紫雾 · 磨砂层',
+    preview: ['#f0effb', '#ffffff', '#7260bf'],
   },
 ]
 
@@ -103,13 +123,37 @@ const GRAY_TECH_DARK: GrayScale = {
   100: '#07111d', 200: '#0c1928', 300: '#13263a', 400: '#24435e', 500: '#6e8aa4',
   600: '#8eabc5', 700: '#b1c9dd', 800: '#d0e0ed', 900: '#edf6fc',
 }
-const GRAY_CUTE_LIGHT: GrayScale = {
-  100: '#fff6f7', 200: '#f8eaed', 300: '#efd9df', 400: '#dcbec7', 500: '#a98590',
-  600: '#80616b', 700: '#62464f', 800: '#48323a', 900: '#302129',
+const GRAY_TECHLITE_LIGHT: GrayScale = {
+  100: '#eef6fc', 200: '#e2eef7', 300: '#cbdce9', 400: '#a7c1d6', 500: '#6f8ba3',
+  600: '#4d6a84', 700: '#2f4c66', 800: '#15314b', 900: '#0c2236',
 }
-const GRAY_CUTE_DARK: GrayScale = {
-  100: '#1d151b', 200: '#2a1d25', 300: '#3a2933', 400: '#573c4a', 500: '#a17d8d',
-  600: '#bd9ca9', 700: '#d8bdc7', 800: '#ead8de', 900: '#fff4f7',
+const GRAY_TECHLITE_DARK: GrayScale = {
+  100: '#081522', 200: '#0d1e2f', 300: '#142c42', 400: '#22475f', 500: '#6f92aa',
+  600: '#90b1c8', 700: '#b6cfe0', 800: '#d7e6f1', 900: '#eef7fd',
+}
+const GRAY_GOLD_LIGHT: GrayScale = {
+  100: '#f6f8fc', 200: '#eef1f7', 300: '#dce3ed', 400: '#c0cad8', 500: '#7c8598',
+  600: '#5a6478', 700: '#3b4558', 800: '#1f2937', 900: '#0f1838',
+}
+const GRAY_GOLD_DARK: GrayScale = {
+  100: '#16130b', 200: '#1e1a10', 300: '#2b2417', 400: '#453a24', 500: '#97835b',
+  600: '#bcab86', 700: '#d6c8a6', 800: '#e9dfc7', 900: '#f7f0de',
+}
+const GRAY_CUTE_GREEN_LIGHT: GrayScale = {
+  100: '#effaf5', 200: '#e2f3ea', 300: '#cde6d9', 400: '#a8d2be', 500: '#6f9b88',
+  600: '#4d7364', 700: '#325649', 800: '#1e3f34', 900: '#102c23',
+}
+const GRAY_CUTE_GREEN_DARK: GrayScale = {
+  100: '#0d211b', 200: '#122b23', 300: '#193a2f', 400: '#285747', 500: '#74a893',
+  600: '#97c4b2', 700: '#b9dbcc', 800: '#d6ecdf', 900: '#eafff5',
+}
+const GRAY_GLASS_LIGHT: GrayScale = {
+  100: '#f4f3fc', 200: '#eceaf8', 300: '#ddd8f0', 400: '#c3bce0', 500: '#8b84a8',
+  600: '#6b6584', 700: '#4d4863', 800: '#332f47', 900: '#27243a',
+}
+const GRAY_GLASS_DARK: GrayScale = {
+  100: '#1a1829', 200: '#221f35', 300: '#2e2a45', 400: '#443d63', 500: '#948cbb',
+  600: '#b7b0d6', 700: '#d3cee8', 800: '#e6e2f5', 900: '#f4f1ff',
 }
 
 const SURFACES: Record<ThemePreset, Record<ThemeMode, ThemeSurface>> = {
@@ -172,30 +216,116 @@ const SURFACES: Record<ThemePreset, Record<ThemeMode, ThemeSurface>> = {
   },
   cute: {
     light: {
-      gray: GRAY_CUTE_LIGHT,
-      contentBg: '#fffafa', boxBg: '#ffffff', sunkenBg: '#fff2f4', elevatedBg: '#ffffff', sidebarBg: '#fffdfd',
-      cardBorder: 'rgba(112, 57, 76, 0.12)', borderStrong: 'rgba(112, 57, 76, 0.22)',
-      hoverColor: 'rgba(187, 92, 123, 0.06)', activeColor: 'rgba(220, 102, 136, 0.12)', tableHeadBg: '#fff5f6',
+      gray: GRAY_CUTE_GREEN_LIGHT,
+      contentBg: '#effaf5', boxBg: '#fbfffd', sunkenBg: '#e7f6ef', elevatedBg: '#ffffff', sidebarBg: '#f6fdf9',
+      cardBorder: 'rgba(24, 55, 47, 0.12)', borderStrong: 'rgba(24, 55, 47, 0.22)',
+      hoverColor: 'rgba(23, 131, 108, 0.06)', activeColor: 'rgba(23, 131, 108, 0.13)', tableHeadBg: '#e1f3ea',
       insetHighlight: 'inset 0 1px 0 rgba(255, 255, 255, 0.85)',
-      headerBg: '#fffdfd', headerText: '#4b3039', headerTextSecondary: '#91737d',
-      headerHover: 'rgba(175, 82, 111, 0.07)', headerBorder: 'rgba(112, 57, 76, 0.11)',
-      headerField: '#fff4f6', headerFieldHover: '#fcebef',
-      transparentBackdrop: 'radial-gradient(ellipse at 12% 0%, rgba(255, 202, 215, 0.62), transparent 44%), linear-gradient(135deg, #fffafa 0%, #fff0f3 100%)',
-      shadowXs: '0 1px 2px rgba(104, 54, 69, 0.04)', shadowSm: '0 3px 14px rgba(104, 54, 69, 0.09)',
-      shadowMd: '0 8px 28px rgba(104, 54, 69, 0.13)', shadowLg: '0 20px 48px rgba(104, 54, 69, 0.18)',
+      headerBg: '#fbfffd', headerText: '#18372f', headerTextSecondary: '#5d7d73',
+      headerHover: 'rgba(23, 131, 108, 0.07)', headerBorder: 'rgba(24, 55, 47, 0.11)',
+      headerField: '#eef9f3', headerFieldHover: '#e2f5eb',
+      transparentBackdrop: 'radial-gradient(ellipse at 12% 0%, rgba(140, 226, 195, 0.45), transparent 44%), linear-gradient(135deg, #f2fcf7 0%, #e8f8f0 100%)',
+      shadowXs: '0 1px 2px rgba(24, 55, 47, 0.04)', shadowSm: '0 3px 14px rgba(24, 55, 47, 0.09)',
+      shadowMd: '0 8px 28px rgba(24, 55, 47, 0.13)', shadowLg: '0 20px 48px rgba(24, 55, 47, 0.18)',
     },
     dark: {
-      gray: GRAY_CUTE_DARK,
-      contentBg: '#201820', boxBg: '#2c222b', sunkenBg: '#251b24', elevatedBg: '#382a35', sidebarBg: '#291f28',
-      cardBorder: 'rgba(247, 199, 215, 0.13)', borderStrong: 'rgba(247, 199, 215, 0.24)',
-      hoverColor: 'rgba(244, 179, 200, 0.08)', activeColor: 'rgba(227, 114, 151, 0.18)', tableHeadBg: '#342731',
+      gray: GRAY_CUTE_GREEN_DARK,
+      contentBg: '#10231e', boxBg: '#19362e', sunkenBg: '#142b24', elevatedBg: '#1d4036', sidebarBg: '#132a23',
+      cardBorder: 'rgba(150, 220, 190, 0.15)', borderStrong: 'rgba(150, 220, 190, 0.26)',
+      hoverColor: 'rgba(120, 216, 185, 0.08)', activeColor: 'rgba(79, 195, 159, 0.18)', tableHeadBg: '#1e473a',
       insetHighlight: 'inset 0 1px 0 rgba(255, 255, 255, 0.04)',
-      headerBg: '#2b2029', headerText: '#fff2f6', headerTextSecondary: '#c8a8b5',
-      headerHover: 'rgba(255, 224, 234, 0.08)', headerBorder: 'rgba(247, 199, 215, 0.12)',
-      headerField: 'rgba(255, 235, 242, 0.06)', headerFieldHover: 'rgba(255, 235, 242, 0.1)',
-      transparentBackdrop: 'radial-gradient(ellipse at 14% 0%, rgba(129, 65, 91, 0.38), transparent 45%), linear-gradient(135deg, #2a202a 0%, #201820 100%)',
+      headerBg: '#0d1f1a', headerText: '#e2f6ec', headerTextSecondary: '#a4c9b8',
+      headerHover: 'rgba(190, 240, 220, 0.08)', headerBorder: 'rgba(150, 220, 190, 0.12)',
+      headerField: 'rgba(190, 240, 220, 0.06)', headerFieldHover: 'rgba(190, 240, 220, 0.1)',
+      transparentBackdrop: 'radial-gradient(ellipse at 14% 0%, rgba(28, 96, 78, 0.4), transparent 45%), linear-gradient(135deg, #132b23 0%, #10231e 100%)',
       shadowXs: '0 1px 2px rgba(0, 0, 0, 0.3)', shadowSm: '0 3px 14px rgba(0, 0, 0, 0.3)',
       shadowMd: '0 8px 30px rgba(0, 0, 0, 0.4)', shadowLg: '0 20px 48px rgba(0, 0, 0, 0.48)',
+    },
+  },
+  techLite: {
+    light: {
+      gray: GRAY_TECHLITE_LIGHT,
+      contentBg: '#edf6fc', boxBg: '#fafdff', sunkenBg: '#eff7fc', elevatedBg: '#ffffff', sidebarBg: '#f7fbfe',
+      cardBorder: 'rgba(21, 59, 91, 0.13)', borderStrong: 'rgba(21, 59, 91, 0.24)',
+      hoverColor: 'rgba(21, 96, 138, 0.06)', activeColor: 'rgba(8, 127, 189, 0.12)', tableHeadBg: '#e5f1f9',
+      insetHighlight: 'inset 0 1px 0 rgba(255, 255, 255, 0.85)',
+      headerBg: '#deeffa', headerText: '#153b5b', headerTextSecondary: '#4f718c',
+      headerHover: 'rgba(21, 59, 91, 0.07)', headerBorder: '#c2ddec',
+      headerField: 'rgba(255, 255, 255, 0.7)', headerFieldHover: '#f4fbff',
+      transparentBackdrop: 'radial-gradient(ellipse at 82% 4%, rgba(56, 199, 238, 0.2), transparent 34%), linear-gradient(135deg, #e6f3fb 0%, #edf6fc 100%)',
+      shadowXs: '0 1px 2px rgba(15, 58, 88, 0.05)', shadowSm: '0 3px 14px rgba(15, 58, 88, 0.1)',
+      shadowMd: '0 8px 28px rgba(15, 58, 88, 0.15)', shadowLg: '0 20px 48px rgba(15, 58, 88, 0.2)',
+    },
+    dark: {
+      gray: GRAY_TECHLITE_DARK,
+      contentBg: '#0c1725', boxBg: '#142539', sunkenBg: '#101f31', elevatedBg: '#1a2f45', sidebarBg: '#0d1b2b',
+      cardBorder: 'rgba(140, 190, 220, 0.16)', borderStrong: 'rgba(140, 190, 220, 0.28)',
+      hoverColor: 'rgba(126, 190, 224, 0.08)', activeColor: 'rgba(66, 197, 236, 0.17)', tableHeadBg: '#16304a',
+      insetHighlight: 'inset 0 1px 0 rgba(186, 228, 250, 0.045)',
+      headerBg: '#0a1826', headerText: '#eaf7ff', headerTextSecondary: '#8eacbf',
+      headerHover: 'rgba(164, 220, 244, 0.1)', headerBorder: 'rgba(115, 190, 228, 0.12)',
+      headerField: 'rgba(112, 189, 225, 0.08)', headerFieldHover: 'rgba(112, 189, 225, 0.14)',
+      transparentBackdrop: 'radial-gradient(ellipse at 80% 0%, rgba(23, 116, 158, 0.38), transparent 42%), linear-gradient(135deg, #0d2032 0%, #0c1725 100%)',
+      shadowXs: '0 1px 2px rgba(0, 0, 0, 0.32)', shadowSm: '0 3px 14px rgba(0, 0, 0, 0.3)',
+      shadowMd: '0 8px 30px rgba(0, 0, 0, 0.42)', shadowLg: '0 20px 48px rgba(0, 0, 0, 0.5)',
+    },
+  },
+  gold: {
+    light: {
+      gray: GRAY_GOLD_LIGHT,
+      contentBg: '#f6f8fc', boxBg: '#ffffff', sunkenBg: '#f2f5fa', elevatedBg: '#ffffff', sidebarBg: '#ffffff',
+      cardBorder: 'rgba(15, 24, 56, 0.12)', borderStrong: 'rgba(15, 24, 56, 0.24)',
+      hoverColor: 'rgba(88, 66, 18, 0.055)', activeColor: 'rgba(242, 161, 46, 0.14)', tableHeadBg: '#eef2f7',
+      insetHighlight: 'inset 0 1px 0 rgba(255, 255, 255, 0.85)',
+      headerBg: '#ffffff', headerText: '#0f1838', headerTextSecondary: '#65718a',
+      headerHover: 'rgba(15, 24, 56, 0.06)', headerBorder: '#dce3ed',
+      headerField: '#f2f5fa', headerFieldHover: '#e9eef7',
+      transparentBackdrop: 'radial-gradient(ellipse at 12% 0%, rgba(242, 190, 120, 0.35), transparent 44%), linear-gradient(135deg, #fbf8f1 0%, #f2f5fa 100%)',
+      shadowXs: '0 1px 2px rgba(15, 24, 56, 0.04)', shadowSm: '0 3px 14px rgba(15, 24, 56, 0.09)',
+      shadowMd: '0 8px 28px rgba(15, 24, 56, 0.13)', shadowLg: '0 20px 48px rgba(15, 24, 56, 0.18)',
+    },
+    dark: {
+      gray: GRAY_GOLD_DARK,
+      contentBg: '#17150e', boxBg: '#272318', sunkenBg: '#1e1b12', elevatedBg: '#302a1d', sidebarBg: '#1c1911',
+      cardBorder: 'rgba(226, 196, 130, 0.16)', borderStrong: 'rgba(226, 196, 130, 0.28)',
+      hoverColor: 'rgba(242, 200, 120, 0.08)', activeColor: 'rgba(242, 161, 46, 0.18)', tableHeadBg: '#332c1c',
+      insetHighlight: 'inset 0 1px 0 rgba(255, 240, 200, 0.045)',
+      headerBg: '#12100a', headerText: '#f7f0de', headerTextSecondary: '#c2b28b',
+      headerHover: 'rgba(242, 200, 120, 0.08)', headerBorder: 'rgba(226, 196, 130, 0.12)',
+      headerField: 'rgba(242, 200, 120, 0.08)', headerFieldHover: 'rgba(242, 200, 120, 0.14)',
+      transparentBackdrop: 'radial-gradient(ellipse at 82% 0%, rgba(122, 92, 32, 0.4), transparent 42%), linear-gradient(135deg, #201c12 0%, #17150e 100%)',
+      shadowXs: '0 1px 2px rgba(0, 0, 0, 0.34)', shadowSm: '0 3px 14px rgba(0, 0, 0, 0.32)',
+      shadowMd: '0 8px 30px rgba(0, 0, 0, 0.44)', shadowLg: '0 20px 48px rgba(0, 0, 0, 0.52)',
+    },
+  },
+  glass: {
+    light: {
+      gray: GRAY_GLASS_LIGHT,
+      contentBg: '#f0effb', boxBg: 'rgba(255, 255, 255, 0.72)', sunkenBg: 'rgba(244, 243, 253, 0.62)',
+      elevatedBg: 'rgba(255, 255, 255, 0.94)', sidebarBg: 'rgba(255, 255, 255, 0.62)',
+      cardBorder: 'rgba(151, 143, 197, 0.28)', borderStrong: 'rgba(151, 143, 197, 0.42)',
+      hoverColor: 'rgba(114, 96, 191, 0.07)', activeColor: 'rgba(114, 96, 191, 0.14)', tableHeadBg: 'rgba(236, 234, 250, 0.9)',
+      insetHighlight: 'inset 0 1px 0 rgba(255, 255, 255, 0.6)',
+      headerBg: 'rgba(255, 255, 255, 0.66)', headerText: '#27243a', headerTextSecondary: '#706b88',
+      headerHover: 'rgba(114, 96, 191, 0.07)', headerBorder: 'rgba(151, 143, 197, 0.24)',
+      headerField: 'rgba(255, 255, 255, 0.7)', headerFieldHover: 'rgba(245, 243, 255, 0.9)',
+      transparentBackdrop: 'radial-gradient(ellipse at 78% 0%, rgba(176, 160, 240, 0.4), transparent 42%), linear-gradient(135deg, #f3f1fd 0%, #ebe8fa 100%)',
+      shadowXs: '0 1px 2px rgba(52, 42, 105, 0.05)', shadowSm: '0 4px 16px rgba(52, 42, 105, 0.1)',
+      shadowMd: '0 10px 32px rgba(52, 42, 105, 0.16)', shadowLg: '0 20px 52px rgba(52, 42, 105, 0.22)',
+    },
+    dark: {
+      gray: GRAY_GLASS_DARK,
+      contentBg: '#171628', boxBg: 'rgba(41, 37, 59, 0.78)', sunkenBg: 'rgba(30, 27, 45, 0.72)',
+      elevatedBg: 'rgba(52, 47, 74, 0.94)', sidebarBg: 'rgba(31, 28, 46, 0.8)',
+      cardBorder: 'rgba(173, 162, 221, 0.27)', borderStrong: 'rgba(173, 162, 221, 0.4)',
+      hoverColor: 'rgba(168, 155, 240, 0.09)', activeColor: 'rgba(168, 155, 240, 0.18)', tableHeadBg: 'rgba(57, 51, 83, 0.9)',
+      insetHighlight: 'inset 0 1px 0 rgba(230, 226, 250, 0.06)',
+      headerBg: 'rgba(24, 22, 38, 0.86)', headerText: '#eeeafd', headerTextSecondary: '#bcb5dc',
+      headerHover: 'rgba(190, 180, 250, 0.09)', headerBorder: 'rgba(173, 162, 221, 0.16)',
+      headerField: 'rgba(190, 180, 250, 0.08)', headerFieldHover: 'rgba(190, 180, 250, 0.14)',
+      transparentBackdrop: 'radial-gradient(ellipse at 80% 0%, rgba(96, 82, 168, 0.42), transparent 42%), linear-gradient(135deg, #1d1a31 0%, #171628 100%)',
+      shadowXs: '0 1px 2px rgba(0, 0, 0, 0.34)', shadowSm: '0 3px 16px rgba(0, 0, 0, 0.34)',
+      shadowMd: '0 10px 32px rgba(0, 0, 0, 0.46)', shadowLg: '0 22px 52px rgba(0, 0, 0, 0.54)',
     },
   },
 }
@@ -210,8 +340,20 @@ const ACCENTS: Record<ThemePreset, Record<ThemeMode, ThemeAccent>> = {
     dark: { primary: '#42c5ec', primaryHover: '#68d4f3', primaryActive: '#1da7d2', primarySoft: 'rgba(66, 197, 236, 0.16)', primarySofter: 'rgba(66, 197, 236, 0.09)', accentText: '#64d4f2', primaryLight9: 'rgba(66, 197, 236, 0.12)', primaryLight8: 'rgba(66, 197, 236, 0.2)' },
   },
   cute: {
-    light: { primary: '#d65f82', primaryHover: '#bf4e71', primaryActive: '#a83c60', primarySoft: 'rgba(214, 95, 130, 0.11)', primarySofter: 'rgba(214, 95, 130, 0.06)', accentText: '#ae4969', primaryLight9: 'rgba(214, 95, 130, 0.08)', primaryLight8: 'rgba(214, 95, 130, 0.16)' },
-    dark: { primary: '#f09ab4', primaryHover: '#f4b2c5', primaryActive: '#db7897', primarySoft: 'rgba(240, 154, 180, 0.17)', primarySofter: 'rgba(240, 154, 180, 0.09)', accentText: '#f2abc0', primaryLight9: 'rgba(240, 154, 180, 0.12)', primaryLight8: 'rgba(240, 154, 180, 0.2)' },
+    light: { primary: '#17836c', primaryHover: '#116e5a', primaryActive: '#0c5948', primarySoft: 'rgba(23, 131, 108, 0.11)', primarySofter: 'rgba(23, 131, 108, 0.06)', accentText: '#0f6f5b', primaryLight9: 'rgba(23, 131, 108, 0.08)', primaryLight8: 'rgba(23, 131, 108, 0.16)' },
+    dark: { primary: '#4fc39f', primaryHover: '#70d2b3', primaryActive: '#33a887', primarySoft: 'rgba(79, 195, 159, 0.16)', primarySofter: 'rgba(79, 195, 159, 0.09)', accentText: '#79d9ba', primaryLight9: 'rgba(79, 195, 159, 0.12)', primaryLight8: 'rgba(79, 195, 159, 0.2)' },
+  },
+  techLite: {
+    light: { primary: '#087fbd', primaryHover: '#066ca0', primaryActive: '#04567f', primarySoft: 'rgba(8, 127, 189, 0.1)', primarySofter: 'rgba(8, 127, 189, 0.055)', accentText: '#066a9e', primaryLight9: 'rgba(8, 127, 189, 0.08)', primaryLight8: 'rgba(8, 127, 189, 0.16)' },
+    dark: { primary: '#3ec5ee', primaryHover: '#68d6f5', primaryActive: '#1ba6d2', primarySoft: 'rgba(62, 197, 238, 0.16)', primarySofter: 'rgba(62, 197, 238, 0.09)', accentText: '#6fd9f4', primaryLight9: 'rgba(62, 197, 238, 0.12)', primaryLight8: 'rgba(62, 197, 238, 0.2)' },
+  },
+  gold: {
+    light: { primary: '#e39a20', primaryHover: '#c9851a', primaryActive: '#a96d10', primarySoft: 'rgba(227, 154, 32, 0.12)', primarySofter: 'rgba(227, 154, 32, 0.06)', accentText: '#96600c', primaryLight9: 'rgba(227, 154, 32, 0.08)', primaryLight8: 'rgba(227, 154, 32, 0.17)' },
+    dark: { primary: '#f3b65a', primaryHover: '#f7c778', primaryActive: '#dda043', primarySoft: 'rgba(243, 182, 90, 0.16)', primarySofter: 'rgba(243, 182, 90, 0.09)', accentText: '#f5c67a', primaryLight9: 'rgba(243, 182, 90, 0.12)', primaryLight8: 'rgba(243, 182, 90, 0.2)' },
+  },
+  glass: {
+    light: { primary: '#7260bf', primaryHover: '#5f4eab', primaryActive: '#4d3e91', primarySoft: 'rgba(114, 96, 191, 0.12)', primarySofter: 'rgba(114, 96, 191, 0.065)', accentText: '#6450b4', primaryLight9: 'rgba(114, 96, 191, 0.08)', primaryLight8: 'rgba(114, 96, 191, 0.17)' },
+    dark: { primary: '#a99cf2', primaryHover: '#c0b4f8', primaryActive: '#8a7ae0', primarySoft: 'rgba(169, 156, 242, 0.17)', primarySofter: 'rgba(169, 156, 242, 0.09)', accentText: '#bdb2f8', primaryLight9: 'rgba(169, 156, 242, 0.12)', primaryLight8: 'rgba(169, 156, 242, 0.2)' },
   },
 }
 
@@ -223,7 +365,19 @@ const SEMANTIC_COLORS: Record<ThemeMode, Pick<ThemePalette, 'success' | 'success
 const CHART_EXTRAS: Record<ThemePreset, Record<ThemeMode, readonly [string, string, string, string]>> = {
   minimal: { light: ['#7654b8', '#188e91', '#bd6546', '#699341'], dark: ['#b69cff', '#54d5cf', '#f39a79', '#b6d879'] },
   tech: { light: ['#6554bd', '#198e82', '#c17b24', '#b6525d'], dark: ['#a99aff', '#56d9c3', '#f2be71', '#ff8b8b'] },
-  cute: { light: ['#8a64b5', '#3b9079', '#ba7c2c', '#bf536b'], dark: ['#c6a0eb', '#78d8b9', '#f0c178', '#f38ca7'] },
+  techLite: { light: ['#2f7fb0', '#188e82', '#c07c24', '#b6525d'], dark: ['#6fc4ee', '#56d9c3', '#f2be71', '#ff8b8b'] },
+  gold: { light: ['#8a6a2f', '#1f8a6a', '#c07c24', '#b5525d'], dark: ['#d4b06a', '#5fd2b0', '#f2c878', '#ff9a8b'] },
+  cute: { light: ['#7f7ac2', '#3b9079', '#c08a2c', '#b5729a'], dark: ['#b9b2f0', '#78d8b9', '#f0c178', '#f0a0c4'] },
+  glass: { light: ['#8a7ad6', '#3f9d8c', '#c08a3c', '#b86b9a'], dark: ['#c0b4f8', '#6fd9c0', '#f0c884', '#f0a0c8'] },
+}
+
+const ON_PRIMARY: Record<ThemePreset, Record<ThemeMode, string>> = {
+  minimal: { light: '#ffffff', dark: '#ffffff' },
+  tech: { light: '#ffffff', dark: '#092131' },
+  techLite: { light: '#ffffff', dark: '#06202e' },
+  gold: { light: '#2a1c05', dark: '#241a06' },
+  cute: { light: '#ffffff', dark: '#06251d' },
+  glass: { light: '#ffffff', dark: '#1a1430' },
 }
 
 export function getThemePalette(preset: ThemePreset, dark: boolean, transparent: boolean): ThemePalette {
@@ -241,8 +395,20 @@ export function getThemePalette(preset: ThemePreset, dark: boolean, transparent:
       dark: { boxBg: 'rgba(15, 32, 49, 0.82)', sunkenBg: 'rgba(10, 25, 40, 0.7)', elevatedBg: 'rgba(20, 40, 60, 0.94)', sidebarBg: 'rgba(10, 25, 40, 0.86)', cardBorder: 'rgba(115, 190, 228, 0.2)', tableHeadBg: 'rgba(17, 38, 58, 0.8)' },
     },
     cute: {
-      light: { boxBg: 'rgba(255, 255, 255, 0.8)', sunkenBg: 'rgba(255, 242, 244, 0.68)', elevatedBg: 'rgba(255, 255, 255, 0.96)', sidebarBg: 'rgba(255, 253, 253, 0.82)', cardBorder: 'rgba(112, 57, 76, 0.15)', tableHeadBg: 'rgba(255, 245, 246, 0.82)' },
-      dark: { boxBg: 'rgba(44, 34, 43, 0.82)', sunkenBg: 'rgba(37, 27, 36, 0.7)', elevatedBg: 'rgba(56, 42, 53, 0.95)', sidebarBg: 'rgba(41, 31, 40, 0.86)', cardBorder: 'rgba(247, 199, 215, 0.17)', tableHeadBg: 'rgba(52, 39, 49, 0.82)' },
+      light: { boxBg: 'rgba(251, 255, 253, 0.8)', sunkenBg: 'rgba(231, 246, 239, 0.68)', elevatedBg: 'rgba(255, 255, 255, 0.96)', sidebarBg: 'rgba(246, 253, 249, 0.84)', cardBorder: 'rgba(24, 55, 47, 0.15)', tableHeadBg: 'rgba(225, 243, 234, 0.84)' },
+      dark: { boxBg: 'rgba(25, 54, 46, 0.82)', sunkenBg: 'rgba(20, 43, 36, 0.72)', elevatedBg: 'rgba(29, 64, 54, 0.95)', sidebarBg: 'rgba(19, 42, 35, 0.86)', cardBorder: 'rgba(150, 220, 190, 0.18)', tableHeadBg: 'rgba(30, 71, 58, 0.84)' },
+    },
+    techLite: {
+      light: { boxBg: 'rgba(250, 253, 255, 0.8)', sunkenBg: 'rgba(239, 247, 252, 0.66)', elevatedBg: 'rgba(255, 255, 255, 0.94)', sidebarBg: 'rgba(247, 251, 254, 0.84)', cardBorder: 'rgba(21, 59, 91, 0.16)', tableHeadBg: 'rgba(229, 241, 249, 0.8)' },
+      dark: { boxBg: 'rgba(20, 37, 57, 0.82)', sunkenBg: 'rgba(16, 31, 49, 0.72)', elevatedBg: 'rgba(26, 47, 69, 0.94)', sidebarBg: 'rgba(13, 27, 43, 0.86)', cardBorder: 'rgba(140, 190, 220, 0.2)', tableHeadBg: 'rgba(22, 48, 74, 0.82)' },
+    },
+    gold: {
+      light: { boxBg: 'rgba(255, 255, 255, 0.8)', sunkenBg: 'rgba(242, 245, 250, 0.68)', elevatedBg: 'rgba(255, 255, 255, 0.96)', sidebarBg: 'rgba(255, 255, 255, 0.84)', cardBorder: 'rgba(15, 24, 56, 0.15)', tableHeadBg: 'rgba(238, 242, 247, 0.82)' },
+      dark: { boxBg: 'rgba(39, 35, 24, 0.82)', sunkenBg: 'rgba(30, 27, 18, 0.72)', elevatedBg: 'rgba(48, 42, 29, 0.95)', sidebarBg: 'rgba(28, 25, 17, 0.86)', cardBorder: 'rgba(226, 196, 130, 0.19)', tableHeadBg: 'rgba(51, 44, 28, 0.84)' },
+    },
+    glass: {
+      light: { boxBg: 'rgba(255, 255, 255, 0.56)', sunkenBg: 'rgba(244, 243, 253, 0.46)', elevatedBg: 'rgba(255, 255, 255, 0.88)', sidebarBg: 'rgba(255, 255, 255, 0.5)', cardBorder: 'rgba(151, 143, 197, 0.3)', tableHeadBg: 'rgba(236, 234, 250, 0.72)' },
+      dark: { boxBg: 'rgba(41, 37, 59, 0.62)', sunkenBg: 'rgba(30, 27, 45, 0.55)', elevatedBg: 'rgba(52, 47, 74, 0.88)', sidebarBg: 'rgba(31, 28, 46, 0.66)', cardBorder: 'rgba(173, 162, 221, 0.3)', tableHeadBg: 'rgba(57, 51, 83, 0.72)' },
     },
   }
 
@@ -254,7 +420,7 @@ export function getThemePalette(preset: ThemePreset, dark: boolean, transparent:
     preset,
     dark,
     transparent,
-    onPrimary: preset === 'tech' && dark ? '#092131' : preset === 'cute' ? dark ? '#492431' : '#4b2634' : '#ffffff',
+    onPrimary: ON_PRIMARY[preset][mode],
     contentBg: transparent ? 'transparent' : surface.contentBg,
     ...(transparent ? transparentSurfaces[preset][mode] : {}),
   }
@@ -387,7 +553,10 @@ export function getThemeCssVariables(palette: ThemePalette, rounded: boolean): R
 }
 
 function presetCardRadius(preset: ThemePreset): string {
-  return preset === 'tech' ? '8px' : preset === 'cute' ? '14px' : '10px'
+  const radii: Record<ThemePreset, string> = {
+    minimal: '10px', tech: '8px', techLite: '8px', gold: '10px', cute: '14px', glass: '14px',
+  }
+  return radii[preset]
 }
 
 function hexToRgb(hex: string): string {
@@ -411,7 +580,10 @@ export function createArtTheme({
 }): ThemeConfig {
   const palette = getThemePalette(preset, dark, transparent)
   const { gray } = palette
-  const borderRadius = rounded ? 10 : preset === 'cute' ? 10 : preset === 'tech' ? 4 : 6
+  const controlRadius: Record<ThemePreset, number> = {
+    minimal: 6, tech: 4, techLite: 4, gold: 6, cute: 10, glass: 8,
+  }
+  const borderRadius = rounded ? 10 : controlRadius[preset]
   const hoverBg = palette.hoverColor
 
   return {
@@ -459,7 +631,7 @@ export function createArtTheme({
       borderRadius,
       borderRadiusXS: rounded ? 7 : 4,
       borderRadiusSM: rounded ? 9 : 6,
-      borderRadiusLG: rounded ? 14 : preset === 'cute' ? 12 : 10,
+      borderRadiusLG: rounded ? 14 : preset === 'cute' || preset === 'glass' ? 12 : 10,
       borderRadiusOuter: rounded ? 12 : 8,
       controlHeight: 38,
       controlHeightSM: 32,
