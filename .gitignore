@@ -6,3 +6,6 @@ dist-ssr
 .vscode
 .idea
 *.log
+
+# 旧站静态资源备份
+/static_backup_*/
