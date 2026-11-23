@@ -143,7 +143,7 @@ export const getHostDetail = (hsName: string): Promise<ApiResponse<Host>> => {
 };
 
 export interface HostConfigBackup {
-  format: 'openidcs-host-config';
+  format: 'quickidc-host-config';
   version: 1;
   exported_at: string;
   hosts: Array<Record<string, unknown>>;

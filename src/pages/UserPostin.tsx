@@ -152,7 +152,7 @@ function UserPostin() {
           <h1 className="art-auth-title">用户注册</h1>
           <p className="art-auth-subtitle">
             <GlobalOutlined />
-            OpenIDCS 虚拟化管理平台
+            QuickIDC 虚拟化管理平台
           </p>
         </div>
 

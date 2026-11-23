@@ -59,7 +59,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           </ul>
         </div>
 
-        <div className="art-auth-aside-foot">© {new Date().getFullYear()} OpenIDCS Team</div>
+        <div className="art-auth-aside-foot">© {new Date().getFullYear()} QuickIDC Team</div>
       </aside>
 
       {/* 表单侧 */}

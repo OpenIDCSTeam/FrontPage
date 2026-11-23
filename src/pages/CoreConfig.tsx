@@ -382,7 +382,7 @@ function CoreConfig() {
             </button>
           ))}
           <div className="settings-nav-foot">
-            <span>OpenIDCS 1.0.0</span>
+            <span>QuickIDC 1.0.0</span>
             <span><span>主机</span> {systemInfo.hosts_count} · <span>实例</span> {systemInfo.vms_count}</span>
           </div>
         </aside>
@@ -789,11 +789,11 @@ function CoreConfig() {
                 <Input placeholder="test@example.com" />
               </Form.Item>
 
-              <Form.Item name="subject" label="邮件标题" initialValue="OpenIDCS - 测试邮件">
-                <Input placeholder="OpenIDCS - 测试邮件" />
+              <Form.Item name="subject" label="邮件标题" initialValue="QuickIDC - 测试邮件">
+                <Input placeholder="QuickIDC - 测试邮件" />
               </Form.Item>
 
-              <Form.Item name="body" label="邮件正文" initialValue="您好，这是一封来自 OpenIDCS 系统的测试邮件。如果您收到这封邮件，说明邮件服务配置正常。————OpenIDCS 系统">
+              <Form.Item name="body" label="邮件正文" initialValue="您好，这是一封来自 QuickIDC 系统的测试邮件。如果您收到这封邮件，说明邮件服务配置正常。————QuickIDC 系统">
                 <TextArea rows={6} placeholder="请输入邮件正文内容..." />
               </Form.Item>
 

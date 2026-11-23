@@ -1,7 +1,7 @@
 {
-  "name": "openidcs-frontend",
+  "name": "quickidc-frontend",
   "version": "1.0.0",
-  "description": "OpenIDCS虚拟化管理平台前端",
+  "description": "QuickIDC虚拟化管理平台前端",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -95,7 +95,7 @@ export default function HostConfigBackupActions({hostNames, onRestored}: Props) 
             } catch {
                 throw new Error('文件不是有效的 JSON 配置文件')
             }
-            if (!parsed || parsed.format !== 'openidcs-host-config' || parsed.version !== 1 || !Array.isArray(parsed.hosts) || parsed.hosts.length === 0) {
+            if (!parsed || parsed.format !== 'quickidc-host-config' || parsed.version !== 1 || !Array.isArray(parsed.hosts) || parsed.hosts.length === 0) {
                 throw new Error('请选择本平台导出的主机配置文件（版本 1）')
             }
             const result = await restoreHostConfigs(parsed, false, true)

@@ -109,7 +109,7 @@ export default function SystemInit() {
               ]}
               extra="显示在登录页、浏览器标签与后台品牌位"
             >
-              <Input size="large" placeholder="例如：OpenIDCS 虚拟化管理平台" maxLength={64} />
+              <Input size="large" placeholder="例如：QuickIDC 虚拟化管理平台" maxLength={64} />
             </Form.Item>
 
             <Form.Item

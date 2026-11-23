@@ -1,4 +1,4 @@
-# OpenIDCS React前端项目
+# QuickIDC React前端项目
 
 基于原始WebDesigns静态页面转换的React + TypeScript前端项目
 

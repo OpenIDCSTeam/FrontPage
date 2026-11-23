@@ -40,7 +40,7 @@ function MenuLabel({ text, short }: { text: string; short: string }) {
     )
 }
 
-const SIDEBAR_COLLAPSED_KEY = 'openidcs:sidebar-collapsed:v1'
+const SIDEBAR_COLLAPSED_KEY = 'quickidc:sidebar-collapsed:v1'
 
 /** 读取上次的折叠选择；没有记录时回退到默认值（竖版详情默认折叠） */
 function readSidebarCollapsed(fallback: boolean): boolean {
@@ -399,7 +399,7 @@ function MainLayout() {
                     {/* 底部 Footer */}
                     <footer className="art-footer">
                         <div>{siteTitle} · v{__APP_VERSION__}</div>
-                        <div className="art-footer-copyright" dir="ltr">© {new Date().getFullYear()} OpenIDCS Team. All rights reserved.</div>
+                        <div className="art-footer-copyright" dir="ltr">© {new Date().getFullYear()} QuickIDC Team. All rights reserved.</div>
                     </footer>
                 </Content>
                 </Layout>

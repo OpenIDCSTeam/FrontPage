@@ -2,9 +2,9 @@ import { create } from 'zustand'
 import api from '@/utils/apis.ts'
 
 /** 未配置系统标题时的默认标题 */
-export const DEFAULT_SITE_TITLE = 'OpenIDCS 虚拟化管理平台'
+export const DEFAULT_SITE_TITLE = 'QuickIDC 虚拟化管理平台'
 
-const TITLE_CACHE_KEY = 'openidcs-site-title'
+const TITLE_CACHE_KEY = 'quickidc-site-title'
 
 /**
  * 读取本地缓存的系统标题。

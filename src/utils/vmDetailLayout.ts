@@ -1,6 +1,6 @@
 export type VMDetailLayout = 'horizontal' | 'vertical'
 
-const VM_DETAIL_LAYOUT_PREFIX = 'openidcs:vm-detail-layout:v1:'
+const VM_DETAIL_LAYOUT_PREFIX = 'quickidc:vm-detail-layout:v1:'
 
 export function getVMDetailLayoutKey(username?: string | null): string {
   return `${VM_DETAIL_LAYOUT_PREFIX}${username || 'anonymous'}`

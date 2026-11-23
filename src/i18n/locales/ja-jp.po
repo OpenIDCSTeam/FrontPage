@@ -1,10 +1,10 @@
-# OpenIDCS Japanese Translation File
-# Copyright (C) 2024 OpenIDCS Team
-# This file is distributed under the same license as the OpenIDCS package.
+# QuickIDC Japanese Translation File
+# Copyright (C) 2024 QuickIDC Team
+# This file is distributed under the same license as the QuickIDC package.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: OpenIDCS 1.0\n"
+"Project-Id-Version: QuickIDC 1.0\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-04-28 16:24\n"
 "PO-Revision-Date: 2026-04-28 16:24\n"
