@@ -7840,3 +7840,19 @@ html[data-theme-preset='glass'] :is(.ant-checkbox-inner, .ant-radio-inner) {
 [dir='rtl'] .art-footer-copyright {
     unicode-bidi: plaintext;
 }
+
+/* 品牌图标：使用 /logo.svg，容器只负责尺寸 */
+.art-header-logo,
+.art-sidebar-header .art-logo,
+.art-auth-aside-brand .art-auth-aside-logo {
+    background: transparent;
+    color: transparent;
+    overflow: hidden;
+}
+
+.art-brand-mark {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+}

@@ -24,7 +24,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       {/* 品牌侧：仅桌面端显示 */}
       <aside className="art-auth-aside">
         <div className="art-auth-aside-brand">
-          <div className="art-auth-aside-logo">OI</div>
+          <div className="art-auth-aside-logo"><img src="/logo.svg" alt="Quick IDC" className="art-brand-mark"/></div>
           <span className="art-auth-aside-brand-name" title={siteTitle}>{siteTitle}</span>
         </div>
 

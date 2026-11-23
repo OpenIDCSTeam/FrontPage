@@ -274,7 +274,7 @@ function MainLayout() {
                         />
                     )}
                     <div className="art-header-brand" onClick={isRestrictedSession ? undefined : goHome}>
-                        <div className="art-header-logo">OI</div>
+                        <div className="art-header-logo"><img src="/logo.svg" alt="Quick IDC" className="art-brand-mark"/></div>
                         <div className="art-header-brand-text">
                             <span className="art-header-brand-name">{siteTitle}</span>
                             <span className="art-header-brand-desc">{user?.is_admin ? '管理控制台' : '用户控制台'}</span>
@@ -353,7 +353,7 @@ function MainLayout() {
                 >
                     <div className="art-sidebar art-sidebar--static">
                         <div className="art-sidebar-header">
-                            <div className="art-logo">OI</div>
+                            <div className="art-logo"><img src="/logo.svg" alt="Quick IDC" className="art-brand-mark"/></div>
                             <div className="art-logo-text">
                                 <span className="art-logo-title">{siteTitle}</span>
                                 <span className="art-logo-desc">{user?.is_admin ? '管理控制台' : '用户控制台'}</span>
