@@ -3,19 +3,19 @@
 > eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0
 
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\CoreConfig.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\CoreConfig.tsx
   192:51  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   227:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   246:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\Dashboards.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\Dashboards.tsx
    86:27  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   137:48  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   214:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   409:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   865:62  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\DockDetail.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\DockDetail.tsx
     68:13   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
     91:14   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
    110:20   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
@@ -48,13 +48,13 @@ G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\DockDetail.tsx
   1128:33   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   1205:65   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\DockManage.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\DockManage.tsx
   157:66  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   323:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   552:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   569:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\HostManage.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\HostManage.tsx
    64:34   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
    67:19   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   196:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
@@ -65,52 +65,52 @@ G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\HostManage.tsx
   475:25   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   745:119  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\HttpProxys.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\HttpProxys.tsx
   119:57  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   249:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\LogsManage.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\LogsManage.tsx
   26:13  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   74:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\MainLayout.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\MainLayout.tsx
   35:48  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   43:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\TaskManage.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\TaskManage.tsx
   21:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\UserConfig.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\UserConfig.tsx
    81:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   101:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\UserLogins.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\UserLogins.tsx
    70:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   104:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   153:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\UserManage.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\UserManage.tsx
    50:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   136:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   171:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\pages\UserPostin.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\pages\UserPostin.tsx
   54:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\types\index.ts
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\types\index.ts
   2:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\user\PortManage.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\user\PortManage.tsx
    47:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
    48:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
    83:51  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   142:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   197:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\user\UserProxys.tsx
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\user\UserProxys.tsx
   43:51  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\utils\apis.ts
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\utils\apis.ts
    70:55   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   133:66   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   147:54   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
@@ -128,7 +128,7 @@ G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\utils\apis.ts
   568:58   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   575:42   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
 
-G:\Codes\OpenIDCSTeam\OpenIDCS-Client\FrontPages\src\utils\axio.ts
+G:\Codes\QuickIDC\OpenIDCS-Client\FrontPages\src\utils\axio.ts
   109:13  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   114:14  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
   114:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
