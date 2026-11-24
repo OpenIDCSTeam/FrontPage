@@ -59,6 +59,24 @@ interface HostInfo {
   disk_usage: number
   enabled: boolean
   last_check: string
+  /** 顶层是否启用（/api/server/detail 同时下发 status=active/inactive） */
+  enable_host?: boolean
+  /** 纳管配置：虚拟机数量上限等从这里取 */
+  config?: Record<string, any>
+}
+
+/**
+ * 主机实时资源用量（来自 /api/server/status/:name 的 data.status）
+ */
+interface HostRuntime {
+  cpu_model?: string
+  cpu_usage?: number
+  cpu_total?: number
+  mem_usage?: number
+  mem_total?: number
+  hdd_usage?: number
+  hdd_total?: number
+  gpu_total?: number
 }
 
 /**
@@ -147,6 +165,11 @@ function Dashboards() {
     total_web_proxy: 0,
   })
   const [hosts, setHosts] = useState<Record<string, HostInfo>>({})
+  // 主机实时资源用量：/api/server/detail 只有纳管配置，
+  // CPU/内存/硬盘使用率要单独调 /api/server/status/:name 才能拿到。
+  const [hostRuntime, setHostRuntime] = useState<Record<string, HostRuntime>>({})
+  // 状态是否已采集过一轮：避免首屏还没拉完就显示「离线」
+  const [hostStatusLoaded, setHostStatusLoaded] = useState(false)
 
   // 普通用户视图状态
   const [userQuota, setUserQuota] = useState<UserQuota | null>(null)
@@ -187,6 +210,33 @@ function Dashboards() {
   const [loading, setLoading] = useState(true)
 
   /**
+   * 加载主机实时资源用量。
+   *
+   * /api/server/detail 返回的是纳管配置（type/addr/config/vm_count），
+   * 不含 CPU/内存/硬盘用量，也没有 online 状态；
+   * 这里按主机逐个取 /api/server/status，只对已启用主机发起请求。
+   * 不 await 在列表渲染前，避免平台采集慢时整页空着。
+   */
+  const loadHostRuntime = async (hostMap: Record<string, HostInfo>) => {
+    const names = Object.keys(hostMap).filter(name => hostMap[name]?.enable_host !== false && hostMap[name]?.status === 'active')
+    if (!names.length) {
+      setHostRuntime({})
+      setHostStatusLoaded(true)
+      return
+    }
+    const results = await Promise.all(names.map(name => api.getHostStatus(name).catch(() => null)))
+    const runtimeMap: Record<string, HostRuntime> = {}
+    names.forEach((name, index) => {
+      const result = results[index] as any
+      if (result?.code === 200 && result.data?.status) {
+        runtimeMap[name] = result.data.status as HostRuntime
+      }
+    })
+    setHostRuntime(runtimeMap)
+    setHostStatusLoaded(true)
+  }
+
+  /**
    * 加载管理员仪表板数据
    */
   const loadAdminDashboard = async () => {
@@ -205,10 +255,12 @@ function Dashboards() {
         })
       }
 
-      // 加载主机列表
+      // 加载主机列表，再用状态接口补齐资源用量
       const hostsResult = await api.get('/api/server/detail')
       if (hostsResult.code === 200) {
         setHosts(hostsResult.data)
+        // 资源用量异步补，不阻塞首屏
+        void loadHostRuntime(hostsResult.data as Record<string, HostInfo>)
       }
 
       // 更新最后更新时间
@@ -599,18 +651,20 @@ function Dashboards() {
   }
 
   /**
-   * 主机资源用量单元格：百分比 + 用量比值 + 细进度条，
+   * 主机资源用量单元格：百分比 + 明细 + 细进度条，
    * 颜色只在越阈值时切换到警告/危险，常态保持单一强调色。
+   * hasData=false 时显示占位符，避免把「还没采集到」画成 0%。
    */
-  const renderUsageCell = (percent: number, used: any, total: any) => {
-    const pct = Number.isFinite(percent) ? percent : 0
+  const renderUsageCell = (percent: number, detail: any, hasData = true) => {
+    if (!hasData) return <span className="art-table-muted">-</span>
+    const pct = Number.isFinite(percent) ? Math.max(0, Math.min(percent, 100)) : 0
     const stroke = pct > 80 ? 'var(--art-danger)' : pct > 60 ? 'var(--art-warning)' : 'var(--main-color)'
     return (
       <div>
         <div className="art-cell-sub" style={{ marginBottom: 4 }}>
-          {pct.toFixed(0)}% · {used ?? '-'} / {total ?? '-'}
+          {pct.toFixed(0)}% · {detail ?? '-'}
         </div>
-        <Progress percent={pct} size="small" showInfo={false} strokeColor={stroke} />
+        <Progress percent={Number(pct.toFixed(0))} size="small" showInfo={false} strokeColor={stroke} />
       </div>
     )
   }
@@ -698,6 +752,7 @@ function Dashboards() {
             key: name,
             name: name,
             ...host,
+            runtime: hostRuntime[name],
           }))}
           columns={[
             {
@@ -707,7 +762,7 @@ function Dashboards() {
               width: 220,
               render: (name: string, record: any) => (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className={`art-icon-tile${record.status === 'online' ? ' is-accent' : ''}`} style={{ width: 30, height: 30, fontSize: 14 }}>
+                  <span className={`art-icon-tile${record.status === 'active' ? ' is-accent' : ''}`} style={{ width: 30, height: 30, fontSize: 14 }}>
                     <CloudServerOutlined />
                   </span>
                   <span className="art-cell-stack">
@@ -730,44 +785,75 @@ function Dashboards() {
               width: 130,
               render: (_: any, record: any) => {
                 const current = record.vms_count || record.vm_count || 0
-                const max = record.max_vms || 50
-                const percent = max > 0 ? Math.round((current / max) * 100) : 0
-                return renderUsageCell(percent, current, max)
+                // 数量上限来自纳管配置；0 表示不限制，不能用假的 50 台去算使用率
+                const max = Number(record.config?.limits_nums) || 0
+                if (max <= 0) {
+                  return (
+                    <div>
+                      <div className="art-cell-sub" style={{ marginBottom: 4 }}>{current} 台</div>
+                      <span className="art-cell-sub">不限数量</span>
+                    </div>
+                  )
+                }
+                return renderUsageCell((current / max) * 100, `${current} / ${max}`)
               },
             },
             {
               title: 'CPU',
-              dataIndex: 'cpu_usage',
-              key: 'cpu_usage',
+              key: 'cpu',
               width: 130,
-              render: (usage: number, record: any) => renderUsageCell(usage || 0, record.cpu_used, record.cpu_total),
+              render: (_: any, record: any) => {
+                const runtime: HostRuntime | undefined = record.runtime
+                const total = runtime?.cpu_total || 0
+                const usage = runtime?.cpu_usage || 0
+                return renderUsageCell(usage, total > 0 ? `${total} 核` : '-', total > 0 || usage > 0)
+              },
             },
             {
               title: '内存',
-              dataIndex: 'memory_usage',
-              key: 'memory_usage',
+              key: 'memory',
               width: 130,
-              render: (usage: number, record: any) => renderUsageCell(usage || 0, record.memory_used, record.memory_total),
+              render: (_: any, record: any) => {
+                const runtime: HostRuntime | undefined = record.runtime
+                const total = runtime?.mem_total || 0
+                const used = runtime?.mem_usage || 0
+                return renderUsageCell(
+                  total > 0 ? (used / total) * 100 : 0,
+                  total > 0 ? `${formatStorage(used)} / ${formatStorage(total)}` : '-',
+                  total > 0
+                )
+              },
             },
             {
               title: '硬盘',
-              dataIndex: 'disk_usage',
-              key: 'disk_usage',
+              key: 'disk',
               width: 130,
-              render: (usage: number, record: any) => renderUsageCell(usage || 0, record.disk_used, record.disk_total),
+              render: (_: any, record: any) => {
+                const runtime: HostRuntime | undefined = record.runtime
+                const total = runtime?.hdd_total || 0
+                const used = runtime?.hdd_usage || 0
+                return renderUsageCell(
+                  total > 0 ? (used / total) * 100 : 0,
+                  total > 0 ? `${formatStorage(used)} / ${formatStorage(total)}` : '-',
+                  total > 0
+                )
+              },
             },
             {
               title: '状态',
               key: 'status',
               width: 110,
               render: (_: any, record: any) => {
-                const status = record.status || 'unknown'
-                const enabled = record.enabled !== false
+                const enabled = record.enable_host !== false
+                const runtime: HostRuntime | undefined = record.runtime
+                // /api/server/detail 只会给 active/inactive（是否纳管），
+                // 真正的在线与否看状态采集有没有拿到 CPU/内存总量。
+                const online = enabled && ((runtime?.cpu_total || 0) > 0 || (runtime?.mem_total || 0) > 0)
+                const text = !enabled ? '已禁用' : !hostStatusLoaded ? '检测中' : online ? '在线' : '离线'
+                const cls = !enabled || !hostStatusLoaded ? '' : online ? ' is-success' : ' is-danger'
                 return (
                   <span className="art-cell-stack">
-                    <span className={`art-status${status === 'online' ? ' is-success' : status === 'offline' ? ' is-danger' : ''}`}>
-                      {status === 'online' ? '在线' : status === 'offline' ? '离线' : '未知'}
-                    </span>
+                    <span className={`art-status${cls}`}>{text}</span>
                     <span className="art-cell-sub">{enabled ? '已启用' : '已禁用'}</span>
                   </span>
                 )
